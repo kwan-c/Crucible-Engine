@@ -111,6 +111,10 @@ namespace Crucible {
 		/// Opens File Explorer with this file selected.
 		static void ShowInExplorer(const std::filesystem::path& file);
 
+		/// Opens a file in the program Windows uses for it (InstallScript.iss: the Inno Setup app).
+		/// False if Windows has no program for it.
+		static bool OpenWithDefaultApp(const std::filesystem::path& file);
+
 		/// Windows' folder picker, opened at `start` (or the nearest folder above it that exists).
 		/// Blocks until it closes. True with the folder in `chosen`; false if cancelled.
 		static bool PickFolder(const std::filesystem::path& start, std::filesystem::path& chosen);

@@ -233,6 +233,18 @@ namespace Crucible {
 #endif
 	}
 
+	bool PackageJob::OpenWithDefaultApp(fs::path const& file)
+	{
+#ifdef _WIN32
+		std::wstring const path = fs::path(file).make_preferred().wstring();
+		// ShellExecuteW returns a value above 32 on success.
+		return reinterpret_cast<INT_PTR>(ShellExecuteW(nullptr, L"open", path.c_str(), nullptr, nullptr, SW_SHOWNORMAL)) > 32;
+#else
+		(void)file;
+		return false;
+#endif
+	}
+
 	bool PackageJob::PickFolder(fs::path const& start, fs::path& chosen)
 	{
 #ifdef _WIN32

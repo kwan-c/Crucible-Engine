@@ -16,6 +16,7 @@
 */
 
 #include "ImGui/ImGuiManager.h"
+#include "Packaging/GameDetails.h"
 #include "Packaging/PackageJob.h"
 
 #include <filesystem>
@@ -40,7 +41,19 @@ namespace Crucible {
 
 	private:
 		void StartPackaging();
+		void SaveChoices();             // Zip / Installer / output folder -> imgui.ini, if they changed
+		void RefreshInstallerCheck();   // looks for ISCC.exe and the installer's files again
 		void DrawSettings(bool playing);
+		void DrawInstallerDetails();    // the "Installer details" section
+		void DrawGameDetails();         //   its editable part: Assets/Config/GameInfo.json
+
+		// Assets/Config/GameInfo.json: the game's name, version, publisher, install folder, AppId.
+		std::filesystem::path GameDetailsFile() const;
+		void LoadGameDetails();         // file -> m_savedDetails and the edit boxes
+		bool SaveGameDetails();         // edit boxes -> file; false (and m_detailsError) on failure
+		GameDetails EditedDetails() const;   // what the edit boxes say now
+		bool DetailsChanged() const { return m_detailsLoaded && EditedDetails() != m_savedDetails; }
+
 		void DrawStatus();
 		void DrawOutput();
 		void ReportFinish();   // one Console line when a job ends
@@ -51,7 +64,15 @@ namespace Crucible {
 		bool        m_defaultsLoaded = false;
 		PackageJob::Stage m_lastStage = PackageJob::Stage::Idle;
 
+		// The game's details as typed (the Version box at the top edits m_version too).
+		char        m_name[65] = "";
 		char        m_version[33] = "";
+		char        m_publisher[129] = "";
+		char        m_installFolder[65] = "";
+		GameDetails m_savedDetails;            // as in GameInfo.json (appId is only shown, never edited)
+		bool        m_detailsLoaded = false;
+		std::string m_detailsError;            // why GameInfo.json could not be read or written
+
 		char        m_outputDir[512] = "";
 		bool        m_makeZip = true;
 		bool        m_makeInstaller = true;

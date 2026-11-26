@@ -6,9 +6,9 @@
 *
 * @brief		The game's name and version, as C++ constants.
 *
-* CMake writes this file into Build/Generated from CRUCIBLE_GAME_NAME and CRUCIBLE_GAME_VERSION
-* in the top-level CMakeLists.txt. To rename the game or change its version, change them there
-* and re-run run.bat: the .exe, the zip, the installer and every use of these constants follow.
+* CMake writes this file into Build/Generated from Assets/Config/GameInfo.json (read by the
+* top-level CMakeLists.txt). To rename the game or change its version, edit them in the Editor
+* (File > Package Game > Installer details): the next build picks them up everywhere.
 *
 * All Content copyrighted 2026 DigiPen Institute of Technology Singapore.
 * All Rights Reserved
@@ -26,9 +26,14 @@ namespace Crucible::GameInfo {
 	inline constexpr unsigned    VersionMinor = @CRUCIBLE_GAME_VERSION_MINOR@;
 	inline constexpr unsigned    VersionPatch = @CRUCIBLE_GAME_VERSION_PATCH@;
 
-	// The installer's AppId (CRUCIBLE_GAME_APP_ID), without braces: how Windows tells that a new
-	// version is the same game. Never changes. Shown in the Editor; the installer gets it from
-	// the generated Tools/Package/Installer/GameInfo.iss.
+	// Who the installer and Windows' app list say made it, and the folder under Program Files
+	// the installer puts it in (may be empty).
+	inline constexpr const char* Publisher     = "@CRUCIBLE_GAME_PUBLISHER@";
+	inline constexpr const char* InstallFolder = "@CRUCIBLE_GAME_INSTALL_FOLDER@";
+
+	// The installer's AppId, without braces: how Windows tells that a new version is the same
+	// game. Never changes. The installer gets it from the generated
+	// Tools/Package/Installer/GameInfo.iss.
 	inline constexpr const char* AppId = "@CRUCIBLE_GAME_APP_ID@";
 
 }
