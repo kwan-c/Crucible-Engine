@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.12
+* \version       1.14
 * \brief
 *                The ECS system that runs the network session once per
 *                frame, first in PreUpdate, and makes the World follow it:
@@ -119,6 +119,8 @@
 *                Play found its scene objects still marked as networked)
 *    -v1.12      client query bodies on proxies and scene objects, removed with the session
 *                (Networking C# Phase 8)
+*    -v1.13      attachments: AttachOrWait, RetryAttachments, m_waitingAttachments
+*    -v1.14      ownership transfer: ApplyOwnerRequests, ApplyOwnerChange, SetOwner
 *
 **************************************************************************/
 #pragma once
@@ -194,6 +196,12 @@ namespace Crucible
 		void Leave(CloseReason reason, const std::string& why);
 		void ApplySnapshot(World& world, ByteReader& reader);
 
+		// Ownership
+		void ApplyOwnerRequests(World& world);                 // host: gameplay's requests, and a departed client's objects
+		bool ApplyOwnerChange(World& world, ByteReader& reader);   // client: an OwnerChange
+		bool SetOwner(World& world, Entity entity, Net::PeerId owner);   // both: identity, owner-only components, the event
+		std::vector<OwnerChangeRequest> m_ownerRequests;   // host: reused every frame
+
 		// Scene objects (both roles)
 		void StartSceneObjects(World& world);
 		void ForgetPersistentIdentities(World& world);
@@ -221,6 +229,11 @@ namespace Crucible
 		bool                      m_sceneStarted = false;
 		std::unordered_map<std::uint64_t, LocalSceneObject> m_localSceneObjects;   // client: scene id -> own entity
 		std::vector<Entity>       m_resolved;        // client: its records' entities (null: despawned since)
+		std::vector<Entity>       m_waitingAttachments;   // client: attached objects whose parent or mount is not here yet
+
+		// Client: after a record of an object that replicates Attachment.
+		void AttachOrWait(World& world, Entity root);
+		void RetryAttachments(World& world);
 
 		// The scene's own entities this session made network objects (both roles), with what the
 		// client switched off on them: given back as plain scene entities when the session ends.

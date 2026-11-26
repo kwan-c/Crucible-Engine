@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.4
+* \version       1.9
 * \brief
 *                NetPrefabTable (see the header).
 *
@@ -16,6 +16,14 @@
 *    -v1.3       a serializer whose component is added at runtime needs none in the file
 *    -v1.4       a Collider or CharacterController may be server-only AND enabledReplicated:
 *                a client's query body follows its on/off (Networking C# Phase 8)
+*    -v1.5       protocol 9: up to 16 replicated entries (EnabledMask stays at 8) and
+*                kMaxRecordBytes (1024) for the whole record
+*    -v1.6       synced children: Register checks the list and the Children/...
+*                serializers; Validate resolves each path in the prefab; HashInto covers them
+*    -v1.7       Renderers: a synced child beyond the first 7 with a MeshRenderer is refused
+*    -v1.8       the record-size check uses each serializer's worst case for this object (WorstCaseBytes)
+*    -v1.9       childEnabledReplicated: Register's rules, Validate (on a synced child,
+*                switchable), HashInto
 *
 **************************************************************************/
 #include "Network/NetPrefabTable.h"
@@ -29,6 +37,7 @@
 #include "ECS/Components/Components.h"   // Collider, CharacterController
 #include "Json/JsonWrapper.h"
 #include "Network/CanonicalHash.h"
+#include "Network/NetSyncedChildren.h"
 #include "Network/Protocol.h"
 #include "Resources/ResourceManager.h"
 #include "Scene/Prefab.h"
@@ -37,7 +46,7 @@ namespace Crucible
 {
 	namespace
 	{
-		constexpr std::size_t kMaxListEntries = 8;   // records and EnabledMask carry one bit per entry in a u8
+		constexpr std::size_t kMaxEnabledEntries = 8;   // EnabledMask carries one bit per entry in a u8
 
 		template <typename T>
 		bool HasDuplicates(const std::vector<T>& list)
@@ -85,9 +94,9 @@ namespace Crucible
 			return false;
 		}
 
-		if (desc.replicated.size() > kMaxListEntries || desc.enabledReplicated.size() > kMaxListEntries)
+		if (desc.replicated.size() > kMaxRecordEntries || desc.enabledReplicated.size() > kMaxEnabledEntries)
 		{
-			error = std::format("{}: at most {} replicated and {} enabledReplicated entries", where, kMaxListEntries, kMaxListEntries);
+			error = std::format("{}: at most {} replicated and {} enabledReplicated entries", where, kMaxRecordEntries, kMaxEnabledEntries);
 			return false;
 		}
 		if (Contains(desc.replicated, NetComponentId::None)) { error = where + ": 'None' in its replicated list"; return false; }
@@ -124,6 +133,50 @@ namespace Crucible
 		if (Contains(desc.replicated, NetComponentId::EnabledMask) != !desc.enabledReplicated.empty())
 		{
 			error = where + ": EnabledMask must be replicated exactly when enabledReplicated lists components";
+			return false;
+		}
+		// Synced children: a well-formed list, and the child serializers need
+		// one; only one of the two (they fill the same component).
+		if (std::string listError; !CheckSyncedChildList(desc.syncedChildren, listError)) { error = where + ": " + listError; return false; }
+		// On/off on the synced children: at most 8, with Children/OnOff and at least one synced
+		// child; never owner-only; host-only only for the physics a client has query bodies for.
+		if (desc.childEnabledReplicated.size() > kMaxEnabledEntries)
+		{
+			error = std::format("{}: at most {} childEnabledReplicated entries", where, kMaxEnabledEntries);
+			return false;
+		}
+		if (std::ranges::any_of(desc.childEnabledReplicated, invalid) || HasDuplicates(desc.childEnabledReplicated))
+		{
+			error = where + ": childEnabledReplicated has an invalid or repeated component id";
+			return false;
+		}
+		if (Contains(desc.replicated, NetComponentId::ChildOnOff) != !desc.childEnabledReplicated.empty())
+		{
+			error = where + ": Children/OnOff must be replicated exactly when components are synced on/off on the synced children";
+			return false;
+		}
+		if (!desc.childEnabledReplicated.empty() && desc.syncedChildren.empty())
+		{
+			error = where + ": on/off is synced on the synced children, but the Synced children list is empty";
+			return false;
+		}
+		const bool childServerOnlyClash = std::ranges::any_of(desc.childEnabledReplicated, [&](ComponentId id) {
+			return !queryBodySource(id) && std::ranges::find(desc.serverOnly, id) != desc.serverOnly.end();
+		});
+		if (childServerOnlyClash || Overlap(desc.childEnabledReplicated, desc.ownerLocalOnly))
+		{
+			error = where + ": a component synced on/off on the synced children is also server-only or owner-local"
+				" (only a Collider or CharacterController may be both server-only and synced)";
+			return false;
+		}
+
+		const bool rotations = Contains(desc.replicated, NetComponentId::ChildRotations);
+		const bool transforms = Contains(desc.replicated, NetComponentId::ChildTransforms);
+		if (rotations && transforms) { error = where + ": replicate Children/Rotation or Children/Full, not both"; return false; }
+		if ((rotations || transforms) && desc.syncedChildren.empty())
+		{
+			error = where + std::format(": '{}' needs at least one synced child (the object's Synced children list is empty)",
+				rotations ? "Children/Rotation" : "Children/Full");
 			return false;
 		}
 
@@ -180,7 +233,7 @@ namespace Crucible
 			const auto onRoot = [&](ComponentId c) { return components.IsRegistered(c) && prefab->Document().Has(rootComponents + "/" + std::string(components.Get(c).name)); };
 
 			// The whole replicated list is one record (a spawn carries every entry; a snapshot a
-			// subset): its state must fit the record's one-byte length. `total` never exceeds
+			// subset): its state must fit one record (kMaxRecordBytes). `total` never exceeds
 			// kMaxRecordBytes, so `limit - total` cannot wrap and the check cannot overflow.
 			std::size_t total = 0;
 			for (const NetComponentId netId : desc.replicated)
@@ -201,23 +254,72 @@ namespace Crucible
 						return false;
 					}
 				}
-				if (serializer->maxBytes > kMaxRecordBytes - total)
+				const std::size_t worst = WorstCaseBytes(*serializer, desc);   // this object's own worst case
+				if (worst > kMaxRecordBytes - total)
 				{
-					// The full figure for the message: at most 8 x 255 bytes, so no overflow.
+					// The full figure for the message: at most 16 x 1024 bytes, so no overflow.
 					std::size_t needed = 0;
 					std::string parts;
 					for (const NetComponentId listed : desc.replicated)
 					{
 						const ReplicatedComponent* s = serializers.Find(listed);
 						if (s == nullptr) continue;
-						needed += s->maxBytes;
-						parts += std::format("{}{} {}", parts.empty() ? "" : " + ", s->name, s->maxBytes);
+						needed += WorstCaseBytes(*s, desc);
+						parts += std::format("{}{} {}", parts.empty() ? "" : " + ", s->name, WorstCaseBytes(*s, desc));
 					}
 					error = std::format("{}: its replicated state can need {} bytes ({}), but one spawn record holds at most {}",
 						where, needed, parts, kMaxRecordBytes);
 					return false;
 				}
-				total += serializer->maxBytes;
+				total += worst;
+			}
+
+			// Every synced child must be exactly one entry of the prefab: a missing or ambiguous path
+			// would synchronize nothing (or, guessed, the wrong entity).
+			for (const std::string& path : desc.syncedChildren)
+			{
+				std::size_t childEntry = 0;
+				const ChildPathResult found = ResolveChildPath(*prefab, root, path, childEntry);
+				if (found == ChildPathResult::Missing) { error = std::format("{}: synced child '{}' is not in the prefab", where, path); return false; }
+				if (found == ChildPathResult::Ambiguous)
+				{
+					error = std::format("{}: synced child '{}' names more than one entity (give them different names)", where, path);
+					return false;
+				}
+			}
+
+			// On/off on the synced children: each listed component must be on at least one of
+			// them, and switchable.
+			for (const ComponentId c : desc.childEnabledReplicated)
+			{
+				if (!components.IsRegistered(c)) { error = std::format("{}: childEnabledReplicated names component id {}, which is not registered", where, c); return false; }
+				const std::string name(components.Get(c).name);
+				if (!components.Get(c).toggleable) { error = std::format("{}: '{}' (synced on/off on the synced children) cannot be switched off", where, name); return false; }
+				bool onAChild = false;
+				for (const std::string& path : desc.syncedChildren)
+				{
+					std::size_t childEntry = 0;
+					if (ResolveChildPath(*prefab, root, path, childEntry) == ChildPathResult::Found && prefab->Document().Has(prefab->ComponentsPath(childEntry) + "/" + name))
+						onAChild = true;
+				}
+				if (!onAChild) { error = std::format("{}: '{}' is synced on/off on the synced children, but none of them has one", where, name); return false; }
+			}
+
+			// Renderers covers the root and the first 7 synced children: a renderer further down the
+			// list would silently not be synchronized, so it is refused instead.
+			if (Contains(desc.replicated, NetComponentId::Renderers))
+			{
+				for (std::size_t i = NetRenderers::kSlots - 1; i < desc.syncedChildren.size(); ++i)
+				{
+					std::size_t childEntry = 0;
+					if (ResolveChildPath(*prefab, root, desc.syncedChildren[i], childEntry) == ChildPathResult::Found
+						&& prefab->Document().Has(prefab->ComponentsPath(childEntry) + "/MeshRenderer"))
+					{
+						error = std::format("{}: synced child '{}' has a MeshRenderer, but Renderers covers only the first {} synced children "
+							"(move it up the list)", where, desc.syncedChildren[i], NetRenderers::kSlots - 1);
+						return false;
+					}
+				}
 			}
 
 			struct List { const std::vector<ComponentId>* ids; const char* name; bool rootOnly; };
@@ -310,6 +412,9 @@ namespace Crucible
 			names(entry.desc.serverOnly, true);          // sets: order does not matter
 			names(entry.desc.ownerLocalOnly, true);
 			names(entry.desc.enabledReplicated, false);  // bit i = entry i: order matters
+			hash.U32(static_cast<std::uint32_t>(entry.desc.syncedChildren.size()));   // slot i = entry i: order matters
+			for (const std::string& path : entry.desc.syncedChildren) hash.Str(path);
+			names(entry.desc.childEnabledReplicated, false);   // bit j = entry j: order matters
 		}
 	}
 }

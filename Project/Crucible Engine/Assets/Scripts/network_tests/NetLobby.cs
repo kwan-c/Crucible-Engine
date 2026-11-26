@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          20 November 2026
-* \version       2.2
+* \version       2.3
 * \brief         Networking sample: a multiplayer lobby with a session
 *                browser. Create a lobby (you host) or pick one from the
 *                list of sessions on your network (you join); get ready;
@@ -57,6 +57,7 @@
 *                accessible and offers Search LAN (Network.UseLanDiscovery)
 *    -v2.2       the default name is the Network panel's ("Player"), no longer
 *                the Windows user name
+*    -v2.3       the network scenes moved to Scenes/network_tests (arenaScene's default)
 **************************************************************************/
 using System;
 
@@ -69,7 +70,7 @@ namespace Crucible.@Scripts
         private const int Rows = 6;
 
         /// <summary>The scene the host starts (a path inside Assets).</summary>
-        public string arenaScene = "Scenes/network_gamplay.scene";
+        public string arenaScene = "Scenes/network_tests/network_gamplay.scene";
         /// <summary>This player's name; empty = the Network panel's ("Player" unless changed there).</summary>
         public string playerName = "";
         /// <summary>Port to host on; 0 = this instance's setting (Network panel, EngineConfig.json).</summary>

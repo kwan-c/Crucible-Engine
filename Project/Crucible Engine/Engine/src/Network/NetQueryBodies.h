@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          25 November 2026
-* \version       1.1
+* \version       1.3
 * \brief
 *                Client physics queries (Networking C# Phase 8): query
 *                bodies, the shapes a client's raycasts and overlaps hit on
@@ -28,7 +28,11 @@
 *                                      shape, size, centre, layer, trigger. A
 *                                      Collider on an entity with a
 *                                      CharacterController is ignored, as the
-*                                      host's physics ignores it
+*                                      host's physics ignores it. A HeightField
+*                                      Collider (a Terrain's ground) gets none:
+*                                      its shape is the Terrain on its own
+*                                      entity, and every machine builds the
+*                                      same ground from the scene seed
 *                  RigidBody           kinematic, no gravity: the physics
 *                                      system moves it with its parent and
 *                                      never simulates it
@@ -54,6 +58,8 @@
 *    -v1.0       Networking C# Phase 8; FindClientQueryBody: the body whose on/off follows a
 *                synced server-only Collider or CharacterController (EnabledMask)
 *    -v1.1       CharacterController first (a Collider beside it is ignored) and unscaled
+*    -v1.2       no query body for a HeightField Collider
+*    -v1.3       RefreshClientQueryBodies: a character's body follows its replicated size and its scale
 *
 **************************************************************************/
 #pragma once
@@ -86,4 +92,11 @@ namespace Crucible
 	/// The query body under `source` (the entity whose Collider or CharacterController it
 	/// copies), or kNullEntity: none there (the host, or this client's own player).
 	ENGINE_API Entity FindClientQueryBody(const World& world, Entity source);
+
+	/// Client: brings every query body in `root`'s subtree up to date with what it copies - a
+	/// CharacterController's height, radius and centre (CharacterController/Size), and the
+	/// 1 / world scale a character's capsule needs (a replicated scale, or a new parent). A
+	/// Collider's copy is left as it is (Collider values are not replicated). Writes only what
+	/// differs, so an unchanged body is not rebuilt by physics. Returns how many bodies changed.
+	ENGINE_API std::size_t RefreshClientQueryBodies(World& world, Entity root);
 }

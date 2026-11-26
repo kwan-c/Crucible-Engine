@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.3
+* \version       1.6
 * \brief
 *                NetPrefabTable: which prefabs can be spawned over the
 *                network, under which explicit NetPrefabId, and what of each
@@ -28,7 +28,8 @@
 *                                  and can be switched off (enabledReplicated
 *                                  still requires the root), and the replicated
 *                                  serializers' maxBytes together fit one
-*                                  spawn record (kMaxRecordBytes). A session
+*                                  spawn record (kMaxRecordBytes, 1024 since
+*                                  protocol 9; at most 16 entries). A session
 *                                  refuses to start while this fails.
 *                HashInto feeds the canonical content hash: every
 *                prefab in id order with its asset identity and lists, by
@@ -46,6 +47,10 @@
 *                discovered network prefabs (Networking Phase 14.2)
 *    -v1.3       a Collider or CharacterController may be both serverOnly and
 *                enabledReplicated (Networking C# Phase 8: query bodies)
+*    -v1.4       protocol 9: up to 16 replicated entries, records up to kMaxRecordBytes (1024)
+*    -v1.5       NetPrefabDesc::syncedChildren: checked by Register (well-formed, at most 16, none twice,
+*                used by a serializer) and Validate (each resolves to one entry of the prefab); hashed
+*    -v1.6       NetPrefabDesc::childEnabledReplicated: checked, validated, hashed
 *
 **************************************************************************/
 #pragma once
@@ -86,6 +91,10 @@ namespace Crucible
 		std::vector<ComponentId>    serverOnly;          // switched off on client proxies (physics, AI)
 		std::vector<ComponentId>    ownerLocalOnly;      // switched off unless owned by this machine (camera)
 		std::vector<ComponentId>    enabledReplicated;   // whose on/off state EnabledMask carries, bit i = entry i
+		std::vector<std::string>    syncedChildren;      // child name paths below the root, slot i = entry i
+		                                                 // (Children/..., Renderers and Children/OnOff use them)
+		std::vector<ComponentId>    childEnabledReplicated;   // on/off synced on the synced children, bit j =
+		                                                 // entry j (Children/OnOff, at most 8)
 
 		// Snapshot scheduling (host only: never on the wire, not in the content hash, so builds
 		// that differ only here still play together). See NetReplicationSendSystem.h.

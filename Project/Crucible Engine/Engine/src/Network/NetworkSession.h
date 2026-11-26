@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.18
+* \version       1.20
 * \brief
 *                One multiplayer session: hosting or joining, who is
 *                connected, the join handshake, refusals, receive limits
@@ -215,6 +215,10 @@
 *                LobbyListingProblem (why a hosted lobby is not listed); Auto browses the server
 *                only until UseLanDiscovery (no automatic LAN fallback), LobbyServerFailedAttempts;
 *                only an open lobby is registered with the server (SetLobby false unregisters it)
+*    -v1.19      the scene seed (protocol 9): SceneSeed, HasSceneSeed, SetSceneSeedFromHost and
+*                RequestSceneChange(asset, seed)
+*    -v1.20      ownership transfer: RequestOwnerChange, TakeOwnerRequests,
+*                NoteOwnerChanged, TakeOwnerChanges
 *
 **************************************************************************/
 #pragma once
@@ -336,6 +340,14 @@ namespace Crucible
 		bool       hasYaw = false;         // a command arrived, so yawDegrees is the client's
 		bool       jump = false;           // once per jump the client pressed
 		bool       timedOut = false;       // no command for kInputTimeoutTicks: neutral
+	};
+
+	/// An ownership change: requested by gameplay on the host, then applied
+	/// by NetReceiveSystem and sent by the send system.
+	struct OwnerChangeRequest
+	{
+		Net::NetworkId id = Net::kInvalidNetworkId;
+		Net::PeerId    owner = Net::kServerPeer;
 	};
 
 	/// Host: a gameplay event waiting for the send system (NetworkSession::SendGameplayEvent).
@@ -743,6 +755,31 @@ namespace Crucible
 		/// The send system: this frame's events for clients (moved into `out`, in send order).
 		void TakeGameplayEvents(std::vector<QueuedGameplayEvent>& out);
 
+		// ---- ownership ----------------------------------------------------
+		//
+		// The host gives a network object to a player: RequestOwnerChange queues it, NetReceiveSystem
+		// applies it next frame (NetworkIdentity::owner, owner-only components switched) and calls
+		// NoteOwnerChanged, which posts OwnershipChanged and queues the OwnerChange the send system
+		// sends every client in the game. A client applies the message the same way and posts the
+		// same event. A joining client's world already carries the new owner. A player (the
+		// spawnPerPlayer prefab) never changes owner; when a client leaves, NetReceiveSystem gives
+		// its other objects back to the host.
+
+		/// Host, Running: give network object `id` to `owner` (0 = the host, or a client in the
+		/// session) at the next frame. False (logged) otherwise. A second request for the same
+		/// object in one frame wins.
+		bool RequestOwnerChange(Net::NetworkId id, Net::PeerId owner);
+
+		/// NetReceiveSystem (host): the requests since last frame.
+		void TakeOwnerRequests(std::vector<OwnerChangeRequest>& out);
+
+		/// NetReceiveSystem: a change was applied to the World. Posts OwnershipChanged; on the host
+		/// also queues the OwnerChange for the clients.
+		void NoteOwnerChanged(Net::NetworkId id, Net::PeerId previous, Net::PeerId owner);
+
+		/// The send system: this frame's applied changes, in order.
+		void TakeOwnerChanges(std::vector<OwnerChangeRequest>& out);
+
 		/// Client, NetReceiveSystem: a GameplayEvent arrived and was validated; posts it.
 		void DeliverGameplayEvent(std::uint16_t kind, std::span<const std::byte> payload,
 			Net::NetworkId about = Net::kInvalidNetworkId);
@@ -781,7 +818,26 @@ namespace Crucible
 
 		/// Host: load the scene with this asset GUID for the whole session, at the next frame's
 		/// safe point. False (logged) unless a running host; a second request in one frame wins.
+		/// The new scene gets a random seed (SceneSeed).
 		bool RequestSceneChange(std::uint64_t sceneAsset);
+
+		/// The same, with the new scene's seed chosen by the caller (any value, 0 included).
+		bool RequestSceneChange(std::uint64_t sceneAsset, std::uint32_t seed);
+
+		// ---- the scene seed (protocol 9) --------------------------------------------------------
+		//
+		// One number per scene of the session, the same on every machine, for procedural content
+		// (a generated level). The host picks it when the session starts (at random) and for every
+		// scene change (at random, or the caller's). A client receives it in SceneChange - so it is
+		// known before the new scene's scripts start - and again in WorldBegin (a client that
+		// joined into a running scene learns it there). Unknown (HasSceneSeed false) while offline
+		// and on a client before its first SceneChange or WorldBegin.
+
+		std::uint32_t SceneSeed() const noexcept    { return m_sceneSeed; }
+		bool          HasSceneSeed() const noexcept { return m_sceneSeedKnown && IsActive(); }
+
+		/// Client, NetReceiveSystem: the seed a SceneChange or WorldBegin carried.
+		void SetSceneSeedFromHost(std::uint32_t seed) noexcept { m_sceneSeed = seed; m_sceneSeedKnown = true; }
 
 		/// Core, at the safe point: the requested scene, once. False if none.
 		bool TakeSceneChangeRequest(std::uint64_t& sceneAsset) noexcept;
@@ -891,6 +947,7 @@ namespace Crucible
 		void HandleCommand(PeerState& peer, ByteReader& reader);
 		void HandleSceneLoaded(PeerState& peer, ByteReader& reader);
 		void ResetSceneChange() noexcept;
+		static std::uint32_t NewSceneSeed();   // random (std::random_device)
 		void RefreshRoster();     // host: Roster() from the slots; marks it for BroadcastRoster
 		void BroadcastRoster();   // host: the whole roster to every joined client
 		void CollectFrameMessages();
@@ -979,6 +1036,10 @@ namespace Crucible
 		std::uint32_t                  m_sceneEpoch = 0;          // scenes loaded since Start
 		std::uint32_t                  m_transition = 0;          // host: the latest change's number; client: the one being loaded
 		std::uint64_t                  m_requestedScene = 0;      // host: RequestSceneChange, for the next safe point
+		std::uint32_t                  m_requestedSeed = 0;       // host: the seed asked for with it ...
+		bool                           m_requestedSeedSet = false;   // ... if one was
+		std::uint32_t                  m_sceneSeed = 0;           // the current scene's seed (protocol 9)
+		bool                           m_sceneSeedKnown = false;  // host: from the start; client: once received
 		bool                           m_sceneChangeExpected = false;   // the next scene change is the session's own
 		bool                           m_sceneLoadIssued = false;       // a load for it was requested and not seen yet
 		bool                           m_waitingForPeers = false;       // host: AllPeersReady not posted yet
@@ -1013,6 +1074,8 @@ namespace Crucible
 
 		// Gameplay events (host): this frame's, for the send system
 		std::vector<QueuedGameplayEvent> m_gameplayEvents;
+		std::vector<OwnerChangeRequest>  m_ownerRequests;   // host: asked for, applied next frame
+		std::vector<OwnerChangeRequest>  m_ownerChanges;    // host: applied, for the send system
 
 		// Scene objects (Phase 14.5)
 		std::unordered_map<Net::NetworkId, std::uint64_t> m_sceneObjects;   // host: NetworkId -> scene id, while mapped

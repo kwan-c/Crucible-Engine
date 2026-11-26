@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.6
+* \version       1.7
 * \brief
 *                The wire protocol between the host and its clients:
 *                message types, their fields, and an Encode/Decode pair
@@ -45,18 +45,21 @@
 *                                 u8 nameLength (<= 32), name bytes
 *                  JoinAccepted   u32 lifecycleSeq (= 1), u8 yourPeerId,
 *                                 u32 serverTick, u16 tickRate
-*                  WorldBegin     u32 lifecycleSeq, u64 sceneAsset, u64 sceneHash
+*                  WorldBegin     u32 lifecycleSeq, u64 sceneAsset, u64 sceneHash,
+*                                 u32 sceneSeed
 *                  WorldEnd       u32 lifecycleSeq
 *                  ClientReady    u32 worldEndSeq
 *                  SpawnBatch     u32 lifecycleSeq, u32 serverTick, u16 count,
 *                                 count x { varint id, u16 prefab, u8 owner,
-*                                           u8 mask, u8 length, state }
+*                                           varint mask, varint length, state }
 *                  DespawnBatch   u32 lifecycleSeq, u16 count, count x varint id
 *                  SceneObjectBatch u32 lifecycleSeq, u32 serverTick, u16 count,
 *                                 count x { varint id, u64 sceneId, u16 profile,
-*                                           u8 owner, u8 mask, u8 length, state }
+*                                           u8 owner, varint mask, varint length,
+*                                           state }
 *                  Snapshot       u16 sequence, u32 serverTick, u16 count,
-*                                 count x { varint id, u8 mask, u8 length, body }
+*                                 count x { varint id, varint mask,
+*                                           varint length, body }
 *                  Input          u8 count (0..3), count x { u32 sequence,
 *                                 u32 clientTick, i8 moveX, i8 moveZ, u16 yaw,
 *                                 u8 buttons }, u16 ackedSnapshot, u32 ackBits,
@@ -73,8 +76,10 @@
 *                                 varint target (a NetworkId, 0 = none),
 *                                 payload = the rest (<= kMaxCommandPayload)
 *                  SceneChange    u32 lifecycleSeq, u32 transition (non-zero),
-*                                 u64 sceneAsset (non-zero)
+*                                 u64 sceneAsset (non-zero), u32 sceneSeed
 *                  SceneLoaded    u32 transition (non-zero)
+*                  OwnerChange    u32 lifecycleSeq, varint id (non-zero),
+*                                 u8 owner (0 = host, 1..kMaxClients)
 *
 *                Lifecycle sequence: every reliable lane-0 message the
 *                host sends a client (JoinAccepted, WorldBegin, SpawnBatch,
@@ -105,6 +110,22 @@
 *                host never trusts a command: it knows the sender from the
 *                connection, and gameplay decides whether to obey.
 *
+*                Records (protocol 9): a record's mask (which entries of
+*                the object's replicated list follow, bit i = entry i, at
+*                most kMaxRecordEntries) and its length (at most
+*                kMaxRecordBytes) are varints: one byte each for the usual
+*                small record, as in protocol 8. A mask above 16 bits or a
+*                length above the limit is malformed before anything is
+*                read past it.
+*
+*                The scene seed (protocol 9): one 32-bit number the host
+*                picks for every scene of the session - at random, or the
+*                one its script asked for - so procedural content (a
+*                generated level) comes out the same on every machine.
+*                SceneChange carries it before the client loads the scene;
+*                WorldBegin carries it again for a client that joins into
+*                a scene already running.
+*
 *                Scene objects (protocol 4, Networking Phase 14): entities
 *                of the loaded scene that both machines already have. The
 *                world stream binds them instead of spawning them: a
@@ -129,6 +150,10 @@
 *                Command (Networking C# Phase 5A)
 *    -v1.5       protocol version 7: UnreliableEvent (Networking C# Phase 5B)
 *    -v1.6       protocol version 8: SceneChange and SceneLoaded (Networking C# Phase 9)
+*    -v1.7       protocol version 9: varint record masks and lengths (records up to
+*                kMaxRecordBytes, up to 16 entries); the scene seed in WorldBegin and
+*                SceneChange; OwnerChange (still protocol 9:
+*                no build with protocol 9 was released before it)
 *
 **************************************************************************/
 #pragma once
@@ -146,11 +171,12 @@
 
 namespace Crucible
 {
-	// Bump on ANY change to the bytes of any message. (8 = SceneChange and SceneLoaded; 7 =
+	// Bump on ANY change to the bytes of any message. (9 = varint record mask and length, the
+	// scene seed; 8 = SceneChange and SceneLoaded; 7 =
 	// UnreliableEvent, and the NetVariables serializer; 6 = GameplayEvent's target; 5 = PeerRoster
 	// and Command; 4 = scene objects and the scene identity in WorldBegin; 3 = lifecycle
 	// sequence; versions 1 and 2 were earlier development versions.)
-	inline constexpr std::uint32_t kProtocolVersion = 8;
+	inline constexpr std::uint32_t kProtocolVersion = 9;
 
 	inline constexpr std::size_t   kMaxSnapshotBytes      = 1100;        // one MTU-sized unreliable message
 	inline constexpr std::size_t   kMaxReliableBytes      = 16 * 1024;   // spawn / despawn / event messages
@@ -158,10 +184,19 @@ namespace Crucible
 	inline constexpr std::size_t   kMaxCommandPayload     = 1024;        // a client's request: small on purpose
 	inline constexpr std::size_t   kMaxUnreliableEventPayload = kMaxSnapshotBytes - 8;   // one packet: after u8 type, u16 kind, varint target (<= 5)
 	inline constexpr std::uint16_t kMaxEntitiesPerMessage = 512;
-	inline constexpr std::size_t   kMaxRecordBytes        = 255;         // a record's length is one byte
+	inline constexpr std::size_t   kMaxRecordBytes        = 1024;        // one object's record (a varint length)
+	inline constexpr std::size_t   kMaxRecordEntries      = 16;          // entries in one record (bits of its mask)
 	inline constexpr std::size_t   kMaxPlayerNameBytes    = 32;
 	inline constexpr std::size_t   kMaxInputCommands      = 3;           // each command is sent 3 times
 	inline constexpr std::uint32_t kFirstLifecycleSeq     = 1;           // JoinAccepted's; 0 = none
+
+	/// Which entries of an object's replicated list a record carries: bit i = entry i.
+	using RecordMask = std::uint16_t;
+	static_assert(sizeof(RecordMask) * 8 >= kMaxRecordEntries, "a record mask needs one bit per entry");
+
+	// The biggest record must fit one snapshot on its own: type, sequence, tick, count, then its
+	// id (varint, 5), mask (varint of 16 bits, 3) and length (varint, 2).
+	static_assert(1 + 2 + 4 + 2 + 5 + 3 + 2 + kMaxRecordBytes <= kMaxSnapshotBytes, "a record must fit one snapshot");
 
 	enum class MessageType : std::uint8_t
 	{
@@ -181,6 +216,7 @@ namespace Crucible
 		UnreliableEvent = 14, // H->C unreliable, lane 1: a gameplay event that may be lost (protocol 7)
 		SceneChange   = 15,   // H->C reliable, lane 0, lifecycle: load this scene (protocol 8)
 		SceneLoaded   = 16,   // C->H reliable, lane 0: that scene is loaded (protocol 8)
+		OwnerChange   = 17,   // H->C reliable, lane 0, lifecycle: a network object has a new owner (protocol 9)
 		Count                 // not a message; append new types above it, never renumber
 	};
 
@@ -241,12 +277,14 @@ namespace Crucible
 	};
 
 	/// Opens the world stream. sceneAsset and sceneHash name the host's loaded scene and its
-	/// networked content (0, 0: no saved scene, so no scene objects).
+	/// networked content (0, 0: no saved scene, so no scene objects). sceneSeed is the scene's
+	/// seed (protocol 9): any value, 0 included.
 	struct WorldBegin
 	{
 		std::uint32_t lifecycleSeq = 0;
 		std::uint64_t sceneAsset = 0;
 		std::uint64_t sceneHash = 0;
+		std::uint32_t sceneSeed = 0;
 	};
 	struct WorldEnd    { std::uint32_t lifecycleSeq = 0; };
 	struct ClientReady { std::uint32_t worldEndSeq = 0; };   // must equal the WorldEnd's lifecycleSeq
@@ -258,8 +296,18 @@ namespace Crucible
 		std::uint32_t lifecycleSeq = 0;
 		std::uint32_t transition = 0;   // non-zero; one per scene change in a session
 		std::uint64_t sceneAsset = 0;   // non-zero
+		std::uint32_t sceneSeed = 0;    // the new scene's seed (protocol 9): any value
 	};
 	struct SceneLoaded { std::uint32_t transition = 0; };   // must equal the SceneChange's
+
+	/// The host gave network object `id` to another player. In the lifecycle
+	/// stream, after the spawns and despawns of its frame; a joining client's world already has it.
+	struct OwnerChange
+	{
+		std::uint32_t  lifecycleSeq = 0;
+		Net::NetworkId id = Net::kInvalidNetworkId;   // non-zero
+		Net::PeerId    owner = Net::kServerPeer;      // 0 = the host, 1..kMaxClients = a client
+	};
 
 	// ---- the roster (host to client, reliable) ---------------------------------------------
 
@@ -336,7 +384,7 @@ namespace Crucible
 		Net::NetworkId             id = Net::kInvalidNetworkId;
 		Net::NetPrefabId           prefab = Net::kInvalidNetPrefab;
 		Net::PeerId                owner = Net::kServerPeer;
-		std::uint8_t               mask = 0;   // which of the prefab's replicated components follow
+		RecordMask                 mask = 0;   // which of the prefab's replicated components follow
 		std::span<const std::byte> state;      // at most kMaxRecordBytes
 	};
 
@@ -355,7 +403,7 @@ namespace Crucible
 		std::uint64_t              sceneId = 0;   // persistent scene GUID of the entity (Scene::IdOf), non-zero
 		Net::NetPrefabId           profile = Net::kInvalidNetPrefab;   // the replication profile it uses
 		Net::PeerId                owner = Net::kServerPeer;
-		std::uint8_t               mask = 0;
+		RecordMask                 mask = 0;
 		std::span<const std::byte> state;     // at most kMaxRecordBytes
 	};
 
@@ -409,7 +457,7 @@ namespace Crucible
 	struct RecordView
 	{
 		Net::NetworkId             id = Net::kInvalidNetworkId;
-		std::uint8_t               mask = 0;
+		RecordMask                 mask = 0;
 		std::span<const std::byte> body;   // at most kMaxRecordBytes
 	};
 
@@ -474,4 +522,7 @@ namespace Crucible
 
 	ENGINE_API bool Encode(ByteWriter& w, const SceneLoaded& m) noexcept;
 	ENGINE_API bool Decode(ByteReader& r, SceneLoaded& m) noexcept;
+
+	ENGINE_API bool Encode(ByteWriter& w, const OwnerChange& m) noexcept;
+	ENGINE_API bool Decode(ByteReader& r, OwnerChange& m) noexcept;
 }

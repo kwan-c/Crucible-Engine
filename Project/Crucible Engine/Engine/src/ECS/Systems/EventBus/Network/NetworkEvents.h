@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          26 September 2026
-* \version       1.7
+* \version       1.8
 * \brief
 *                Session-level events on the network bus
 *                (Core::Events().network): a session started or ended, a
@@ -35,6 +35,7 @@
 *                too (from the host's roster); CommandReceived
 *    -v1.6       GameplayEventReceived::target
 *    -v1.7       SceneChangeStarted, AllPeersReady (Networking C# Phase 9)
+*    -v1.8       OwnershipChanged
 *
 **************************************************************************/
 #pragma once
@@ -142,6 +143,16 @@ namespace Crucible::NetworkEvents
 	struct AllPeersReady
 	{
 		std::uint32_t transition = 0;
+	};
+
+	/// Every machine: network object `id` has a new owner. The host posts it
+	/// when it applies the change, each client when the OwnerChange arrives. Its owner-only
+	/// components have already been switched for the new owner.
+	struct OwnershipChanged
+	{
+		Net::NetworkId id = Net::kInvalidNetworkId;
+		Net::PeerId    previous = Net::kServerPeer;
+		Net::PeerId    owner = Net::kServerPeer;
 	};
 
 	/// Host (or offline): a gameplay request arrived (NetworkSession::SendCommand) - from a

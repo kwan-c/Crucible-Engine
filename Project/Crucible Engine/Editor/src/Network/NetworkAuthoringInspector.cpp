@@ -23,6 +23,7 @@
 #include "Network/NetComponents.h"
 #include "Network/NetObjectProfiles.h"
 #include "Network/NetPrefabTable.h"
+#include "Network/NetSyncedChildren.h"
 #include "Network/ReplicationRegistry.h"
 
 namespace Crucible
@@ -30,6 +31,7 @@ namespace Crucible
 	namespace
 	{
 		constexpr const char* kEnabledMask = "EnabledMask";
+		constexpr const char* kChildOnOff = "Children/OnOff";   // on/off below the root
 
 		bool Contains(const std::vector<std::string>& list, const std::string& name)
 		{
@@ -68,6 +70,71 @@ namespace Crucible
 			ImGui::SameLine();
 			ImGui::TextDisabled("(?)");
 			ImGui::SetItemTooltip("%s", text);
+		}
+
+		// The children whose transforms (Children/...) and renderers
+		// (Renderers) are replicated, by name path. Each listed path shows whether it resolves; new
+		// ones are picked from this object's own descendants.
+		bool DrawSyncedChildren(World& world, Entity entity, NetworkObjectAuthoring& authoring, const EditorTheme::Palette& palette)
+		{
+			bool changed = false;
+			ImGui::Spacing();
+			ImGui::TextUnformatted("Synced children");
+			HelpMarker("Children whose transforms (Children/Rotation or Children/Full on the NetChildTransforms row) and "
+				"renderers (Renderers on the NetRenderers row) the host sends. Named by their path below this object; "
+				"each name on the path must be unique among its siblings. At most 16; Renderers covers the first 7.");
+
+			std::size_t removeAt = authoring.syncedChildren.size();
+			for (std::size_t i = 0; i < authoring.syncedChildren.size(); ++i)
+			{
+				ImGui::PushID(static_cast<int>(i));
+				const std::string& path = authoring.syncedChildren[i];
+				Entity child;
+				const ChildPathResult found = ResolveChildPath(world, entity, path, child);
+				ImGui::AlignTextToFramePadding();
+				ImGui::Text("%zu.", i);
+				ImGui::SameLine();
+				if (found == ChildPathResult::Found) ImGui::TextUnformatted(path.c_str());
+				else ImGui::TextColored(palette.error, "%s (%s)", path.c_str(), found == ChildPathResult::Missing ? "not found" : "more than one");
+				ImGui::SameLine();
+				if (ImGui::SmallButton("Remove")) removeAt = i;
+				ImGui::PopID();
+			}
+			if (removeAt < authoring.syncedChildren.size())
+			{
+				authoring.syncedChildren.erase(authoring.syncedChildren.begin() + static_cast<std::ptrdiff_t>(removeAt));
+				changed = true;
+			}
+
+			// Candidates: every descendant with a resolvable path that is not listed yet.
+			std::vector<Choice> candidates{ { "Add a child...", "" } };
+			std::vector<std::string> paths{ std::string{} };
+			std::vector<Entity> open{ entity };
+			for (std::size_t k = 0; k < open.size(); ++k)
+			{
+				world.ForEachChild(open[k], [&](Entity c) {
+					if (world.HasComponent<NetworkObjectAuthoring>(c)) return;   // never into another network object
+					open.push_back(c);
+					std::string path;
+					if (!ChildPathOf(world, entity, c, path) || Contains(authoring.syncedChildren, path)) return;
+					Entity resolved;
+					const ChildPathResult found = ResolveChildPath(world, entity, path, resolved);
+					candidates.push_back({ path, found == ChildPathResult::Found ? "" : "another entity has the same path: rename one" });
+					paths.push_back(path);
+				});
+			}
+			const bool full = authoring.syncedChildren.size() >= kMaxSyncedChildren;
+			ImGui::BeginDisabled(full || candidates.size() == 1);
+			int pick = 0;
+			if (ComboWithReasons("##add_synced_child", pick, candidates) && pick > 0)
+			{
+				authoring.syncedChildren.push_back(paths[static_cast<std::size_t>(pick)]);
+				changed = true;
+			}
+			ImGui::EndDisabled();
+			if (full) ImGui::SetItemTooltip("At most 16 synced children.");
+			else if (candidates.size() == 1) ImGui::SetItemTooltip("No (more) named children below this object.");
+			return changed;
 		}
 	}
 
@@ -108,7 +175,7 @@ namespace Crucible
 			ImGui::TableSetupColumn("Component", ImGuiTableColumnFlags_WidthStretch, 1.1f);
 			ImGui::TableSetupColumn("Network state", ImGuiTableColumnFlags_WidthStretch, 1.4f);
 			ImGui::TableSetupColumn("Runs on", ImGuiTableColumnFlags_WidthStretch, 1.0f);
-			ImGui::TableSetupColumn("Sync on/off", ImGuiTableColumnFlags_WidthFixed);
+			ImGui::TableSetupColumn("Sync on/off", ImGuiTableColumnFlags_WidthStretch, 0.9f);
 			ImGui::TableHeadersRow();
 
 			for (const AuthoringComponentOption& option : options)
@@ -156,32 +223,46 @@ namespace Crucible
 					changed = true;
 				}
 
-				// Sync on/off: the root component's enabled state is replicated (EnabledMask).
+				// Sync on/off: on the root (EnabledMask), on the synced children that have it
+				// (Children/OnOff), or both.
 				ImGui::TableSetColumnIndex(3);
-				bool synced = Contains(authoring.enabledReplicated, option.name);
-				ImGui::BeginDisabled(!option.noEnabledSync.empty() && !synced);
-				if (ImGui::Checkbox("##sync", &synced))
+				const bool onRootSynced = Contains(authoring.enabledReplicated, option.name);
+				const bool onChildrenSynced = Contains(authoring.childEnabledReplicated, option.name);
+				int sync = (onRootSynced ? 1 : 0) + (onChildrenSynced ? 2 : 0);
+				const std::string rootWhy = option.onRoot ? option.noEnabledSync : "this component is not on the root";
+				const std::string childWhy = !option.toggleable ? "this component cannot be switched off"
+					: !option.belowRoot ? "no entity below the root has this component"
+					: authoring.syncedChildren.empty() ? "list the children under Synced children first" : "";
+				const std::vector<Choice> syncs{ { "Off", "" }, { "Root", rootWhy }, { "Synced children", childWhy },
+					{ "Both", !rootWhy.empty() ? rootWhy : childWhy } };
+				if (ComboWithReasons("##sync", sync, syncs))
 				{
-					if (synced) authoring.enabledReplicated.push_back(option.name);
-					else Erase(authoring.enabledReplicated, option.name);
+					Erase(authoring.enabledReplicated, option.name);
+					Erase(authoring.childEnabledReplicated, option.name);
+					if (sync & 1) authoring.enabledReplicated.push_back(option.name);
+					if (sync & 2) authoring.childEnabledReplicated.push_back(option.name);
 					const bool wantMask = !authoring.enabledReplicated.empty();
 					if (wantMask && !Contains(authoring.replicated, kEnabledMask)) authoring.replicated.push_back(kEnabledMask);
 					if (!wantMask) Erase(authoring.replicated, kEnabledMask);
+					const bool wantChildren = !authoring.childEnabledReplicated.empty();
+					if (wantChildren && !Contains(authoring.replicated, kChildOnOff)) authoring.replicated.push_back(kChildOnOff);
+					if (!wantChildren) Erase(authoring.replicated, kChildOnOff);
 					changed = true;
 				}
-				ImGui::EndDisabled();
-				if (!option.noEnabledSync.empty()) ImGui::SetItemTooltip("%s", option.noEnabledSync.c_str());
 				ImGui::PopID();
 			}
 			ImGui::EndTable();
 		}
+
+		// ---- synced children ---------------------------------------------
+		if (DrawSyncedChildren(world, entity, authoring, palette)) changed = true;
 
 		// ---- settings that name something this object does not have --------------------------
 		const auto offered = [&](const std::string& name) {
 			return std::ranges::any_of(options, [&](const AuthoringComponentOption& o) { return o.name == name; });
 		};
 		const auto isSerializerOfOffered = [&](const std::string& name) {
-			if (name == kEnabledMask) return true;
+			if (name == kEnabledMask || name == kChildOnOff) return true;
 			return std::ranges::any_of(options, [&](const AuthoringComponentOption& o) { return Contains(o.serializers, name); });
 		};
 		struct Stale { std::vector<std::string>* list; std::string name; const char* field; };
@@ -190,6 +271,7 @@ namespace Crucible
 		for (const std::string& n : authoring.serverOnly) if (!offered(n)) stale.push_back({ &authoring.serverOnly, n, "host only" });
 		for (const std::string& n : authoring.ownerLocalOnly) if (!offered(n)) stale.push_back({ &authoring.ownerLocalOnly, n, "owner only" });
 		for (const std::string& n : authoring.enabledReplicated) if (!offered(n)) stale.push_back({ &authoring.enabledReplicated, n, "sync on/off" });
+		for (const std::string& n : authoring.childEnabledReplicated) if (!offered(n)) stale.push_back({ &authoring.childEnabledReplicated, n, "sync on/off (children)" });
 		for (std::size_t i = 0; i < stale.size(); ++i)
 		{
 			ImGui::PushID(static_cast<int>(i));

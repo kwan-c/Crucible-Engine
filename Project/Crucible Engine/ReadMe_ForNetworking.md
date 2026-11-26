@@ -1,13 +1,16 @@
 # Crucible Networking: How to Use It
 
 This guide explains how to make objects networked, how to start a Host and a Client
-from the Editor, and how to build a scene like `Assets/Scenes/Network_Test.scene`.
+from the Editor, and how to build a scene like `Assets/Scenes/network_tests/Network_Test.scene`.
 
 > **LAN only.** Networking currently works only on a local network: two Editors on the
 > same PC, or PCs on the same LAN or Wi-Fi. Playing over the internet (NAT traversal,
 > relay servers, matchmaking) is not supported yet.
 
 At most 4 players can play together: the Host plus up to 3 Clients.
+
+The example scenes are in `Assets/Scenes/network_tests/`: `Network_Test`, `network_gamplay` (the arena
+shooter), `network_lobby` and `network_sync_test` (the sync checklist, section 8.22).
 
 ---
 
@@ -30,12 +33,16 @@ The Inspector shows one row for every component on the object and its children.
 | Column | Choices | What it means |
 |---|---|---|
 | **Component** | — | The component's name. Hover over it to see whether it's on a child entity. |
-| **Network state** | `Local` / `Replicated: <serializer>` | **Local** (the default): each machine keeps the value it loaded from the scene or prefab, and the Host never sends it. **Replicated**: the Host sends this component's value to every Client. For example, `Transform` offers `Replicated: Transform/Full` (position, rotation and scale) and `Replicated: Transform/YawOnly` (position and yaw only, which is cheaper). |
+| **Network state** | `Local` / `Replicated: <serializer>` | **Local** (the default): each machine keeps the value it loaded from the scene or prefab, and the Host never sends it. **Replicated**: the Host sends this component's value to every Client. For example, `Transform` offers `Replicated: Transform/Full` (position and rotation), `Replicated: Transform/YawOnly` (position and yaw only, which is cheaper), and the same two with `+Scale` (section 8.15). |
 | **Runs on** | `Everywhere` / `Host only` / `Owner only` | **Everywhere**: the component runs on every machine. **Host only**: switched off on Clients, used for physics, AI and gameplay logic, since the Host has authority. **Owner only**: switched off everywhere except on the machine that owns the object, used for the player's camera or HUD. |
-| **Sync on/off** | checkbox | Sends whether this root component is enabled or disabled to the Clients. |
+| **Sync on/off** | `Off` / `Root` / `Synced children` / `Both` | Sends whether this component is enabled or disabled to the Clients: on the root, on every synced child that has it (section 8.20), or both. |
 
 Rule of thumb:
 - Things that **move** → `Transform` set to **Replicated**.
+- Parts of an object that **move on their own** (a torso that aims, a turret head) → list them
+  under **Synced children** (section 1.3) and set **NetChildTransforms** to **Replicated**.
+- Things whose **look changes** in play (part swaps, tints, hiding a model) → **NetRenderers**
+  set to **Replicated: Renderers** (section 8.18).
 - Things that **simulate** (RigidBody, Collider, CharacterController, PlayerController, AI) → **Host only**.
 - Things only **the player who owns the object** should have (Camera, CameraOrbit) → **Owner only**.
 - Everything else (MeshRenderer, lights, names) → leave it **Local**.
@@ -52,6 +59,21 @@ Rule of thumb:
 At the bottom of the component, **"Network settings are valid"** (green) means the object
 is ready. If something is wrong, a red message says what. Leftover settings that refer to a
 component the object no longer has show a **Remove** button.
+
+### 1.3 Synced children
+
+Only the object's **root** has an identity on the network. To sync a child entity (its
+transform, its renderer), list it under **Synced children** below the table:
+
+- Pick it from the **Add a child...** list. It's stored as its **name path** below the root,
+  for example `Mech Visual/Legs/Torso`: one entity name per level.
+- **Each name on the path must be unique among its siblings.** A path that matches no entity,
+  or two entities, is shown in red and refused at Play: the engine never guesses which one
+  you meant. Rename one of them.
+- At most **16** synced children. The order matters (both machines use the same list).
+- What uses the list: the **NetChildTransforms** row (`Children/Rotation` or
+  `Children/Full`, section 8.16), the **NetRenderers** row (`Renderers`, section 8.18) and
+  **Sync on/off: Synced children** (section 8.20).
 
 ---
 
@@ -106,7 +128,7 @@ on the network. Allow it on **Private networks**, or Clients on other PCs can't 
 1. **Both machines must have the same project content:** the same commit, the same scene and
    the same prefabs. Network prefabs and scene objects are checked by hash, and a Client with
    different content is refused (look for *content* or *scene mismatch* in the panel).
-2. Open the **same scene** in both Editors (e.g. `Scenes/Network_Test.scene`).
+2. Open the **same scene** in both Editors (e.g. `Scenes/network_tests/Network_Test.scene`).
 3. **Editor 1 (Host):** in **Network Window > Session > Quick test**, select **Host**, keep
    game port `27020`, and press **Play**. The window should show `Hosting on port 27020`.
 4. **Editor 2 (Client):** in the same place, select **Client**, enter the Host's IP
@@ -405,6 +427,10 @@ Read this before designing gameplay for multiplayer.
   where it draws them (section 8.13), for aim highlights, interaction prompts and the like.
 - **Joining mid-game:** a Client can join while the game is running and receives the
   current world.
+- **Generated levels:** every machine builds the same terrain from the scene seed
+  (section 8.14).
+- **Scale, character size, moving parts, attached parts and looks:** synced when the object
+  asks for them (sections 8.15 to 8.18).
 
 ### What doesn't work yet
 
@@ -413,15 +439,15 @@ Read this before designing gameplay for multiplayer.
 | 1 | **Other Client actions must be sent as commands.** | Movement, turning and jump are sent automatically. Fire, interact, reload and the rest reach the Host only if your script sends them with `Network.SendCommand` (section 8). A Host-only C# script using `Input.IsPressed` still reads the **Host's own keyboard**, not the Client's. |
 | 2 | **Script events are moments, not state.** | The Host tells every machine "this happened" with `Network.SendEvent` (section 8.4). A player who joins later never hears an old event, so lasting state must still be something that is synced. |
 | 3 | **`Prefab.Instantiate` is still local.** | It creates the object only on the machine that runs the script. Use `Network.Spawn` on the Host for objects every player should see (section 8.5); the prefab must be a network prefab. |
-| 4 | **Script values are synced only through network variables.** | The Transform, component on/off state, an object's 16 network variables (section 8.6) and its Animator parameters (section 8.12) are sent. Ordinary script fields and other component values are **not**: put health, ammo or score in a network variable. |
+| 4 | **Script values are synced only through network variables.** | The Transform (with scale if asked), component on/off state, an object's 16 network variables (section 8.6), its Animator parameters (section 8.12), a CharacterController's size, synced children's transforms, attachments and renderers (sections 8.15 to 8.18) are sent. Ordinary script fields and other component values (lights, audio, particles, Collider sizes) are **not**: put health, ammo or score in a network variable. |
 | 5 | **Animation is synced through Animator parameters only.** | Turn on **Animator** in the object's Network Object table (section 8.12) and the Host's `Animator.Set...` calls reach every Client. Up to 32 parameters per object; a trigger fired twice within one snapshot (about 33 ms) plays once on Clients; `ResetTrigger` stays on the Host. Without the row, a Host-only script's animation is seen only on the Host. |
 | 6 | **Gameplay audio, particles and UI need a script event.** | Effects triggered by Host-only gameplay happen only on the Host unless the Host sends an event and a script that runs **Everywhere** plays them (section 8.4). |
-| 7 | **Clients query physics; they don't simulate it.** | A Client's `Physics.Raycast`, `SphereCast` and `CheckSphere` hit network objects where they are drawn, through query bodies the engine adds (section 8.13). They are for display and feel only: the Host's own queries decide hits and damage. When the Host switches a Host-only Collider or CharacterController off (a dead player), Clients' query bodies follow only if that component also has **Sync on/off** (section 8.13). Client triggers fire only for the Client's local objects. |
+| 7 | **Clients query physics; they don't simulate it.** | A Client's `Physics` queries (`Raycast`, `RaycastNonAlloc`, `SphereCast`, `CapsuleCast`, `CheckSphere`, the `Overlap...NonAlloc` ones) hit network objects where they are drawn, through query bodies the engine adds (section 8.13); the entity they return is the query body, so use `Network.ObjectOf`. They are for display and feel only: the Host's own queries decide hits and damage. When the Host switches a Host-only Collider or CharacterController off (a dead player), Clients' query bodies follow only if that component also has **Sync on/off** (section 8.13). Client triggers fire only for the Client's local objects. |
 | 8 | **Only the Host's `Network.LoadScene` keeps the session across scenes.** | It moves everyone to the new scene (section 8.8). `Scene.Load`, or opening a scene in the Editor, during a session still ends it. Network objects marked DontDestroyOnLoad do not stay networked in the next scene. |
 | 9 | **A Client's own player responds with a small delay.** | About 110–150 ms on a LAN, because the Client waits for the Host instead of predicting its own movement. The Host's player has no delay. |
 | 10 | **LAN only, at most 4 players.** | The Host plus 3 Clients, connecting by IP address. A lobby can be built in C# (section 8.9 has one), but there is no internet play or server list: players type the Host's IP address. |
 | 11 | **The Host leaving ends the game for everyone.** | There's no handing over to another player. A Client that leaves has its player removed. |
-| 12 | **Both machines need exactly the same content.** | Any difference in a network prefab or scene object (or in the scene) means the Client is refused when joining. |
+| 12 | **Both machines need exactly the same content.** | Any difference in a network prefab or scene object (or in the scene) means the Client is refused when joining. Both machines also need the same engine build: this version speaks **protocol 9**, and an older build is refused when joining. |
 
 ### In practice
 
@@ -625,14 +651,14 @@ and restores full health.
 
 **Controls:** move as usual; **left mouse** or **F** fires where your camera looks.
 
-**Play it:** open `network_gamplay.scene` in 2 to 4 Editors; one **Host**, the others
+**Play it:** open `network_tests/network_gamplay.scene` in 2 to 4 Editors; one **Host**, the others
 **Client** (Network window > Session > Quick test), then Play in each. Offline nothing happens: there is no spawned
 player.
 
 ### 8.8 Changing scenes without ending the session
 
 ```csharp
-if (Network.IsHost) Network.LoadScene("Scenes/network_gamplay.scene");
+if (Network.IsHost) Network.LoadScene("Scenes/network_tests/network_gamplay.scene");
 ```
 
 - **Only the Host** can do this. Every machine loads the same scene from its own project,
@@ -847,7 +873,7 @@ lobby.FromServer, lobby.FromLan   // how a LobbyInfo was found (both = the same 
 2. In every other Editor (PC B, ...): **Network > Network Window > Session**, keep **Quick test**
    on **Offline**, then **Lobby discovery > Auto**, **Server address** `192.168.0.7`,
    **Server port** `27018`.
-3. Open `network_lobby.scene` and press **Play** in every Editor. One player chooses
+3. Open `network_tests/network_lobby.scene` and press **Play** in every Editor. One player chooses
    **Create Lobby**, and the others choose **Find Lobbies**. The header should say
    **Lobbies - connection server**, and the lobby should be listed. Join it.
 4. Start the match, then on PC A choose **Network > Stop Connection Server**. The match should
@@ -902,8 +928,8 @@ slides along in its idle pose.
 ### 8.13 Physics queries on a Client
 
 A network object's Collider, RigidBody and CharacterController run **Host only**, so a
-Client has no physics of its own for it. So that a Client's `Physics.Raycast`, `SphereCast`
-and `CheckSphere` still hit what the player sees, the engine gives the Client a
+Client has no physics of its own for it. So that a Client's physics queries still hit what the
+player sees, the engine gives the Client a
 **query body** for each of them: a hidden child named **Network Query Body** with a copy of
 the Collider (same shape, size, layer and trigger setting), or a capsule the size of the
 CharacterController. It follows the object as drawn and is never simulated, pushed or sent.
@@ -912,9 +938,13 @@ CharacterController. It follows the object as drawn and is never simulated, push
   CharacterController that is **Host only**. One that runs **Everywhere** has a real body
   already and gets none. The Host gets none: it has the real ones.
 - **Not on the Client's own player**, so rays from its camera don't hit its own body.
+- **Every query sees them:** `Physics.Raycast`, `RaycastNonAlloc`, `SphereCast`,
+  `CapsuleCast`, `CheckSphere`, `OverlapSphereNonAlloc`, `OverlapBoxNonAlloc` and
+  `OverlapCapsuleNonAlloc`.
 - **A hit lands on the query body**, a child of the object, while on the Host it lands on the
-  object (or one of its parts). Use `Network.ObjectOf(hit.Entity)` to get the network object
-  on both:
+  object (or one of its parts). The `Overlap...NonAlloc` results and `RaycastNonAlloc`'s hits
+  are query bodies too. Use `Network.ObjectOf(hit.Entity)` (or on each overlap result) to get
+  the network object on both:
 
   ```csharp
   RaycastHit hit;
@@ -936,7 +966,173 @@ CharacterController. It follows the object as drawn and is never simulated, push
   has it on its CharacterController.
 - **Triggers** on query bodies only notice the Client's own local objects; gameplay triggers
   belong on the Host.
+- **Terrain gets no query body.** A Terrain's HeightField Collider takes its shape from the
+  Terrain on the same entity, so it can't be copied. Clients have their own terrain body
+  instead: every machine generates the same ground from the scene seed (section 8.14).
 
 **Example:** in `network_gamplay.scene` the crosshair turns red while your aim is on another
 living player (`ArenaView.cs`, `UpdateAim`). On the Host the ray hits the player's
 CharacterController; on a Client it hits that player's query body. It works the same on both.
+
+### 8.14 Generated levels: the scene seed
+
+A level generated from a seed (the `SubLevelGenerator` terrain) must use the **same seed on
+every machine**, or each player stands on different ground. While a session runs, every scene
+has one **scene seed**, the same number on every machine:
+
+```csharp
+int seed = Network.HasSceneSeed ? Network.SceneSeed : mySeed;   // offline: your own
+```
+
+- The Host picks it **at random** for every scene: the one the session starts in, and every
+  `Network.LoadScene`. To choose it yourself: `Network.LoadScene("Scenes/Level.scene", 1234)`.
+- A Client has it **before** the new scene's scripts start (`OnCreate`), because it comes with
+  the Host's "change scene" message.
+- A Client that **joins a scene already running** learns it only when it joins: regenerate in
+  `OnNetworkStarted` if it differs from what you built.
+- Offline, `HasSceneSeed` is false and `SceneSeed` is 0.
+- Generate on every machine, but let only the **Host** do gameplay with it (placing players,
+  spawning enemies): those reach Clients as network objects.
+
+### 8.15 Scale and character size
+
+- **Scale:** set the Transform to `Replicated: Transform/Full+Scale` (or
+  `Transform/YawOnly+Scale`). The Host's scale reaches every Client as it is, without
+  smoothing. The plain `Transform/Full` and `Transform/YawOnly` never send scale, exactly as
+  before. 12 bytes more per update.
+- **Character size** (crouching, growing): set the CharacterController row to
+  `Replicated: CharacterController/Size` (height, radius and centre). Keep its **Runs on** at
+  **Host only**: on Clients the controller stays off, and the capsule their raycasts hit
+  (section 8.13) takes the new size, and undoes the object's scale as the Host's capsule does.
+
+### 8.16 Moving parts: synced children
+
+For parts that move on their own while the object stays put (a torso aiming apart from the
+legs, a turret head, a door's hinge):
+
+1. List them under **Synced children** (section 1.3).
+2. Set the **NetChildTransforms** row to `Replicated: Children/Rotation` (rotations only, 4
+   bytes per child) or `Replicated: Children/Full` (positions and rotations, 16 bytes per
+   child).
+
+- The Host sends each child's **local** transform (relative to its parent inside the object).
+  Clients draw them on the same 100 ms delay as the object itself, so the parts and the
+  object move together. A jump of more than 5 m snaps instead of sliding.
+- A child the Host can't find (renamed, removed) isn't sent; the Client leaves its own copy
+  alone and logs it once. The same happens on a Client that can't find it.
+- Scripts on Clients shouldn't move synced children: the Host's values overwrite them every frame.
+
+### 8.17 Attaching network objects to each other
+
+A network object can hang under **another** network object: a mech part on a player's
+mount, a held item, a passenger. Set the attached object's **NetAttachment** row to
+`Replicated: Attachment`, and its Transform to `Replicated` as usual. Then on the Host:
+
+```csharp
+part.Transform.SetParent(mount, false);   // as MechPart.AttachTo does
+part.Transform.SetParent(null, true);     // drop it
+```
+
+- Clients parent their copy to **the same mount**, found by its name path inside the other
+  object (so the mount's name must be unique among its siblings), and use the same local
+  offset. Changing mount and detaching work the same way.
+- The attached object's motion **restarts** when its parent changes: it snaps to its new
+  place instead of sliding through the world.
+- **Joining mid-game:** an attached object waits until the object it hangs on has arrived,
+  then attaches.
+- **Hanging under a scaled object?** Give the attached object `Transform/Full+Scale`. Dropping it
+  with its world pose kept (`SetParent(null, true)`) moves the parent's scale into its own
+  Transform, which plain `Transform/Full` doesn't send.
+- **Parent destroyed:** on the Host, destroying an object destroys what's attached to it, and
+  every Client follows. To keep a part, detach it first.
+- Attached to something that isn't a network object (a plain scene entity), or to a mount
+  whose name isn't unique: Clients see it unattached, and the Host logs it once.
+
+### 8.18 Looks: renderers and material parameters
+
+Set the **NetRenderers** row to `Replicated: Renderers`. The Host's renderers then reach
+every Client, at the start and whenever they change:
+
+- On the **root** and the **first 7 synced children** (section 1.3): model, material, mesh,
+  up to 4 material slots, colour, visible, and **MaterialParams** (emissive scale and tint).
+  A renderer further down the list is refused at Play (move it up).
+- Change them from Host scripts as usual (`mesh.Material = damagedLook`, `mesh.Model = ...`,
+  `mesh.Visible = false`, `params.Tint = Color.Red`).
+- A **shader graph's** own parameters belong to its material: swap the material to change
+  them on every machine.
+- Not synced: meshes and materials made at runtime (they have no asset file), more than 4
+  material slot overrides (the first 4 are sent).
+
+### 8.19 How much one object can send
+
+Everything an object replicates travels together in **one record of at most 1024 bytes**,
+with at most 16 rows replicated. The red message under the table says when the worst case
+doesn't fit, with each row's share. The big ones are `Renderers` (95 bytes per renderer it
+covers), `Animator` (132), `Children/Full` (16 per child) and `NetVariables` (66). An object
+whose record is unchanged costs nothing; one that changes sends its whole record again.
+
+### 8.20 Switching parts on and off: on/off below the root
+
+To sync a component switched on or off on a **child** (a weapon model shown or hidden, a muzzle
+light, a part's hitbox):
+
+1. List the child under **Synced children** (section 1.3).
+2. In that component's row, set **Sync on/off** to `Synced children` (or `Both`, to sync the
+   root's too).
+
+- Every synced child that has that component follows the Host: `gun.SetEnabled<MeshRenderer>(false)`
+  on the Host hides the gun everywhere.
+- At most 8 components, 2 bytes per synced child.
+- A **Host only** Collider or CharacterController on a child works as on the root: it stays off
+  on Clients, and its query body follows the Host's on/off (section 8.13). Other Host only or
+  Owner only components can't be synced on/off.
+- `Entity.SetActive` on a child isn't synced as such: it switches every component below it, and
+  only the components you listed are sent. Sync the ones that matter (the MeshRenderer, for
+  example).
+
+### 8.21 Giving an object to a player: ownership
+
+```csharp
+Network.SetOwner(vehicle, driverPeerId);   // Host only; 0 = the Host
+```
+
+- It changes next frame **on every machine**: `Entity.Owner` and `IsMine` follow, the object's
+  **Owner only** components switch on for the new owner and off for everyone else, and if it
+  has a `PlayerInput`, the new owner's movement drives it.
+- The object's own scripts hear it on every machine:
+
+  ```csharp
+  public override void OnOwnershipChanged(int previousOwner, int newOwner) { ... }
+  ```
+
+- **Players can't change owner**: a player always belongs to its own player (refused, logged).
+- **A Client leaving:** its player is removed as before, and every other object it owned goes
+  back to the Host.
+- A Client joining later receives every object with its current owner.
+
+### 8.22 Checking it all with two Editors: `network_sync_test.scene`
+
+A test scene for sections 8.15 to 8.21. Open `Scenes/network_tests/network_sync_test.scene` in both Editors,
+start the **Host** in one and the **Client** in the other, as in section 3. The floating text
+above the mech says what each machine sees; it should read the same on both after each key.
+Press the keys in the **Host's** Game view:
+
+| Key | What changes | Check on the Client |
+|---|---|---|
+| **1** | The mech's scale: 1, 1.5, 2 | Same size (`scale` matches) |
+| **2** | The mech's capsule: height 2 and 1 | `height` matches (the capsule Clients' raycasts hit is resized) |
+| **3** | The torso turns 30 degrees | Turns smoothly, same angle, together with the mech |
+| **4** | The mech's material: EmberFlow and MagicOrb | Same material |
+| **5** | The tint: none, red, green | Same tint |
+| **6** | The gun: hidden and shown | Hidden and shown |
+| **7** | The part: Mount L, Mount R, dropped, back | Snaps to each mount, no sliding; dropped in the same place |
+| **8** | The crate's owner: Host, each Client, Host | The crate's light is on **only** on its owner's screen; the Console logs `SyncOwnerProbe` on every machine |
+| **9** | The mech: hidden and shown | Hidden and shown |
+| **0** | Everything back to the start | Back to the start |
+
+Also check:
+- **Joining late:** press some keys, then start a second Client. It shows the same text at once.
+- **Leaving:** give the crate to a Client (key 8), then stop that Client. The crate goes back to
+  the Host (its light comes on there).
+- **Parent destroyed:** press 7 to put the part on a mount, then delete `Sync Mech` in the
+  **Host's** Hierarchy. The part is destroyed everywhere with it.

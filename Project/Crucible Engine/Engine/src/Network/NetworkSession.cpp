@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.20
+* \version       1.22
 * \brief
 *                NetworkSession: start/stop, connection events, the join
 *                handshake, bounded receive, quotas and timeouts, spawn
@@ -52,6 +52,10 @@
 *                ids and owner tokens (BCryptGenRandom), Unregister on Stop; LobbyListingProblem;
 *                Auto lists from the server only until UseLanDiscovery; a closed lobby (SetLobby
 *                false: the match started) is unregistered from the server, registered again on reopen
+*    -v1.21      the scene seed (protocol 9): picked at host start and per scene change (random, or
+*                RequestSceneChange(asset, seed)), sent in SceneChange, set on clients before the load
+*    -v1.22      ownership transfer: requests, applied changes, OwnerChange is a
+*                lifecycle message
 *
 **************************************************************************/
 #include "Network/NetworkSession.h"
@@ -211,6 +215,8 @@ namespace Crucible
 		{
 			m_role = Net::NetRole::Server;
 			m_localPeer = Net::kServerPeer;
+			m_sceneSeed = NewSceneSeed();   // the scene the host starts in (protocol 9)
+			m_sceneSeedKnown = true;
 			RefreshRoster();   // the host is its first player
 			CRU_INFO("[Net] hosting on {}:{} (up to {} clients, content hash {:016x})",
 				m_active.listenAddress.empty() ? "all interfaces" : m_active.listenAddress,
@@ -383,6 +389,8 @@ namespace Crucible
 		m_pendingSpawns.clear();
 		m_spawned.clear();
 		m_gameplayEvents.clear();
+		m_ownerRequests.clear();
+		m_ownerChanges.clear();
 		m_sceneObjects.clear();
 		m_sceneAsset = 0;
 		m_sceneHash = 0;
@@ -491,7 +499,7 @@ namespace Crucible
 		const std::uint32_t seq = reader.U32();
 		const bool lifecycle = type == MessageType::WorldBegin || type == MessageType::SpawnBatch || type == MessageType::DespawnBatch
 			|| type == MessageType::WorldEnd || type == MessageType::GameplayEvent || type == MessageType::SceneObjectBatch
-			|| type == MessageType::PeerRoster || type == MessageType::SceneChange;
+			|| type == MessageType::PeerRoster || type == MessageType::SceneChange || type == MessageType::OwnerChange;
 		if (!known || !reader.Ok() || !lifecycle)
 		{
 			CRU_ERROR("[Net] SendLifecycle for peer {}: not a lifecycle message - not sent", peerId);
@@ -1074,6 +1082,50 @@ namespace Crucible
 		return true;
 	}
 
+	// ---- ownership ---------------------------------------------------------
+
+	bool NetworkSession::RequestOwnerChange(Net::NetworkId id, Net::PeerId owner)
+	{
+		if (!IsServer() || m_state != SessionState::Running || m_stopRequested)
+		{
+			CRU_ERROR("[Net] RequestOwnerChange: only a running host changes ownership");
+			return false;
+		}
+		if (id == Net::kInvalidNetworkId || !Entities().Find(id).IsValid())
+		{
+			CRU_ERROR("[Net] RequestOwnerChange: {} is not a network object", id);
+			return false;
+		}
+		const PeerState* peer = owner == Net::kServerPeer ? nullptr : PeerById(owner);
+		if (owner != Net::kServerPeer && (peer == nullptr || !peer->IsJoined()))
+		{
+			CRU_ERROR("[Net] RequestOwnerChange: peer {} is not in the session", owner);
+			return false;
+		}
+		std::erase_if(m_ownerRequests, [id](const OwnerChangeRequest& r) { return r.id == id; });   // the latest wins
+		m_ownerRequests.push_back(OwnerChangeRequest{ .id = id, .owner = owner });
+		return true;
+	}
+
+	void NetworkSession::TakeOwnerRequests(std::vector<OwnerChangeRequest>& out)
+	{
+		out.clear();
+		out.swap(m_ownerRequests);
+	}
+
+	void NetworkSession::NoteOwnerChanged(Net::NetworkId id, Net::PeerId previous, Net::PeerId owner)
+	{
+		++m_stats.ownerChanges;
+		if (IsServer()) m_ownerChanges.push_back(OwnerChangeRequest{ .id = id, .owner = owner });
+		Post(NetworkEvents::OwnershipChanged{ .id = id, .previous = previous, .owner = owner });
+	}
+
+	void NetworkSession::TakeOwnerChanges(std::vector<OwnerChangeRequest>& out)
+	{
+		out.clear();
+		out.swap(m_ownerChanges);
+	}
+
 	void NetworkSession::TakeGameplayEvents(std::vector<QueuedGameplayEvent>& out)
 	{
 		out.clear();
@@ -1517,6 +1569,10 @@ namespace Crucible
 		m_sceneEpoch = 0;
 		m_transition = 0;
 		m_requestedScene = 0;
+		m_requestedSeed = 0;
+		m_requestedSeedSet = false;
+		m_sceneSeed = 0;
+		m_sceneSeedKnown = false;
 		m_sceneChangeExpected = false;
 		m_sceneLoadIssued = false;
 		m_waitingForPeers = false;
@@ -1531,7 +1587,29 @@ namespace Crucible
 			return false;
 		}
 		m_requestedScene = sceneAsset;
+		m_requestedSeedSet = false;   // a plain request: a random seed
 		return true;
+	}
+
+	bool NetworkSession::RequestSceneChange(std::uint64_t sceneAsset, std::uint32_t seed)
+	{
+		if (!RequestSceneChange(sceneAsset)) return false;
+		m_requestedSeed = seed;
+		m_requestedSeedSet = true;
+		return true;
+	}
+
+	std::uint32_t NetworkSession::NewSceneSeed()
+	{
+		try
+		{
+			std::random_device device;
+			return device();
+		}
+		catch (...)   // no entropy source: still a different number each time
+		{
+			return static_cast<std::uint32_t>(SteadyClock::now().time_since_epoch().count() * 0x9E3779B97F4A7C15ull >> 32);
+		}
 	}
 
 	bool NetworkSession::TakeSceneChangeRequest(std::uint64_t& sceneAsset) noexcept
@@ -1553,7 +1631,10 @@ namespace Crucible
 		m_sceneChangeExpected = true;
 		m_waitingForPeers = true;
 		++m_stats.sceneChanges;
-		CRU_INFO("[Net] scene change {}: loading scene {:016X}", m_transition, sceneAsset);
+		m_sceneSeed = m_requestedSeedSet ? m_requestedSeed : NewSceneSeed();
+		m_sceneSeedKnown = true;
+		m_requestedSeedSet = false;
+		CRU_INFO("[Net] scene change {}: loading scene {:016X} (seed {})", m_transition, sceneAsset, m_sceneSeed);
 
 		const SteadyClock::time_point deadline = SteadyClock::now() + kSceneLoadTimeout;
 		for (std::size_t i = 0; i < m_peers.size(); ++i)   // by index: a failed send resets the slot
@@ -1562,7 +1643,7 @@ namespace Crucible
 			if (!peer.IsJoined()) continue;
 			std::array<std::byte, 32> buffer;
 			ByteWriter writer(buffer);
-			const SceneChange change{ .lifecycleSeq = peer.nextLifecycleSeq, .transition = m_transition, .sceneAsset = sceneAsset };
+			const SceneChange change{ .lifecycleSeq = peer.nextLifecycleSeq, .transition = m_transition, .sceneAsset = sceneAsset, .sceneSeed = m_sceneSeed };
 			const Net::PeerId id = peer.peer;
 			if (!Encode(writer, change) || !SendLifecycle(id, writer.Written())) continue;   // closed on failure
 			peer.phase = PeerState::Phase::Loading;
@@ -1607,7 +1688,8 @@ namespace Crucible
 		m_sceneChangeExpected = true;
 		m_confirmPending = true;
 		++m_stats.sceneChanges;
-		CRU_INFO("[Net] the host changes scene ({}): loading scene {:016X}", change.transition, change.sceneAsset);
+		SetSceneSeedFromHost(change.sceneSeed);   // before the scene loads: its scripts' OnCreate sees it
+		CRU_INFO("[Net] the host changes scene ({}): loading scene {:016X} (seed {})", change.transition, change.sceneAsset, change.sceneSeed);
 		Post(NetworkEvents::SceneChangeStarted{ .sceneAsset = change.sceneAsset, .transition = change.transition });
 	}
 

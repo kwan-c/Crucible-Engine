@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.16
+* \version       1.23
 * \brief
 *                NetReceiveSystem: drives NetworkSession::Update each frame,
 *                performs host spawns and applies the host's lifecycle stream
@@ -41,6 +41,21 @@
 *    -v1.15      NetAnimator removed from scene objects too (Networking C# Phase 7)
 *    -v1.16      client query bodies (Network/NetQueryBodies.h) on proxies, except this
 *                client's own player, and on scene objects (Networking C# Phase 8)
+*    -v1.17      protocol 9: RecordMask; WorldBegin's scene seed is kept (SetSceneSeedFromHost)
+*    -v1.18      query bodies follow a replicated scale and CharacterController size
+*                (RefreshClientQueryBodies after every record that can change them)
+*    -v1.19      synced children: bound after every record of an object that
+*                replicates them; the runtime sync components leave scene objects when the session ends
+*    -v1.20      attachments: applied after every record (AttachOrWait), retried every
+*                frame while the parent or mount is missing; network objects below a despawned proxy are
+*                detached first (DetachNetworkDescendants)
+*    -v1.21      renderers: ApplyRenderers after every record of an object that
+*                replicates them
+*    -v1.22      synced children's on/off: ApplyChildOnOff after every record of an
+*                object that replicates Children/OnOff
+*    -v1.23      ownership transfer: the host applies requests (players refused) and
+*                gives a departed client's objects back; a client applies OwnerChange; owner-only
+*                components follow the owner on every machine
 *
 **************************************************************************/
 #include "Network/Systems/NetReceiveSystem.h"
@@ -48,11 +63,14 @@
 #include "Diagnostics/Logger.h"
 #include "ECS/Components/Components.h"
 #include "ECS/World.h"
+#include "Network/NetAttachments.h"
 #include "Network/NetComponents.h"
 #include "Network/NetQueryBodies.h"
+#include "Network/NetRendererSync.h"
 #include "Network/NetContent.h"
 #include "Network/NetIdentityHooks.h"
 #include "Network/NetSceneObjects.h"
+#include "Network/NetSyncedChildren.h"
 #include "Network/Systems/NetInterpolationSystem.h"
 #include "Scene/Prefab.h"
 #include "Scene/SceneManager.h"
@@ -66,7 +84,39 @@ namespace Crucible
 	namespace
 	{
 		/// Every bit a record of this prefab may carry: bit i = replicated entry i.
-		std::uint8_t FullMask(const NetPrefabDesc& desc) noexcept
+		// Whether a record of this profile can change what a query body copies: a replicated scale
+		// (a character's body undoes it) or a character's size.
+		bool ResizesQueryBodies(const NetPrefabDesc& desc) noexcept
+		{
+			return std::ranges::any_of(desc.replicated, [](NetComponentId id) {
+				return id == NetComponentId::TransformFullScale || id == NetComponentId::TransformYawScale
+					|| id == NetComponentId::CharacterControllerSize;
+			});
+		}
+
+		bool SyncsRenderers(const NetPrefabDesc& desc) noexcept
+		{
+			return std::ranges::find(desc.replicated, NetComponentId::Renderers) != desc.replicated.end();
+		}
+
+		bool SyncsAttachment(const NetPrefabDesc& desc) noexcept
+		{
+			return std::ranges::find(desc.replicated, NetComponentId::Attachment) != desc.replicated.end();
+		}
+
+		bool SyncsChildOnOff(const NetPrefabDesc& desc) noexcept
+		{
+			return std::ranges::find(desc.replicated, NetComponentId::ChildOnOff) != desc.replicated.end();
+		}
+
+		bool SyncsChildren(const NetPrefabDesc& desc) noexcept
+		{
+			return std::ranges::any_of(desc.replicated, [](NetComponentId id) {
+				return id == NetComponentId::ChildRotations || id == NetComponentId::ChildTransforms;
+			});
+		}
+
+		RecordMask FullMask(const NetPrefabDesc& desc) noexcept
 		{
 			return static_cast<std::uint8_t>((1u << desc.replicated.size()) - 1u);
 		}
@@ -138,7 +188,10 @@ namespace Crucible
 		}
 
 		if (m_session.IsServer()) PerformPendingSpawns(world);
+		if (m_session.IsServer()) ApplyOwnerRequests(world);   // after the spawns: a request may name one
 		else if (m_session.IsClient()) ApplyWorldMessages(world);   // NetInputSystem sends the Input later this stage
+		if (m_session.IsClient()) RetryAttachments(world);          // parents that arrived since
+		else m_waitingAttachments.clear();
 
 #ifndef NDEBUG
 		if (m_session.IsActive()) CheckIdentityMap(world, m_session);   // reports identities overwritten after spawn
@@ -248,6 +301,7 @@ namespace Crucible
 					begin.sceneAsset, begin.sceneHash, m_session.SceneAsset(), m_session.SceneHash()));
 				return false;
 			}
+			m_session.SetSceneSeedFromHost(begin.sceneSeed);   // a client that joined into a running scene learns it here
 			m_session.SetWorldState(ClientWorld::Receiving);
 			m_session.MarkLifecycleApplied(begin.lifecycleSeq);
 			return true;
@@ -269,6 +323,9 @@ namespace Crucible
 		case MessageType::DespawnBatch:
 			if (state != ClientWorld::Ready) { Leave(CloseReason::Malformed, "DespawnBatch inside the world stream"); return false; }
 			return ApplyDespawnBatch(world, reader);
+		case MessageType::OwnerChange:
+			if (state != ClientWorld::Ready) { Leave(CloseReason::Malformed, "OwnerChange inside the world stream"); return false; }
+			return ApplyOwnerChange(world, reader);
 		case MessageType::SceneObjectBatch:
 			if (state != ClientWorld::Receiving) { Leave(CloseReason::Malformed, "a SceneObjectBatch outside the world stream"); return false; }
 			return ApplySceneObjectBatch(world, reader);
@@ -415,6 +472,11 @@ namespace Crucible
 			m_content.Serializers().EnsureRuntimeComponents(world, root, context);   // NetVariables: the record fills it
 			if (!m_content.Serializers().ApplyRecord(world, root, spawn.mask, spawn.state, context, &error))
 				throw std::runtime_error("initial state: " + error);
+			if (ResizesQueryBodies(*desc)) RefreshClientQueryBodies(world, root);   // the bodies were made from the prefab's values
+			if (SyncsChildren(*desc)) BindSyncedChildren(world, root, *desc);
+			if (SyncsRenderers(*desc)) ApplyRenderers(world, root, *desc);
+			if (SyncsChildOnOff(*desc)) ApplyChildOnOff(world, root, *desc);
+			if (SyncsAttachment(*desc)) AttachOrWait(world, root);
 
 			world.AddComponent(root, SeededInterpolation(world, root, tick));
 			world.AddComponent(root, NetworkIdentity{ .id = spawn.id, .prefab = spawn.prefab, .owner = spawn.owner });
@@ -444,6 +506,9 @@ namespace Crucible
 			const Entity e = m_session.Entities().Find(id);
 			if (world.IsAlive(e))
 			{
+				// Network objects attached below it are their own objects: the host announces their
+				// despawn too if it destroyed them, but one it detached first must survive here.
+				DetachNetworkDescendants(world, e);
 				world.DestroyEntity(e);   // the hook removes the mapping; descendants go too
 				++m_session.MutableStats().proxiesDestroyed;
 			}
@@ -454,6 +519,88 @@ namespace Crucible
 		}
 		m_session.MarkLifecycleApplied(m_despawnBatch.lifecycleSeq);
 		return true;
+	}
+
+	// ---- ownership --------------------------------------------------------
+
+	// The new owner in the identity, and the owner-only components switched for it: on where this
+	// machine is the owner, off elsewhere. Then the event (and, on the host, the message).
+	bool NetReceiveSystem::SetOwner(World& world, Entity entity, Net::PeerId owner)
+	{
+		const NetworkIdentity* identity = world.IsAlive(entity) ? world.Read<NetworkIdentity>(entity) : nullptr;
+		if (identity == nullptr) return false;
+		const Net::PeerId previous = identity->owner;
+		if (previous == owner) return true;
+		const Net::NetworkId id = identity->id;
+		const NetPrefabDesc* desc = m_content.Prefabs().Desc(identity->prefab);
+		world.Write<NetworkIdentity>(entity)->owner = owner;   // the id and prefab never change: the map stays valid
+		if (desc != nullptr && !desc->ownerLocalOnly.empty())
+			SetComponentsEnabled(world, entity, desc->ownerLocalOnly, owner == m_session.LocalPeer(), m_scratch);
+		m_session.NoteOwnerChanged(id, previous, owner);
+		return true;
+	}
+
+	void NetReceiveSystem::ApplyOwnerRequests(World& world)
+	{
+		m_session.TakeOwnerRequests(m_ownerRequests);
+		// A client that left: its objects (not its player, which NetInputSystem removes) go back to
+		// the host, so a later player who gets the same PeerId does not inherit them.
+		for (const auto& [id, entity] : m_session.Entities())
+		{
+			const NetworkIdentity* identity = world.IsAlive(entity) ? world.Read<NetworkIdentity>(entity) : nullptr;
+			if (identity == nullptr || identity->owner == Net::kServerPeer || identity->owner > Net::kMaxClients) continue;
+			if (identity->prefab == m_content.PlayerPrefab()) continue;
+			const PeerState& peer = m_session.Peers()[identity->owner - 1];
+			if (peer.IsJoined()) continue;
+			if (std::ranges::none_of(m_ownerRequests, [&](const OwnerChangeRequest& r) { return r.id == id; }))
+				m_ownerRequests.push_back(OwnerChangeRequest{ .id = id, .owner = Net::kServerPeer });
+		}
+		for (const OwnerChangeRequest& request : m_ownerRequests)
+		{
+			const Entity entity = m_session.Entities().Find(request.id);
+			const NetworkIdentity* identity = world.IsAlive(entity) ? world.Read<NetworkIdentity>(entity) : nullptr;
+			if (identity == nullptr) { ++m_session.MutableStats().ownerChangesRefused; continue; }   // despawned since
+			if (identity->prefab == m_content.PlayerPrefab())
+			{
+				++m_session.MutableStats().ownerChangesRefused;
+				CRU_ERROR("[Net] ownership of network object {} not changed: a player always belongs to its own peer", request.id);
+				continue;
+			}
+			if (request.owner != Net::kServerPeer && !m_session.Peers()[request.owner - 1].IsJoined())
+			{
+				++m_session.MutableStats().ownerChangesRefused;   // left between the request and now
+				continue;
+			}
+			SetOwner(world, entity, request.owner);
+		}
+		m_ownerRequests.clear();
+	}
+
+	bool NetReceiveSystem::ApplyOwnerChange(World& world, ByteReader& reader)
+	{
+		OwnerChange change;
+		if (!Decode(reader, change)) { Leave(CloseReason::Malformed, "malformed OwnerChange"); return false; }
+		if (!CheckSequence(change.lifecycleSeq, "OwnerChange")) return false;
+		const Entity entity = m_session.Entities().Find(change.id);
+		if (!SetOwner(world, entity, change.owner)) ++m_session.MutableStats().unknownOwnerChanges;   // despawned since: fine
+		m_session.MarkLifecycleApplied(change.lifecycleSeq);
+		return true;
+	}
+
+	// ---- attachments ------------------------------------------------------
+
+	void NetReceiveSystem::AttachOrWait(World& world, Entity root)
+	{
+		const auto find = [this](Net::NetworkId id) { return m_session.Entities().Find(id); };
+		if (ApplyAttachment(world, root, find)) return;
+		if (std::ranges::find(m_waitingAttachments, root) == m_waitingAttachments.end()) m_waitingAttachments.push_back(root);
+	}
+
+	void NetReceiveSystem::RetryAttachments(World& world)
+	{
+		if (m_waitingAttachments.empty()) return;
+		const auto find = [this](Net::NetworkId id) { return m_session.Entities().Find(id); };
+		std::erase_if(m_waitingAttachments, [&](Entity root) { return !world.IsAlive(root) || ApplyAttachment(world, root, find); });
 	}
 
 	// ---- scene objects (Networking Phase 14.5) ------------------------------------------------
@@ -483,6 +630,10 @@ namespace Crucible
 			if (world.HasComponent<NetInterpolation>(object.entity)) world.RemoveComponent<NetInterpolation>(object.entity);
 			if (world.HasComponent<NetVariables>(object.entity)) world.RemoveComponent<NetVariables>(object.entity);   // the next session starts at 0
 			if (world.HasComponent<NetAnimator>(object.entity)) world.RemoveComponent<NetAnimator>(object.entity);     // the same
+			if (world.HasComponent<NetChildTransforms>(object.entity)) world.RemoveComponent<NetChildTransforms>(object.entity);
+			if (world.HasComponent<NetAttachment>(object.entity)) world.RemoveComponent<NetAttachment>(object.entity);
+			if (world.HasComponent<NetRenderers>(object.entity)) world.RemoveComponent<NetRenderers>(object.entity);
+			if (world.HasComponent<NetChildEnabled>(object.entity)) world.RemoveComponent<NetChildEnabled>(object.entity);
 			SetComponentsEnabled(world, object.entity, object.switchedOff, true, m_scratch);   // what the client switched off
 		}
 		for (const Entity e : spawned)
@@ -629,6 +780,11 @@ namespace Crucible
 				Leave(CloseReason::SpawnFailed, std::format("scene object {:016X} (id {}): initial state: {}", o.sceneId, o.id, error));
 				return false;
 			}
+			if (ResizesQueryBodies(*desc)) RefreshClientQueryBodies(world, local.entity);
+			if (SyncsChildren(*desc)) BindSyncedChildren(world, local.entity, *desc);
+			if (SyncsRenderers(*desc)) ApplyRenderers(world, local.entity, *desc);
+			if (SyncsChildOnOff(*desc)) ApplyChildOnOff(world, local.entity, *desc);
+			if (SyncsAttachment(*desc)) AttachOrWait(world, local.entity);
 			if (o.owner == m_session.LocalPeer()) SetComponentsEnabled(world, local.entity, desc->ownerLocalOnly, true, m_scratch);
 			world.AddComponent(local.entity, SeededInterpolation(world, local.entity, m_sceneBatch.serverTick));
 			world.AddComponent(local.entity, NetworkIdentity{ .id = o.id, .prefab = o.profile, .owner = o.owner });
@@ -717,8 +873,13 @@ namespace Crucible
 				complete = false;
 				continue;
 			}
+			if (ResizesQueryBodies(*context.desc)) RefreshClientQueryBodies(world, e);   // scale and size apply as they come
+			if (SyncsChildren(*context.desc)) BindSyncedChildren(world, e, *context.desc);
+			if (SyncsRenderers(*context.desc)) ApplyRenderers(world, e, *context.desc);   // visuals apply as they come
+			if (SyncsChildOnOff(*context.desc)) ApplyChildOnOff(world, e, *context.desc);
+			const bool attaches = SyncsAttachment(*context.desc);
 			interpolation = world.Write<NetInterpolation>(e);
-			if (interpolation == nullptr) continue;
+			if (interpolation == nullptr) { if (attaches) AttachOrWait(world, e); continue; }
 			interpolation->lastApplied = m_snapshot.serverTick;
 			if (buffered)
 			{
@@ -736,6 +897,8 @@ namespace Crucible
 					t->rotation = drawnRotation;
 				}
 			}
+			// After the new sample is in the buffer: a new parent restarts it from that sample.
+			if (attaches) AttachOrWait(world, e);
 		}
 		if (!complete) { ++stats.snapshotsRejected; return; }
 

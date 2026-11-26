@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          20 November 2026
-* \version       1.0
+* \version       1.1
 * \brief         Networking sample: the rules of a small multiplayer arena
 *                shooter - health, damage, death, respawn and firing -
 *                decided by the host alone. One per scene, on a network
@@ -52,6 +52,10 @@
 *    gone), this machine goes back to lobbyScene on its own.
 *
 *    Needs a session: offline there is no spawned player.
+*
+* \history
+*    -v1.0       the arena shooter (Networking C# Phase 6)
+*    -v1.1       the network scenes moved to Scenes/network_tests (lobbyScene's default)
 **************************************************************************/
 using System;
 using System.Collections.Generic;
@@ -93,7 +97,7 @@ namespace Crucible.@Scripts
         /// <summary>Used when the scene has no respawn points: a random spot within this distance of the centre.</summary>
         public float arenaHalfSize = 10f;
         /// <summary>The lobby (a path inside Assets): Backspace on the host takes everyone there; empty = none.</summary>
-        public string lobbyScene = "Scenes/network_lobby.scene";
+        public string lobbyScene = "Scenes/network_tests/network_lobby.scene";
 
         private readonly NetWriter writer = new NetWriter();
         private readonly double[] lastShot = new double[Network.MaxPlayers];   // host

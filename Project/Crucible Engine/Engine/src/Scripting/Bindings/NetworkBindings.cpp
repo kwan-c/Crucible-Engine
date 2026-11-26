@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          16 November 2026
-* \version       1.7
+* \version       1.9
 * \brief         Internal calls behind the C# Network class
 *                (ManagedScripts/Runtime/Network.cs) and the network part of
 *                Entity (NetworkId, Owner, IsMine), and the queue of network
@@ -65,6 +65,8 @@
 *                LobbyServerAddress, LobbyListingProblem, LobbyBrowseInfo, UseLanDiscovery
 *    -v1.7       ObjectOf: the network object an entity belongs to, e.g. a client's raycast hit
 *                on a query body (Networking C# Phase 8)
+*    -v1.8       the scene seed: LoadSceneSeeded, SceneSeed (protocol 9)
+*    -v1.9       SetOwner and OnOwnershipChanged
 *
 **************************************************************************/
 #include "Scripting/ScriptBindings.h"
@@ -142,7 +144,7 @@ namespace Crucible::ScriptBindings
 		// The listeners; a Subscription only holds a weak link to its bus, so releasing these
 		// after the bus is gone is safe.
 		Subscription onStarted, onWorldReady, onEnded, onJoined, onReady, onLeft, onCommand, onEvent, onSceneLoading,
-		    onAllReady;
+		    onAllReady, onOwnership;
 
 		NetworkSession* Session()
 		{
@@ -825,7 +827,7 @@ namespace Crucible::ScriptBindings
 		         session moves there; offline - an ordinary Scene.Load; client -
 		         refused (only the host decides). 0 ok, 1 refused, 2 not a scene.
 		 *********************************************************************/
-		int32_t ManagedNetworkLoadScene(MonoString* path) noexcept
+		int32_t LoadSceneWithSeed(MonoString* path, const std::uint32_t* seed) noexcept
 		{
 			try
 			{
@@ -844,12 +846,70 @@ namespace Crucible::ScriptBindings
 				const std::uint64_t asset = assets->GetGuid(virtualPath).m_Value;
 				if (asset == 0)
 					return 2;
-				return session->RequestSceneChange(asset) ? 0 : 1;
+				return (seed != nullptr ? session->RequestSceneChange(asset, *seed) : session->RequestSceneChange(asset)) ? 0 : 1;
 			}
 			catch (...)
 			{
 				return 1;
 			}
+		}
+
+		/*********************************************************************
+		 \brief  C# Network.SetOwner(entity, peer): the
+		         host gives a network object to a player. 0 asked for (it changes
+		         next frame), 1 not the running host, 2 not a network object,
+		         3 no such player in the session.
+		 *********************************************************************/
+		int32_t ManagedNetworkSetOwner(int32_t index, int32_t generation, int32_t peer) noexcept
+		{
+			try
+			{
+				NetworkSession* session = Session();
+				const World* world = EntityContext::GetWorld();
+				Entity entity;
+				if (!session || !world || !session->IsServer() || session->State() != SessionState::Running)
+					return 1;
+				if (!EntityContext::ResolveEntity(index, generation, entity))
+					return 2;
+				const NetworkIdentity* identity = IdentityOf(*session, *world, entity);
+				if (!identity)
+					return 2;
+				if (peer < 0 || peer > static_cast<int32_t>(Net::kMaxClients))
+					return 3;
+				return session->RequestOwnerChange(identity->id, static_cast<Net::PeerId>(peer)) ? 0 : 3;
+			}
+			catch (...)
+			{
+				return 1;
+			}
+		}
+
+		int32_t ManagedNetworkLoadScene(MonoString* path) noexcept
+		{
+			return LoadSceneWithSeed(path, nullptr);
+		}
+
+		/*********************************************************************
+		 \brief  C# Network.LoadScene(path, seed): as LoadScene, the new scene's
+		         seed chosen by the host's script (protocol 9).
+		 *********************************************************************/
+		int32_t ManagedNetworkLoadSceneSeeded(MonoString* path, int32_t seed) noexcept
+		{
+			const std::uint32_t value = static_cast<std::uint32_t>(seed);
+			return LoadSceneWithSeed(path, &value);
+		}
+
+		/*********************************************************************
+		 \brief  C# Network.SceneSeed / HasSceneSeed: 1 and the seed when the
+		         session knows the current scene's seed, else 0.
+		 *********************************************************************/
+		int32_t ManagedNetworkSceneSeed(int32_t* outSeed) noexcept
+		{
+			if (outSeed) *outSeed = 0;
+			NetworkSession* session = Session();
+			if (!outSeed || !session || !session->HasSceneSeed()) return 0;
+			*outSeed = static_cast<int32_t>(session->SceneSeed());
+			return 1;
 		}
 
 		/*********************************************************************
@@ -1112,6 +1172,7 @@ namespace Crucible::ScriptBindings
 		onEvent = {};
 		onSceneLoading = {};
 		onAllReady = {};
+		onOwnership = {};
 		waiting.clear();
 		batch.clear();
 		overflowLogged = false;
@@ -1169,6 +1230,23 @@ namespace Crucible::ScriptBindings
 		    [queue](const NetworkEvents::SceneChangeStarted&) { queue(ScriptNetEvent::Kind::SceneLoading); });
 		onAllReady = events->network.Subscribe<NetworkEvents::AllPeersReady>(
 		    [queue](const NetworkEvents::AllPeersReady&) { queue(ScriptNetEvent::Kind::AllPeersReady); });
+		// Ownership: to the scripts on that object only, as VarChanged.
+		onOwnership = events->network.Subscribe<NetworkEvents::OwnershipChanged>(
+		    [](const NetworkEvents::OwnershipChanged& e)
+		    {
+			    NetworkSession* session = Session();
+			    const World* world = EntityContext::GetWorld();
+			    const Entity target = session ? session->Entities().Find(e.id) : Entity{};
+			    if (!world || !target.IsValid() || !world->IsAlive(target))
+				    return;   // despawned since: nobody left to hear it
+			    ScriptNetEvent event;
+			    event.kind = ScriptNetEvent::Kind::OwnershipChanged;
+			    event.peer = e.owner;
+			    event.code = e.previous;
+			    event.targeted = true;
+			    event.target = target;
+			    Queue(std::move(event));
+		    });
 		onEvent = events->network.Subscribe<NetworkEvents::GameplayEventReceived>(
 		    [](const NetworkEvents::GameplayEventReceived& e)
 		    {
@@ -1262,6 +1340,9 @@ namespace Crucible::ScriptBindings
 		Add("Crucible.Network::StartInternal", &ManagedNetworkStart);
 		Add("Crucible.Network::LeaveInternal", &ManagedNetworkLeave);
 		Add("Crucible.Network::LoadSceneInternal", &ManagedNetworkLoadScene);
+		Add("Crucible.Network::LoadSceneSeededInternal", &ManagedNetworkLoadSceneSeeded);
+		Add("Crucible.Network::SetOwnerInternal", &ManagedNetworkSetOwner);
+		Add("Crucible.Network::SceneSeedInternal", &ManagedNetworkSceneSeed);
 		Add("Crucible.Network::BrowseInternal", &ManagedNetworkBrowse);
 		Add("Crucible.Network::LobbyCountInternal", &ManagedNetworkLobbyCount);
 		Add("Crucible.Network::GetLobbyInternal", &ManagedNetworkGetLobby);

@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          25 November 2026
-* \version       1.1
+* \version       1.3
 * \brief
 *                Client query bodies (see the header).
 *
@@ -12,6 +12,9 @@
 *    -v1.1       a CharacterController wins over a Collider on the same entity (the host's
 *                physics ignores that Collider), and its capsule ignores the entity's scale,
 *                as the host's character capsule does
+*    -v1.2       a HeightField Collider gets no query body (its shape needs the Terrain on its own
+*                entity)
+*    -v1.3       RefreshClientQueryBodies: a character's body follows its replicated size and scale
 *
 **************************************************************************/
 #include "Network/NetQueryBodies.h"
@@ -50,7 +53,12 @@ namespace Crucible
 				capsule.shape.m_layer  = character->m_layer;
 				return capsule;
 			}
-			if (const Collider* collider = world.Read<Collider>(e); collider != nullptr && !world.IsComponentEnabled(e, ComponentTypeId<Collider>()))
+			// A HeightField is a Terrain's ground: its shape is the Terrain on the same entity, which
+			// a query body (a child without one) cannot have - physics would build it no body. The
+			// ground is generated the same on every machine from the scene seed, so a client's own
+			// terrain body is what its queries hit; a networked one is not copied.
+			if (const Collider* collider = world.Read<Collider>(e); collider != nullptr && collider->m_type != ShapeType::HeightField
+				&& !world.IsComponentEnabled(e, ComponentTypeId<Collider>()))
 				return Source{ .shape = *collider };
 			return std::nullopt;
 		}
@@ -121,6 +129,39 @@ namespace Crucible
 			++added;
 		}
 		return added;
+	}
+
+	std::size_t RefreshClientQueryBodies(World& world, Entity root)
+	{
+		if (!world.IsAlive(root)) return 0;
+		std::vector<Entity> subtree;
+		world.CollectSubtree(root, subtree);
+		std::size_t changed = 0;
+		for (const Entity body : subtree)
+		{
+			if (!IsClientQueryBody(world, body)) continue;
+			const Entity source = world.GetParent(body);
+			const CharacterController* character = world.IsAlive(source) ? world.Read<CharacterController>(source) : nullptr;
+			const Collider* current = world.Read<Collider>(body);
+			const Transform* local = world.Read<Transform>(body);
+			if (character == nullptr || current == nullptr || local == nullptr) continue;   // a Collider's copy: nothing replicated to follow
+
+			const Math::vec3 unscale = UnscaleFor(world, source);
+			const bool sameShape = current->m_height == character->m_height && current->m_radius == character->m_radius
+				&& current->m_center == character->m_center;
+			const bool sameScale = local->scale == unscale;
+			if (sameShape && sameScale) continue;
+			if (!sameShape)
+			{
+				Collider* shape = world.Write<Collider>(body);
+				shape->m_height = character->m_height;
+				shape->m_radius = character->m_radius;
+				shape->m_center = character->m_center;
+			}
+			if (!sameScale) world.Write<Transform>(body)->scale = unscale;
+			++changed;
+		}
+		return changed;
 	}
 
 	void RemoveClientQueryBodies(World& world, std::span<const Entity> bodies)

@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.5
+* \version       1.7
 * \brief
 *                The host's sending system: the lifecycle stream (the world
 *                for a joining client, then every spawn and despawn) and
@@ -112,6 +112,8 @@
 *    -v1.4       the world stream binds scene objects (SceneObjectBatch)
 *                and names the scene in WorldBegin (Networking Phase 14.5)
 *    -v1.5       views start over after a scene change; Loading peers get nothing (Networking C# Phase 9)
+*    -v1.6       protocol 9: a record's mask is a RecordMask and its size up to kMaxRecordBytes
+*    -v1.7       m_ownerChanges
 *
 **************************************************************************/
 #pragma once
@@ -219,14 +221,16 @@ namespace Crucible
 			Net::NetworkId   id = Net::kInvalidNetworkId;
 			Net::NetPrefabId prefab = Net::kInvalidNetPrefab;
 			Net::PeerId      owner = Net::kServerPeer;
-			std::uint8_t     mask = 0;
+			RecordMask       mask = 0;
 			std::uint32_t    offset = 0;
-			std::uint8_t     size = 0;
+			std::uint16_t    size = 0;                // at most kMaxRecordBytes
 			std::uint64_t    hash = 0;              // of mask and state: change detection
 			Math::vec3       position{ 0.f };       // the root's, for distance
 			float            sendPriority = 1.f;    // from the prefab
 			bool             critical = false;
 		};
+
+		std::vector<OwnerChangeRequest> m_ownerChanges;   // this frame's ownership changes, reused
 
 		/// One snapshot message GNS accepted, until it is acknowledged or overwritten.
 		struct SentSnapshot

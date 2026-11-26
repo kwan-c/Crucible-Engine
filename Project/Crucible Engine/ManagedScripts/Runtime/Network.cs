@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          16 November 2026
-* \version       1.7
+* \version       1.9
 * \brief         The multiplayer session for scripts: who am I, who else is
 *                here, and how a client asks the host to do something.
 *                Part of Crucible.ScriptCore.dll.
@@ -94,6 +94,8 @@
 *                LastBrowseError, LobbyListingProblem; LobbyServerFailedAttempts,
 *                LobbyServerMaxAttempts, UseLanDiscovery, CanUseLanDiscovery, IsUsingLanDiscovery
 *    -v1.7       ObjectOf (Networking C# Phase 8: client physics queries)
+*    -v1.8       SceneSeed, HasSceneSeed and LoadScene(path, seed): the scene seed (protocol 9)
+*    -v1.9       SetOwner
 *
 **************************************************************************/
 using System.Collections.Generic;
@@ -419,7 +421,41 @@ namespace Crucible
         /// </summary>
         public static bool LoadScene(string path)
         {
-            switch (LoadSceneInternal(path))
+            return LoadSceneResult(path, LoadSceneInternal(path));
+        }
+
+        /// <summary>
+        /// LoadScene with the new scene's seed chosen by the host (any value): every machine's
+        /// SceneSeed is this number in the new scene. Offline: an ordinary Scene.Load, the seed
+        /// unused (SceneSeed needs a session).
+        /// </summary>
+        public static bool LoadScene(string path, int seed)
+        {
+            return LoadSceneResult(path, LoadSceneSeededInternal(path, seed));
+        }
+
+        /// <summary>
+        /// The current scene's seed while a session runs: the same number on every machine, for
+        /// procedural content such as a generated level. The host picks one for every scene of the
+        /// session (at random, or the one given to LoadScene(path, seed)); a client has it before
+        /// the new scene's scripts start (OnCreate). A client that joins into a scene already
+        /// running learns it only when it joins: regenerate in OnNetworkStarted if it differs.
+        /// 0 when HasSceneSeed is false.
+        /// </summary>
+        public static int SceneSeed
+        {
+            get { int seed; return SceneSeedInternal(out seed) != 0 ? seed : 0; }
+        }
+
+        /// <summary>True while a session runs and this machine knows the scene's seed.</summary>
+        public static bool HasSceneSeed
+        {
+            get { int seed; return SceneSeedInternal(out seed) != 0; }
+        }
+
+        private static bool LoadSceneResult(string path, int result)
+        {
+            switch (result)
             {
                 case 0:
                     return true;
@@ -803,6 +839,34 @@ namespace Crucible
         /// The same as Entity.Destroy, plus the check that a client never does it: a client
         /// that destroys its copy of a network object only breaks its own picture of the game.
         /// </summary>
+        /// <summary>
+        /// Host only: gives a network object to a player (0 = the host, or a client's PeerId), for
+        /// example a picked-up weapon or a vehicle someone gets into. It changes next frame on
+        /// every machine: Entity.Owner and IsMine follow, the object's Owner only components
+        /// switch on for the new owner and off for the old one, its PlayerInput (if any) takes the
+        /// new owner's input, and its scripts hear OnOwnershipChanged. A player always belongs to
+        /// its own peer: refused (logged). When a client leaves, its objects go back to the host.
+        /// </summary>
+        public static bool SetOwner(Entity entity, int peer)
+        {
+            if (ReferenceEquals(entity, null) || !entity.IsAlive)
+                return false;
+            switch (SetOwnerInternal((int)entity.Index, (int)entity.Generation, peer))
+            {
+                case 0:
+                    return true;
+                case 1:
+                    Log.Error("Network.SetOwner(" + entity + "): only the running host changes ownership");
+                    return false;
+                case 2:
+                    Log.Error("Network.SetOwner(" + entity + "): not a network object");
+                    return false;
+                default:
+                    Log.Error("Network.SetOwner(" + entity + ", " + peer + "): no such player in the session");
+                    return false;
+            }
+        }
+
         public static bool Despawn(Entity entity, float delay = 0f)
         {
             if (ReferenceEquals(entity, null) || !entity.IsAlive)
@@ -873,6 +937,12 @@ namespace Crucible
         private static extern int LeaveInternal(string reason);
         [MethodImpl(MethodImplOptions.InternalCall)]
         private static extern int LoadSceneInternal(string path);
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int LoadSceneSeededInternal(string path, int seed);
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int SetOwnerInternal(int index, int generation, int peer);
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int SceneSeedInternal(out int seed);
         [MethodImpl(MethodImplOptions.InternalCall)]
         private static extern string BrowseInternal(int on);
         [MethodImpl(MethodImplOptions.InternalCall)]

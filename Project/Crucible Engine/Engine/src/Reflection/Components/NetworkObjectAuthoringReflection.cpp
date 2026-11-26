@@ -3,7 +3,7 @@
   \author     Abhishek Akilandeswari Patchamuthu
   \par        Email: a.patchamuthu@digipen.edu
   \date       6 November 2026
-  \version    1.1
+  \version    1.3
   \brief
     RTTR registration for NetworkObjectAuthoring, an object's saved
     networking settings (Network/NetComponents.h).
@@ -25,6 +25,10 @@
     - 1.0 (6 November 2026): Initial version (Networking Phase 14.1).
     - 1.1 (6 November 2026): fields hidden from the generic drawer; the
       policy table draws them (Networking Phase 14.3).
+    - 1.2 (24 November 2026): syncedChildren.
+      Absent from older files: it loads as an empty list.
+    - 1.3 (26 November 2026): childEnabledReplicated (on/off below the
+      root). Absent from older files: empty.
   \copyright
     Copyright (C) 2026 DigiPen Institute of Technology.
 *************************************************************************/
@@ -44,6 +48,10 @@ RTTR_REGISTRATION
         .property("ownerLocalOnly",      &NetworkObjectAuthoring::ownerLocalOnly)
         (rttr::metadata(MetaDataTypes::NOT_ON_IMGUI, true))   // drawn by the policy table
         .property("enabledReplicated",   &NetworkObjectAuthoring::enabledReplicated)
+        (rttr::metadata(MetaDataTypes::NOT_ON_IMGUI, true))   // drawn by the policy table
+        .property("syncedChildren",      &NetworkObjectAuthoring::syncedChildren)
+        (rttr::metadata(MetaDataTypes::NOT_ON_IMGUI, true))   // drawn by the policy table
+        .property("childEnabledReplicated", &NetworkObjectAuthoring::childEnabledReplicated)
         (rttr::metadata(MetaDataTypes::NOT_ON_IMGUI, true))   // drawn by the policy table
         .property("sendPriority",        &NetworkObjectAuthoring::sendPriority)
         (rttr::metadata(MetaDataTypes::NOT_ON_IMGUI, true))   // drawn by the policy table

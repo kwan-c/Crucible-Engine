@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.6
+* \version       1.9
 * \brief
 *                NetReplicationSendSystem: the host's lifecycle stream
 *                (world on join, spawns, despawns) and snapshots.
@@ -19,6 +19,10 @@
 *                in WorldBegin (Networking Phase 14.5)
 *    -v1.5       a gameplay event's target goes on the wire (protocol 6)
 *    -v1.6       views start over after a scene change; Loading peers get nothing (Networking C# Phase 9)
+*    -v1.7       protocol 9: varint record mask and length in the size estimates; WorldBegin carries the
+*                scene seed
+*    -v1.8       an attached object's distance class uses its world position
+*    -v1.9       OwnerChange messages after the frame's spawns and despawns
 *
 **************************************************************************/
 #include "Network/Systems/NetReplicationSendSystem.h"
@@ -39,9 +43,9 @@ namespace Crucible
 {
 	namespace
 	{
-		std::uint8_t FullMask(const NetPrefabDesc& desc) noexcept
+		RecordMask FullMask(const NetPrefabDesc& desc) noexcept
 		{
-			return static_cast<std::uint8_t>((1u << desc.replicated.size()) - 1u);
+			return static_cast<RecordMask>((1u << desc.replicated.size()) - 1u);   // at most 16 entries: no overflow
 		}
 
 		std::size_t VarU32Bytes(std::uint32_t v) noexcept
@@ -49,6 +53,12 @@ namespace Crucible
 			std::size_t n = 1;
 			while (v >= 0x80u) { v >>= 7; ++n; }
 			return n;
+		}
+
+		// A record's mask and length on the wire (protocol 9: both varints).
+		std::size_t RecordHeaderBytes(RecordMask mask, std::size_t size) noexcept
+		{
+			return VarU32Bytes(mask) + VarU32Bytes(static_cast<std::uint32_t>(size));
 		}
 
 		// u8 type, u32 lifecycleSeq, u32 serverTick, u16 count
@@ -59,11 +69,12 @@ namespace Crucible
 		// FNV-1a, 64 bits, over the mask and the state: equal records, equal hash. Two different
 		// records sharing a hash (about 1 in 2^64 per comparison) would leave one client with an
 		// older copy until that entity's state changes again.
-		std::uint64_t RecordHash(std::uint8_t mask, std::span<const std::byte> state) noexcept
+		std::uint64_t RecordHash(RecordMask mask, std::span<const std::byte> state) noexcept
 		{
 			std::uint64_t h = 0xcbf29ce484222325ull;
 			const auto mix = [&h](std::uint8_t b) { h ^= b; h *= 0x100000001b3ull; };
-			mix(mask);
+			mix(static_cast<std::uint8_t>(mask));
+			mix(static_cast<std::uint8_t>(mask >> 8));
 			for (const std::byte b : state) mix(static_cast<std::uint8_t>(b));
 			return h;
 		}
@@ -162,6 +173,8 @@ namespace Crucible
 			m_spawned.clear();
 			m_session.TakeGameplayEvents(m_events);
 			m_events.clear();
+			m_session.TakeOwnerChanges(m_ownerChanges);
+			m_ownerChanges.clear();
 			return;
 		}
 		SyncViews();
@@ -199,6 +212,22 @@ namespace Crucible
 			for (const Net::PeerId peer : m_incremental)
 				if (SendSpawnBatches(peer, m_spawnRecords)) SendDespawnBatches(peer, m_despawned);
 		}
+
+		// Ownership changes, after this frame's spawns and despawns: to every
+		// client in the game. A client receiving its world this frame has the new owners in it.
+		m_session.TakeOwnerChanges(m_ownerChanges);
+		for (const OwnerChangeRequest& change : m_ownerChanges)
+		{
+			for (const Net::PeerId peer : m_incremental)
+			{
+				const std::uint32_t seq = m_session.NextLifecycleSeq(peer);
+				if (seq == 0) continue;   // closed by a failed send earlier this frame
+				std::array<std::byte, 16> buffer;
+				ByteWriter writer(buffer);
+				if (Encode(writer, OwnerChange{ .lifecycleSeq = seq, .id = change.id, .owner = change.owner })) Send(peer, writer.Written());
+			}
+		}
+		m_ownerChanges.clear();
 
 		// Gameplay events, after this frame's spawns and despawns on the same lane: in order, each
 		// to everyone or to its one client. A client receiving its world this frame gets none of
@@ -291,7 +320,7 @@ namespace Crucible
 
 			const NetPrefabDesc* desc = m_content.Prefabs().Desc(identity->prefab);
 			std::string error = desc == nullptr ? "not a registered network prefab" : "";
-			const std::uint8_t mask = desc != nullptr ? FullMask(*desc) : 0;
+			const RecordMask mask = desc != nullptr ? FullMask(*desc) : 0;
 			ByteWriter writer(body);
 			if (desc != nullptr && !m_content.Serializers().WriteRecord(world, entity, mask, ReplicationContext{ .desc = desc, .tick = tick }, writer, &error))
 				error = "record: " + error;
@@ -308,11 +337,14 @@ namespace Crucible
 			record.owner = identity->owner;
 			record.mask = mask;
 			record.offset = static_cast<std::uint32_t>(m_state.size());
-			record.size = static_cast<std::uint8_t>(writer.Size());   // at most kMaxRecordBytes: the buffer's size
+			record.size = static_cast<std::uint16_t>(writer.Size());   // at most kMaxRecordBytes: the buffer's size
 			record.hash = RecordHash(mask, writer.Written());
 			record.sendPriority = desc->sendPriority;
 			record.critical = desc->critical;
 			if (const Transform* t = world.Read<Transform>(entity)) record.position = t->positions;
+			// An attached object: its Transform is local to the mount, so its
+			// distance to each client is taken from where it is in the world.
+			if (Math::mat4 m(1.f); world.GetParent(entity).IsValid() && world.TryGetWorldMatrix(entity, m)) record.position = Math::vec3(m[3]);
 			m_state.insert(m_state.end(), writer.Written().begin(), writer.Written().end());
 			out.push_back(record);
 		}
@@ -336,7 +368,8 @@ namespace Crucible
 		for (const Record& r : records) (m_session.SceneIdOf(r.id) != 0 ? m_worldScene : m_worldDynamic).push_back(r);
 
 		ByteWriter begin(m_message);
-		const WorldBegin message{ .lifecycleSeq = m_session.NextLifecycleSeq(peer), .sceneAsset = m_session.SceneAsset(), .sceneHash = m_session.SceneHash() };
+		const WorldBegin message{ .lifecycleSeq = m_session.NextLifecycleSeq(peer), .sceneAsset = m_session.SceneAsset(), .sceneHash = m_session.SceneHash(),
+			.sceneSeed = m_session.SceneSeed() };
 		if (!Encode(begin, message) || !Send(peer, begin.Written())) return false;
 		if (!SendSceneObjectBatches(peer, m_worldScene)) return false;
 		if (!SendSpawnBatches(peer, m_worldDynamic)) return false;
@@ -361,7 +394,7 @@ namespace Crucible
 			while (next < records.size() && m_spawnBatch.spawns.size() < kMaxEntitiesPerMessage)
 			{
 				const Record& r = records[next];
-				const std::size_t recordBytes = VarU32Bytes(r.id) + 2 + 1 + 1 + 1 + r.size;
+				const std::size_t recordBytes = VarU32Bytes(r.id) + 2 + 1 + RecordHeaderBytes(r.mask, r.size) + r.size;
 				if (!m_spawnBatch.spawns.empty() && bytes + recordBytes > kMaxReliableBytes) break;
 				SpawnView view;
 				view.id = r.id;
@@ -408,7 +441,7 @@ namespace Crucible
 			while (next < records.size() && m_sceneBatch.objects.size() < kMaxEntitiesPerMessage)
 			{
 				const Record& r = records[next];
-				const std::size_t recordBytes = VarU32Bytes(r.id) + 8 + 2 + 1 + 1 + 1 + r.size;
+				const std::size_t recordBytes = VarU32Bytes(r.id) + 8 + 2 + 1 + RecordHeaderBytes(r.mask, r.size) + r.size;
 				if (!m_sceneBatch.objects.empty() && bytes + recordBytes > kMaxReliableBytes) break;
 				SceneObjectView view;
 				view.id = r.id;
@@ -612,7 +645,7 @@ namespace Crucible
 		while (criticalEnd < m_candidates.size() && rank(m_candidates[criticalEnd]) == 0)
 		{
 			const Record& r = m_snapshotRecords[m_candidates[criticalEnd].record];
-			criticalBytes += VarU32Bytes(r.id) + 1 + 1 + r.size;
+			criticalBytes += VarU32Bytes(r.id) + RecordHeaderBytes(r.mask, r.size) + r.size;
 			if (criticalBytes <= kMaxSnapshotBytes) keep = criticalEnd + 1;
 			++criticalEnd;
 		}
@@ -663,7 +696,7 @@ namespace Crucible
 			const Candidate& c = m_candidates[next];
 			if (urgentOnly && !c.urgent) break;
 			const Record& r = m_snapshotRecords[c.record];
-			const std::size_t recordBytes = VarU32Bytes(r.id) + 1 + 1 + r.size;
+			const std::size_t recordBytes = VarU32Bytes(r.id) + RecordHeaderBytes(r.mask, r.size) + r.size;
 			if (size + recordBytes > limit) break;
 			RecordView& record = m_snapshot.records[m_snapshot.count++];
 			record.id = r.id;

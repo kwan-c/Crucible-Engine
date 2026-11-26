@@ -238,9 +238,16 @@ namespace Crucible
         public virtual void OnAllPeersReady() {}
 
         /// <summary>
+        /// Every machine, on this object's scripts: the host gave this network object to another
+        /// player (Network.SetOwner), or took a departed client's object back. 0 = the host.
+        /// Entity.Owner and IsMine already say the new owner.
+        /// </summary>
+        public virtual void OnOwnershipChanged(int previousOwner, int newOwner) {}
+
+        /// <summary>
         /// Called by the engine (ScriptRuntime::DispatchNetworkEvent) with plain values.
         /// kind: 0 started, 1 stopped, 2 peer joined, 3 peer ready, 4 peer left, 5 command, 6 event,
-        /// 7 variable changed, 8 scene loading, 9 all peers ready
+        /// 7 variable changed, 8 scene loading, 9 all peers ready, 10 ownership changed
         /// (ScriptNetEvent::Kind in Bindings/NetworkContext.h - keep the two in step).
         /// </summary>
         internal void DispatchNetworkEvent(int kind, int peer, int code, int serial, string text)
@@ -268,6 +275,7 @@ namespace Crucible
                 case 7: OnNetVarChanged(code); break;
                 case 8: OnNetworkSceneLoading(); break;
                 case 9: OnAllPeersReady(); break;
+                case 10: OnOwnershipChanged(code, peer); break;
             }
         }
 

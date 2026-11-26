@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          19 September 2026
-* \version       1.8
+* \version       1.11
 * \brief
 *                Declares the fixed ComponentKind enum (one entry per
 *                engine component type) and the CRUCIBLE_COMPONENT /
@@ -36,6 +36,10 @@
 *    -v1.7       Terrain kind (41): generated ground (Jean David)
 *    -v1.8       NetVariables kind (42): replicated script values
 *    -v1.9       NetAnimator kind (43): replicated Animator parameters
+*    -v1.10      NetChildTransforms (45), NetAttachment (46), NetRenderers (47):
+*                network synced children, attachments and renderers - runtime
+*                only, never saved
+*    -v1.11      NetChildEnabled (48): synced children's on/off states
 *
 *
 **************************************************************************/
@@ -113,8 +117,12 @@ namespace Crucible
 		SceneHidden = 42,        // Editor: hidden in the editor's Scene view only, never saved - Components.h
 		NetVariables = 43,       // Network: a network object's replicated script values (Network/NetComponents.h)
 		NetAnimator = 44,        // Network: a network object's replicated Animator parameters (Network/NetComponents.h)
+		NetChildTransforms = 45, // Network: a network object's synced children's transforms (Network/NetComponents.h)
+		NetAttachment = 46,      // Network: which network object (and mount) a network object hangs under
+		NetRenderers = 47,       // Network: a network object's replicated MeshRenderer / MaterialParams values
+		NetChildEnabled = 48,    // Network: a network object's synced children's replicated on/off states
 
-		MAXCOMPONENT = 45
+		MAXCOMPONENT = 49
 	};
 
 
@@ -334,5 +342,9 @@ namespace Crucible
  X(NetAnimator)                                                                \
  X(Terrain)                                                                    \
  X(SceneHidden)                                                                \
+ X(NetChildTransforms)                                                         \
+ X(NetAttachment)                                                              \
+ X(NetRenderers)                                                               \
+ X(NetChildEnabled)                                                            \
 
 }

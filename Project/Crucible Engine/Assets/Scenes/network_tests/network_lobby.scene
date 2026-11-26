@@ -78,7 +78,7 @@
                                     "integer": 0,
                                     "single": 0.0,
                                     "real": 0.0,
-                                    "text": "Scenes/network_gamplay.scene",
+                                    "text": "Scenes/network_tests/network_gamplay.scene",
                                     "stringIsNull": false,
                                     "entityId": 0,
                                     "assetId": 0

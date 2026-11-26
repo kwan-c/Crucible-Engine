@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.15
+* \version       1.16
 * \brief
 *                Counters the networking code measures itself, per session
 *                (reset by every Start).
@@ -34,6 +34,8 @@
 *    -v1.13      gameplayEventsNoTarget, spawnsImmediate
 *    -v1.14      kMessageTypes 15: UnreliableEvent, and its counters
 *    -v1.15      kMessageTypes 17: SceneChange, SceneLoaded; scene change counters
+*    -v1.16      kMessageTypes 18: OwnerChange; ownerChanges, ownerChangesRefused,
+*                unknownOwnerChanges
 *
 **************************************************************************/
 #pragma once
@@ -92,6 +94,9 @@ namespace Crucible
 		std::uint32_t proxiesDestroyed = 0;    // client: by a DespawnBatch
 		std::uint32_t duplicateSpawns = 0;     // client: spawn for an id it already has (ignored)
 		std::uint32_t unknownDespawns = 0;     // client: despawn for an id it does not have (ignored)
+		std::uint32_t ownerChanges = 0;        // every role: ownership changes applied
+		std::uint32_t ownerChangesRefused = 0; // host: requests refused (a player, gone, an unknown peer)
+		std::uint32_t unknownOwnerChanges = 0; // client: an OwnerChange for an id it does not have (ignored)
 
 		// Snapshots and acknowledgements
 		std::uint64_t snapshotsSent = 0;       // server: snapshot messages GNS accepted, all clients
@@ -168,7 +173,7 @@ namespace Crucible
 
 		// Bytes of our messages by MessageType (index = the type's value), both directions; GNS's
 		// own headers, encryption and acks are not included (GnsTransport::Status has those).
-		static constexpr std::size_t kMessageTypes = 17;   // MessageType::Count (checked in NetworkSession.cpp)
+		static constexpr std::size_t kMessageTypes = 18;   // MessageType::Count (checked in NetworkSession.cpp)
 		std::array<std::uint64_t, kMessageTypes> bytesSentByType{};
 		std::array<std::uint64_t, kMessageTypes> bytesReceivedByType{};
 

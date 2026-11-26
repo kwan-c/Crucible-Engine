@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          6 November 2026
-* \version       1.2
+* \version       1.3
 * \brief
 *                NetInterpolationSystem: proxies drawn 100 ms in the past,
 *                between snapshot samples; the key-to-motion measurement.
@@ -13,6 +13,7 @@
 *    -v1.1       review fix: the own rotation stays local only while Face
 *                Camera applies the local yaw
 *    -v1.2       NetStats::interpolateMicros
+*    -v1.3       synced children drawn at the roots' render tick (ApplyChildTransforms)
 *
 **************************************************************************/
 #include "Network/Systems/NetInterpolationSystem.h"
@@ -23,6 +24,7 @@
 #include "ECS/Components/Components.h"
 #include "ECS/HierarchyTransformSystem.h"
 #include "ECS/World.h"
+#include "Network/NetSyncedChildren.h"
 #include "Network/NetworkSession.h"
 #include "Player/PlayerComponents.h"
 
@@ -114,5 +116,8 @@ namespace Crucible
 				}
 				if (own) m_session.NoteRenderedPosition(identity.id, position);
 			});
+
+		// The synced children, at the same render tick as the roots.
+		ApplyChildTransforms(world, renderTick);
 	}
 }

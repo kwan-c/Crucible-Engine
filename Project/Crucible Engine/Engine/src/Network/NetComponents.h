@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.4
+* \version       1.6
 * \brief
 *                The networking ECS components: NetworkIdentity,
 *                NetInterpolation and PlayerInput (ComponentKind 33-35),
@@ -34,6 +34,9 @@
 *    -v1.2       NetworkObjectAuthoring (Phase 14.1)
 *    -v1.3       NetVariables: replicated script values (Networking C# Phase 4)
 *    -v1.4       NetAnimator: replicated Animator parameters (Networking C# Phase 7)
+*    -v1.5       NetworkObjectAuthoring::syncedChildren; NetChildTransforms,
+*                NetAttachment, NetRenderers; kMaxSyncedChildren
+*    -v1.6       NetworkObjectAuthoring::childEnabledReplicated, NetChildEnabled
 *
 **************************************************************************/
 #pragma once
@@ -45,6 +48,7 @@
 #include <vector>
 
 #include "ECS/Components/ComponentKind.h"
+#include "ECS/Core/ECSCore.h"   // Entity (a client's resolved synced children)
 #include "Math/Math.h"
 #include "Network/NetTypes.h"
 
@@ -133,6 +137,16 @@ namespace Crucible
 		                     owning machine (camera rig, HUD)
 		  enabledReplicated  root component names whose on/off state is
 		                     replicated (EnabledMask)
+		  syncedChildren     name paths of children below the root
+		                     ("Mech Visual/Torso"), one EntityName per
+		                     level: the children whose transforms
+		                     ("Children/..." serializers) and renderers
+		                     ("Renderers") are replicated. At most
+		                     kMaxSyncedChildren;
+		                     each must name exactly one entity.
+		  childEnabledReplicated  component names whose on/off state is
+		                     replicated on every synced child that has
+		                     them ("Children/OnOff")
 		A component in none of the lists is Local: it keeps the value its
 		scene or prefab loaded on every machine and runs everywhere.
 
@@ -145,6 +159,8 @@ namespace Crucible
 		std::vector<std::string> serverOnly;
 		std::vector<std::string> ownerLocalOnly;
 		std::vector<std::string> enabledReplicated;
+		std::vector<std::string> syncedChildren;   // child name paths below the root
+		std::vector<std::string> childEnabledReplicated;   // on/off synced on the synced children
 		float sendPriority = 1.f;          // snapshot scheduling weight, (0, 1000] (host only, not hashed)
 		bool  critical = false;            // every snapshot, ahead of the budget (host only, not hashed)
 		bool  allowScenePlacement = true;  // instances placed in scenes are networked scene objects
@@ -213,7 +229,139 @@ namespace Crucible
 		bool primed = false;     // client: firedSeen holds the first record's counts
 	};
 
+	/// The most children one network object can sync (NetworkObjectAuthoring::syncedChildren).
+	inline constexpr std::uint32_t kMaxSyncedChildren = 16;
+
+	/*************************************************************************
+	 \brief
+		The local transforms of a network object's
+		synced children, as the host sent them.
+	 \details
+		On the network ROOT, added by the network layer on every machine
+		when the object replicates "Children/Rotation" or "Children/Full"
+		(never saved). Slot i is syncedChildren[i]. Each record adds a
+		sample (its server tick, which slots it carried, and their local
+		rotations - and positions for Children/Full); a client keeps the
+		last kHistory and NetInterpolationSystem draws each child between
+		two of them at the same render tick as the root, so torso and legs
+		stay together. A slot the host could not resolve is not carried,
+		and the client leaves that child alone.
+
+		children, bound and warned are a client's own bookkeeping, never
+		sent: NetReceiveSystem resolves the paths on this machine after
+		every record (an unresolvable path - missing, or naming two
+		entities - is never guessed: that slot is skipped and reported
+		once).
+	 *************************************************************************/
+	struct NetChildTransforms
+	{
+		static constexpr std::uint32_t kSlots = kMaxSyncedChildren;
+		static constexpr std::uint32_t kHistory = 8;
+
+		struct Sample
+		{
+			Net::NetTick  tick = 0;
+			std::uint16_t present = 0;   // bit i: slot i was carried
+			std::array<Math::vec3, kSlots> positions{};   // "Children/Full" only
+			std::array<Math::quat, kSlots> rotations{};
+		};
+
+		bool                positions = false;   // the samples carry positions (Children/Full)
+		std::vector<Sample> samples;             // client: oldest first, at most kHistory
+
+		std::array<Entity, kSlots> children{};   // client: slot i's entity here (bound slots only)
+		std::uint16_t bound = 0;                 // client: slots resolved on this machine
+		std::uint16_t warned = 0;                // client: slots already reported as unresolvable
+	};
+
+	/*************************************************************************
+	 \brief
+		Which network object this one hangs under, and
+		where in it (a mech part on a mount of another player).
+	 \details
+		On the network ROOT, added by the network layer when the object
+		replicates "Attachment". parent is the NetworkId of the nearest
+		network object above it on the host (none: it is a root); mount
+		identifies the entity it is parented to inside that object by the
+		FNV-1a hash of its name path below the object's root (0: the
+		object's root itself). The host's Transform of an attached object
+		is local to the mount, and so is what its Transform serializer
+		sends: a client parents its copy the same way before using it.
+
+		waiting and warned are a client's own bookkeeping, never sent.
+	 *************************************************************************/
+	struct NetAttachment
+	{
+		Net::NetworkId parent = Net::kInvalidNetworkId;   // none: not attached
+		std::uint32_t  mount = 0;                         // name-path hash of the mount; 0 = the parent object's root
+
+		bool waiting = false;   // client: the parent object or its mount is not here (yet)
+		bool warned = false;    // client: the problem was reported
+	};
+
+	/*************************************************************************
+	 \brief
+		A network object's renderers as the host has
+		them - model, material, mesh, material slots, colour, visibility,
+		and MaterialParams (emissive scale, tint).
+	 \details
+		On the network ROOT, added by the network layer when the object
+		replicates "Renderers". Slot 0 is the root, slot i is
+		syncedChildren[i - 1] (the first kSlots - 1 of them). A client
+		applies every received slot to that entity's MeshRenderer (and
+		MaterialParams) as soon as the record is applied: values arrive as
+		the host set them, at any time. A shader graph's own parameters
+		belong to its material asset, so they arrive with the material.
+	 *************************************************************************/
+	struct NetRenderers
+	{
+		static constexpr std::uint32_t kSlots = 8;            // the root and 7 synced children
+		static constexpr std::uint32_t kMaterialSlots = 4;    // model material slots carried
+
+		struct Slot
+		{
+			bool          present = false;   // the entity has a MeshRenderer on the host
+			bool          visible = true;
+			Math::vec4    colour{ 0.f };
+			std::uint64_t model = 0;
+			std::uint32_t modelRoot = 0xFFFFFFFFu;   // InvalidModelIndex: the whole model
+			std::uint64_t material = 0;
+			std::uint64_t mesh = 0;
+			std::uint8_t  materialCount = 0;   // entries of `materials` in use
+			std::array<std::uint64_t, kMaterialSlots> materials{};
+			bool          hasParams = false;   // the host's entity has MaterialParams
+			float         emissiveScale = 1.f;
+			Math::vec3    custom{ 0.f };
+
+			bool operator==(const Slot&) const = default;
+		};
+
+		std::vector<Slot> slots;   // kSlots entries once a record arrived
+	};
+
+	/*************************************************************************
+	 \brief
+		The on/off states of components on a network
+		object's synced children, as the host sent them.
+	 \details
+		On the network ROOT, added by the network layer when the object
+		replicates "Children/OnOff". Slot i is syncedChildren[i]; bit j is
+		childEnabledReplicated[j] (at most 8). `has` says which of those the
+		child has on the host, `on` which of them are switched on. A client
+		applies them right after the record (NetSyncedChildren.h).
+	 *************************************************************************/
+	struct NetChildEnabled
+	{
+		std::uint16_t present = 0;                    // bit i: slot i was carried
+		std::array<std::uint8_t, kMaxSyncedChildren> has{};
+		std::array<std::uint8_t, kMaxSyncedChildren> on{};
+	};
+
 	// Bind each one to its ComponentKind (see ComponentKind.h).
+	CRUCIBLE_COMPONENT(NetChildEnabled, NetChildEnabled);
+	CRUCIBLE_COMPONENT(NetChildTransforms, NetChildTransforms);
+	CRUCIBLE_COMPONENT(NetAttachment, NetAttachment);
+	CRUCIBLE_COMPONENT(NetRenderers, NetRenderers);
 	CRUCIBLE_COMPONENT(NetAnimator, NetAnimator);
 	CRUCIBLE_COMPONENT(NetVariables, NetVariables);
 	CRUCIBLE_COMPONENT(NetworkIdentity, NetworkIdentity);
@@ -227,12 +375,20 @@ namespace Crucible
 	template <> struct RuntimeOnly<PlayerInput>      : std::true_type {};
 	template <> struct RuntimeOnly<NetVariables>     : std::true_type {};
 	template <> struct RuntimeOnly<NetAnimator>      : std::true_type {};
+	template <> struct RuntimeOnly<NetChildTransforms> : std::true_type {};
+	template <> struct RuntimeOnly<NetAttachment>    : std::true_type {};
+	template <> struct RuntimeOnly<NetRenderers>     : std::true_type {};
+	template <> struct RuntimeOnly<NetChildEnabled>  : std::true_type {};
 
 	template <> struct NotToggleable<NetworkIdentity>  : std::true_type {};
 	template <> struct NotToggleable<NetInterpolation> : std::true_type {};
 	template <> struct NotToggleable<PlayerInput>      : std::true_type {};
 	template <> struct NotToggleable<NetVariables>     : std::true_type {};
 	template <> struct NotToggleable<NetAnimator>      : std::true_type {};
+	template <> struct NotToggleable<NetChildTransforms> : std::true_type {};
+	template <> struct NotToggleable<NetAttachment>    : std::true_type {};
+	template <> struct NotToggleable<NetRenderers>     : std::true_type {};
+	template <> struct NotToggleable<NetChildEnabled>  : std::true_type {};
 
 	// Authored settings: saved (not RuntimeOnly), but never switched off - "networking off for
 	// now" is not a state an object can be in; remove the component instead.

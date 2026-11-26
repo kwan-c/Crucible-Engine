@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.4
+* \version       1.6
 * \brief
 *                Encoders and decoders for every protocol message (see
 *                Protocol.h for the wire layouts and the rules).
@@ -14,6 +14,9 @@
 *    -v1.2       GameplayEvent's target (protocol version 6)
 *    -v1.3       UnreliableEvent codec (protocol version 7)
 *    -v1.4       SceneChange and SceneLoaded codecs (protocol version 8)
+*    -v1.5       protocol version 9: records' varint mask and length (WriteRecordHeader,
+*                ReadRecord); the scene seed in WorldBegin and SceneChange
+*    -v1.6       OwnerChange codec
 *
 **************************************************************************/
 #include "Network/Protocol.h"
@@ -28,12 +31,13 @@ namespace Crucible
 		constexpr std::size_t kJoinRequestMax  = 1 + 4 + 8 + 1 + kMaxPlayerNameBytes;   // 46
 		constexpr std::size_t kJoinAcceptedMax = 1 + 4 + 1 + 4 + 2;                      // 12
 		constexpr std::size_t kSeqOnlyMax      = 1 + 4;                                  // 5
-		constexpr std::size_t kWorldBeginMax   = 1 + 4 + 8 + 8;                          // 21
+		constexpr std::size_t kWorldBeginMax   = 1 + 4 + 8 + 8 + 4;                      // 25
 		constexpr std::size_t kInputCommandSize = 4 + 4 + 1 + 1 + 2 + 1;                 // 13
 		constexpr std::size_t kInputMax = 1 + 1 + kMaxInputCommands * kInputCommandSize + 2 + 4 + 4;   // 51
 		constexpr std::size_t kPeerRosterMax = 1 + 4 + 1 + Net::kMaxPlayers * (1 + 1 + 1 + kMaxPlayerNameBytes);   // 146
 		constexpr std::size_t kCommandMax = 1 + 4 + 2 + 5 + kMaxCommandPayload;                    // 1036
-		constexpr std::size_t kSceneChangeMax = 1 + 4 + 4 + 8;                                    // 17
+		constexpr std::size_t kSceneChangeMax = 1 + 4 + 4 + 8 + 4;                                // 21
+		constexpr std::size_t kOwnerChangeMax = 1 + 4 + 5 + 1;                                    // 11
 
 		void WriteType(ByteWriter& w, MessageType type) noexcept { w.U8(static_cast<std::uint8_t>(type)); }
 
@@ -89,6 +93,7 @@ namespace Crucible
 		case MessageType::Command:       return kCommandMax;
 		case MessageType::SceneChange:   return kSceneChangeMax;
 		case MessageType::SceneLoaded:   return kSeqOnlyMax;
+		case MessageType::OwnerChange:   return kOwnerChangeMax;
 		case MessageType::Snapshot:
 		case MessageType::UnreliableEvent: return kMaxSnapshotBytes;
 		case MessageType::SpawnBatch:
@@ -173,6 +178,7 @@ namespace Crucible
 		w.U32(m.lifecycleSeq);
 		w.U64(m.sceneAsset);
 		w.U64(m.sceneHash);
+		w.U32(m.sceneSeed);
 		return Finished(w, start, MessageType::WorldBegin);
 	}
 
@@ -181,6 +187,7 @@ namespace Crucible
 		m.lifecycleSeq = r.U32();
 		m.sceneAsset = r.U64();
 		m.sceneHash = r.U64();
+		m.sceneSeed = r.U32();
 		return r.Ok() && r.AtEnd() && m.lifecycleSeq != 0;
 	}
 	bool Encode(ByteWriter& w, const WorldEnd& m) noexcept    { return EncodeSeqOnly(w, MessageType::WorldEnd, m.lifecycleSeq); }
@@ -233,6 +240,31 @@ namespace Crucible
 		return r.Ok() && r.AtEnd();   // trailing junk = malformed
 	}
 
+	// ---- records (protocol 9) ------------------------------------------------------------------
+
+	namespace
+	{
+		// A record's mask and length, both varints (one byte each below 128). The caller has
+		// checked the length against kMaxRecordBytes.
+		void WriteRecordHeader(ByteWriter& w, RecordMask mask, std::size_t length) noexcept
+		{
+			w.VarU32(mask);
+			w.VarU32(static_cast<std::uint32_t>(length));
+		}
+
+		// Both limits are checked BEFORE the body is taken: a mask wider than RecordMask or a
+		// length over kMaxRecordBytes is malformed, whatever follows.
+		bool ReadRecord(ByteReader& r, RecordMask& mask, std::span<const std::byte>& body) noexcept
+		{
+			const std::uint32_t rawMask = r.VarU32();
+			const std::uint32_t length = r.VarU32();
+			if (!r.Ok() || rawMask > 0xFFFFu || length > kMaxRecordBytes) return false;
+			mask = static_cast<RecordMask>(rawMask);
+			body = r.Sub(length);
+			return r.Ok();
+		}
+	}
+
 	// ---- entity lifecycle ------------------------------------------------------------------
 
 	bool Encode(ByteWriter& w, const SpawnBatchView& m) noexcept
@@ -251,8 +283,7 @@ namespace Crucible
 			w.VarU32(s.id);
 			w.U16(s.prefab);
 			w.U8(s.owner);
-			w.U8(s.mask);
-			w.U8(static_cast<std::uint8_t>(s.state.size()));
+			WriteRecordHeader(w, s.mask, s.state.size());
 			w.Bytes(s.state);
 		}
 		return Finished(w, start, MessageType::SpawnBatch);
@@ -272,8 +303,7 @@ namespace Crucible
 			s.id = r.VarU32();
 			s.prefab = r.U16();
 			s.owner = r.U8();
-			s.mask = r.U8();
-			s.state = r.Sub(r.U8());
+			if (!ReadRecord(r, s.mask, s.state)) return false;
 			if (!r.Ok() || s.id == Net::kInvalidNetworkId || s.prefab == Net::kInvalidNetPrefab || !IsValidOwner(s.owner)) return false;
 			m.spawns.push_back(s);
 		}
@@ -315,8 +345,7 @@ namespace Crucible
 			w.U64(o.sceneId);
 			w.U16(o.profile);
 			w.U8(o.owner);
-			w.U8(o.mask);
-			w.U8(static_cast<std::uint8_t>(o.state.size()));
+			WriteRecordHeader(w, o.mask, o.state.size());
 			w.Bytes(o.state);
 		}
 		return Finished(w, start, MessageType::SceneObjectBatch);
@@ -337,8 +366,7 @@ namespace Crucible
 			o.sceneId = r.U64();
 			o.profile = r.U16();
 			o.owner = r.U8();
-			o.mask = r.U8();
-			o.state = r.Sub(r.U8());
+			if (!ReadRecord(r, o.mask, o.state)) return false;
 			if (!r.Ok() || o.id == Net::kInvalidNetworkId || o.sceneId == 0 || o.profile == Net::kInvalidNetPrefab || !IsValidOwner(o.owner)) return false;
 			m.objects.push_back(o);
 		}
@@ -492,6 +520,7 @@ namespace Crucible
 		w.U32(m.lifecycleSeq);
 		w.U32(m.transition);
 		w.U64(m.sceneAsset);
+		w.U32(m.sceneSeed);
 		return Finished(w, start, MessageType::SceneChange);
 	}
 
@@ -500,6 +529,7 @@ namespace Crucible
 		m.lifecycleSeq = r.U32();
 		m.transition = r.U32();
 		m.sceneAsset = r.U64();
+		m.sceneSeed = r.U32();
 		return r.Ok() && r.AtEnd() && m.lifecycleSeq != 0 && m.transition != 0 && m.sceneAsset != 0;
 	}
 
@@ -511,6 +541,27 @@ namespace Crucible
 	bool Decode(ByteReader& r, SceneLoaded& m) noexcept
 	{
 		return DecodeSeqOnly(r, m.transition);
+	}
+
+	// ---- ownership -----------------------------------------------------
+
+	bool Encode(ByteWriter& w, const OwnerChange& m) noexcept
+	{
+		if (m.lifecycleSeq == 0 || m.id == Net::kInvalidNetworkId || m.owner > Net::kMaxClients) return false;
+		const std::size_t start = w.Size();
+		WriteType(w, MessageType::OwnerChange);
+		w.U32(m.lifecycleSeq);
+		w.VarU32(m.id);
+		w.U8(m.owner);
+		return Finished(w, start, MessageType::OwnerChange);
+	}
+
+	bool Decode(ByteReader& r, OwnerChange& m) noexcept
+	{
+		m.lifecycleSeq = r.U32();
+		m.id = r.VarU32();
+		m.owner = r.U8();
+		return r.Ok() && r.AtEnd() && m.lifecycleSeq != 0 && m.id != Net::kInvalidNetworkId && m.owner <= Net::kMaxClients;
 	}
 
 	bool Encode(ByteWriter& w, const UnreliableEventView& m) noexcept
@@ -548,8 +599,7 @@ namespace Crucible
 		{
 			if (rec.body.size() > kMaxRecordBytes) return false;
 			w.VarU32(rec.id);
-			w.U8(rec.mask);
-			w.U8(static_cast<std::uint8_t>(rec.body.size()));
+			WriteRecordHeader(w, rec.mask, rec.body.size());
 			w.Bytes(rec.body);
 		}
 		return Finished(w, start, MessageType::Snapshot);
@@ -566,9 +616,7 @@ namespace Crucible
 		{
 			RecordView& rec = m.records[i];
 			rec.id = r.VarU32();
-			rec.mask = r.U8();
-			rec.body = r.Sub(r.U8());
-			if (!r.Ok() || rec.id == Net::kInvalidNetworkId) return false;
+			if (!r.Ok() || !ReadRecord(r, rec.mask, rec.body) || rec.id == Net::kInvalidNetworkId) return false;
 		}
 		if (!r.AtEnd()) return false;
 		m.count = count;
