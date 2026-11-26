@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.14
+* \version       1.16
 * \brief
 *                The ECS system that runs the network session once per
 *                frame, first in PreUpdate, and makes the World follow it:
@@ -121,6 +121,9 @@
 *                (Networking C# Phase 8)
 *    -v1.13      attachments: AttachOrWait, RetryAttachments, m_waitingAttachments
 *    -v1.14      ownership transfer: ApplyOwnerRequests, ApplyOwnerChange, SetOwner
+*    -v1.15      objects kept across scene changes (protocol 12): CollectKept, KeepForSceneChange,
+*                Rebind, DropUnboundKept
+*    -v1.16      SetSceneLoader (a client's scene load; tests give their own)
 *
 **************************************************************************/
 #pragma once
@@ -156,11 +159,17 @@ namespace Crucible
 		NetReceiveSystem(NetworkSession& session, NetContent& content, SceneManager& scenes) noexcept
 			: m_session(session), m_content(content), m_scenes(scenes) {}
 		NetReceiveSystem(const NetReceiveSystem&) = delete;   // holds received messages (move-only)
+		~NetReceiveSystem() override { m_session.SetKeptObjectsQuery({}); }
 
 		/// The asset GUID of a scene file (Core: the AssetManager's). Unset: 0, which both machines
 		/// then agree on, so only the scene-object hash is compared.
 		using SceneAssetResolver = std::function<std::uint64_t(const std::filesystem::path&)>;
 		void SetSceneAssetResolver(SceneAssetResolver resolver) { m_sceneAssetOf = std::move(resolver); }
+
+		/// A client's load of the host's next scene. Unset: SceneManager::RequestLoadAsset (Core);
+		/// tests give their own. True if the load was requested.
+		using SceneLoader = std::function<bool(std::uint64_t sceneAsset)>;
+		void SetSceneLoader(SceneLoader loader) { m_sceneLoader = std::move(loader); }
 		NetReceiveSystem& operator=(const NetReceiveSystem&) = delete;
 
 		SystemStage Stage() const override { return SystemStage::PreUpdate; }
@@ -208,6 +217,17 @@ namespace Crucible
 		void EndSessionObjects(World& world);
 		bool ApplySceneObjectBatch(World& world, ByteReader& reader);
 		void RemoveUnboundSceneObjects(World& world);
+
+		// Kept across scene changes (protocol 12)
+		void CollectKept(std::vector<std::pair<Net::NetworkId, Entity>>& out);   // host: the session asks at a scene change
+		void KeepForSceneChange(World& world, const SceneChange& change, std::vector<std::pair<Net::NetworkId, Entity>>& out);   // client
+		bool Rebind(World& world, Entity root, const SpawnView& spawn, Net::NetTick tick, std::string& why);   // client
+		void DropUnboundKept(World& world);   // client, WorldEnd
+		SceneLoader               m_sceneLoader;
+		World*                    m_lastWorld = nullptr;   // the World of the latest Update (CollectKept runs outside one)
+		bool                      m_keptQuerySet = false;
+		std::vector<std::pair<Net::NetworkId, Entity>> m_kept;   // reused
+		std::vector<Net::NetworkId> m_unbound;                   // reused
 
 		NetworkSession&           m_session;
 		NetContent&               m_content;

@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.9
+* \version       1.10
 * \brief
 *                NetReplicationSendSystem: the host's lifecycle stream
 *                (world on join, spawns, despawns) and snapshots.
@@ -23,6 +23,7 @@
 *                scene seed
 *    -v1.8       an attached object's distance class uses its world position
 *    -v1.9       OwnerChange messages after the frame's spawns and despawns
+*    -v1.10      records the lag-compensation history every frame on the host
 *
 **************************************************************************/
 #include "Network/Systems/NetReplicationSendSystem.h"
@@ -153,12 +154,14 @@ namespace Crucible
 			for (ClientView& view : m_views) view.Reset();
 			m_generation = m_session.Generation();
 			m_sceneEpoch = m_session.SceneEpoch();
+			m_session.LagHistory().Clear();   // shapes of another scene (or session) are no use
 		}
 
 		// The tick counts the fixed steps physics really ran (none while paused), so a snapshot's
 		// tick names an exact simulation step.
 		const bool hosting = m_session.IsServer() && m_session.State() == SessionState::Running;
 		if (hosting) m_session.Clock().AdvanceSimulation(m_steps ? m_steps() : 0u);
+		if (hosting) m_session.LagHistory().Record(world, m_session, m_session.Clock().Tick());   // lag compensation
 
 		// Ids unmapped since last frame: their per-client state goes. In every role, so the
 		// session's list never grows.

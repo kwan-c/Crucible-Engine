@@ -70,6 +70,7 @@ namespace Crucible
         private FlowFieldSurface flowFieldSurface;
         private StateGraphAgent stateGraphAgent;
         private NetVars netVars;
+        private NetData netData;
         private Terrain terrain;
 
         internal Entity(uint index, uint generation)
@@ -494,7 +495,7 @@ namespace Crucible
         }
 
         // --- networking -------------------------------------------------------------- //
-        // Multiplayer (see Network.cs). A network object is an entity the host shares with
+        // Multiplayer (see Networking/Network.cs). A network object is an entity the host shares with
         // every player: a spawned network prefab, or a scene entity with a Network Object
         // component. Its NetworkId and owner are the same on every machine.
 
@@ -543,10 +544,16 @@ namespace Crucible
         }
 
         /// <summary>
-        /// This entity's network variables: 16 numbered values the host sets and every player
-        /// sees (health, ammo, a state). See NetVars.cs.
+        /// This entity's network variables: 64 numbered values the host sets and every player
+        /// sees (health, ammo, a state). See Networking/NetVars.cs.
         /// </summary>
         public NetVars NetVars { get { return netVars ?? (netVars = new NetVars(Identity)); } }
+
+        /// <summary>
+        /// This entity's network data: up to 256 bytes the host sets and every player sees, for
+        /// lists and other state that does not fit numbered values. See Networking/NetData.cs.
+        /// </summary>
+        public NetData NetData { get { return netData ?? (netData = new NetData(Identity)); } }
 
         // --- equality --------------------------------------------------------------- //
 

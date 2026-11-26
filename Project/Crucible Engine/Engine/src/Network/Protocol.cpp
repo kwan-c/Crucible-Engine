@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.6
+* \version       1.9
 * \brief
 *                Encoders and decoders for every protocol message (see
 *                Protocol.h for the wire layouts and the rules).
@@ -17,6 +17,9 @@
 *    -v1.5       protocol version 9: records' varint mask and length (WriteRecordHeader,
 *                ReadRecord); the scene seed in WorldBegin and SceneChange
 *    -v1.6       OwnerChange codec
+*    -v1.7       protocol version 10: input commands' actions (varints) and pitch
+*    -v1.8       PeerPings codec (protocol version 11)
+*    -v1.9       SceneChange's kept ids (protocol version 12)
 *
 **************************************************************************/
 #include "Network/Protocol.h"
@@ -32,12 +35,13 @@ namespace Crucible
 		constexpr std::size_t kJoinAcceptedMax = 1 + 4 + 1 + 4 + 2;                      // 12
 		constexpr std::size_t kSeqOnlyMax      = 1 + 4;                                  // 5
 		constexpr std::size_t kWorldBeginMax   = 1 + 4 + 8 + 8 + 4;                      // 25
-		constexpr std::size_t kInputCommandSize = 4 + 4 + 1 + 1 + 2 + 1;                 // 13
-		constexpr std::size_t kInputMax = 1 + 1 + kMaxInputCommands * kInputCommandSize + 2 + 4 + 4;   // 51
+		constexpr std::size_t kInputCommandSize = 4 + 4 + 1 + 1 + 2 + 1 + 5 + 5 + 2;     // 25 at most (two varints)
+		constexpr std::size_t kInputMax = 1 + 1 + kMaxInputCommands * kInputCommandSize + 2 + 4 + 4;   // 87
 		constexpr std::size_t kPeerRosterMax = 1 + 4 + 1 + Net::kMaxPlayers * (1 + 1 + 1 + kMaxPlayerNameBytes);   // 146
 		constexpr std::size_t kCommandMax = 1 + 4 + 2 + 5 + kMaxCommandPayload;                    // 1036
-		constexpr std::size_t kSceneChangeMax = 1 + 4 + 4 + 8 + 4;                                // 21
+		constexpr std::size_t kSceneChangeMax = 1 + 4 + 4 + 8 + 4 + 1 + kMaxKeptObjects * 5;      // 342 (21 with nothing kept)
 		constexpr std::size_t kOwnerChangeMax = 1 + 4 + 5 + 1;                                    // 11
+		constexpr std::size_t kPeerPingsMax = 1 + 1 + Net::kMaxPlayers * (1 + 2);                  // 14
 
 		void WriteType(ByteWriter& w, MessageType type) noexcept { w.U8(static_cast<std::uint8_t>(type)); }
 
@@ -94,6 +98,7 @@ namespace Crucible
 		case MessageType::SceneChange:   return kSceneChangeMax;
 		case MessageType::SceneLoaded:   return kSeqOnlyMax;
 		case MessageType::OwnerChange:   return kOwnerChangeMax;
+		case MessageType::PeerPings:     return kPeerPingsMax;
 		case MessageType::Snapshot:
 		case MessageType::UnreliableEvent: return kMaxSnapshotBytes;
 		case MessageType::SpawnBatch:
@@ -212,6 +217,9 @@ namespace Crucible
 			w.I8(c.moveZ);
 			w.U16(c.yaw);
 			w.U8(c.buttons);
+			w.VarU32(c.actions);
+			w.VarU32(c.actionsPressed);
+			w.U16(c.pitch);
 		}
 		w.U16(m.ackedSnapshot);
 		w.U32(m.ackBits);
@@ -233,6 +241,9 @@ namespace Crucible
 			c.yaw = r.U16();
 			c.buttons = r.U8();
 			if ((c.buttons & ~InputCommand::kKnownButtons) != 0) return false;   // unknown bits: another format
+			c.actions = r.VarU32();
+			c.actionsPressed = r.VarU32();
+			c.pitch = r.U16();
 		}
 		m.ackedSnapshot = r.U16();
 		m.ackBits = r.U32();
@@ -512,25 +523,49 @@ namespace Crucible
 		return r.Ok() && r.AtEnd();
 	}
 
+	namespace
+	{
+		// Kept ids: non-zero and unique (at most kMaxKeptObjects, so a pairwise check is cheap).
+		bool ValidKept(std::span<const Net::NetworkId> kept) noexcept
+		{
+			for (std::size_t i = 0; i < kept.size(); ++i)
+			{
+				if (kept[i] == Net::kInvalidNetworkId) return false;
+				for (std::size_t j = 0; j < i; ++j)
+					if (kept[j] == kept[i]) return false;
+			}
+			return true;
+		}
+	}
+
 	bool Encode(ByteWriter& w, const SceneChange& m) noexcept
 	{
 		if (m.lifecycleSeq == 0 || m.transition == 0 || m.sceneAsset == 0) return false;
+		if (m.keptCount > kMaxKeptObjects || !ValidKept(m.Kept())) return false;
 		const std::size_t start = w.Size();
 		WriteType(w, MessageType::SceneChange);
 		w.U32(m.lifecycleSeq);
 		w.U32(m.transition);
 		w.U64(m.sceneAsset);
 		w.U32(m.sceneSeed);
+		w.VarU32(m.keptCount);
+		for (const Net::NetworkId id : m.Kept()) w.VarU32(id);
 		return Finished(w, start, MessageType::SceneChange);
 	}
 
 	bool Decode(ByteReader& r, SceneChange& m) noexcept
 	{
+		m.keptCount = 0;
 		m.lifecycleSeq = r.U32();
 		m.transition = r.U32();
 		m.sceneAsset = r.U64();
 		m.sceneSeed = r.U32();
-		return r.Ok() && r.AtEnd() && m.lifecycleSeq != 0 && m.transition != 0 && m.sceneAsset != 0;
+		const std::uint32_t count = r.VarU32();
+		if (!r.Ok() || count > kMaxKeptObjects) return false;   // checked BEFORE looping on it
+		for (std::uint32_t i = 0; i < count; ++i) m.kept[i] = r.VarU32();
+		if (!r.Ok() || !r.AtEnd()) return false;
+		m.keptCount = static_cast<std::uint8_t>(count);
+		return m.lifecycleSeq != 0 && m.transition != 0 && m.sceneAsset != 0 && ValidKept(m.Kept());
 	}
 
 	bool Encode(ByteWriter& w, const SceneLoaded& m) noexcept
@@ -562,6 +597,52 @@ namespace Crucible
 		m.id = r.VarU32();
 		m.owner = r.U8();
 		return r.Ok() && r.AtEnd() && m.lifecycleSeq != 0 && m.id != Net::kInvalidNetworkId && m.owner <= Net::kMaxClients;
+	}
+
+	// ---- pings ---------------------------------------------------------
+
+	namespace
+	{
+		bool IsValidPings(const PeerPings& m) noexcept
+		{
+			if (m.count == 0 || m.count > Net::kMaxPlayers) return false;
+			std::uint32_t seen = 0;
+			for (const PeerPings::Entry& e : m.Entries())
+			{
+				if (!IsValidOwner(e.peer) || (seen & (1u << e.peer)) != 0) return false;
+				seen |= 1u << e.peer;
+			}
+			return true;
+		}
+	}
+
+	bool Encode(ByteWriter& w, const PeerPings& m) noexcept
+	{
+		if (!IsValidPings(m)) return false;
+		const std::size_t start = w.Size();
+		WriteType(w, MessageType::PeerPings);
+		w.U8(m.count);
+		for (const PeerPings::Entry& e : m.Entries())
+		{
+			w.U8(e.peer);
+			w.U16(e.pingMs);
+		}
+		return Finished(w, start, MessageType::PeerPings);
+	}
+
+	bool Decode(ByteReader& r, PeerPings& m) noexcept
+	{
+		m.count = 0;
+		const std::uint8_t count = r.U8();
+		if (!r.Ok() || count == 0 || count > Net::kMaxPlayers) return false;   // check BEFORE using it
+		for (std::uint8_t i = 0; i < count; ++i)
+		{
+			m.entries[i].peer = r.U8();
+			m.entries[i].pingMs = r.U16();
+		}
+		if (!r.Ok() || !r.AtEnd()) return false;
+		m.count = count;
+		return IsValidPings(m);
 	}
 
 	bool Encode(ByteWriter& w, const UnreliableEventView& m) noexcept

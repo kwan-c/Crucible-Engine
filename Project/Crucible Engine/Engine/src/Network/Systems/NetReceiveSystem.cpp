@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.23
+* \version       1.25
 * \brief
 *                NetReceiveSystem: drives NetworkSession::Update each frame,
 *                performs host spawns and applies the host's lifecycle stream
@@ -56,6 +56,9 @@
 *    -v1.23      ownership transfer: the host applies requests (players refused) and
 *                gives a departed client's objects back; a client applies OwnerChange; owner-only
 *                components follow the owner on every machine
+*    -v1.24      NetData removed from scene objects when the session ends
+*    -v1.25      objects kept across scene changes (protocol 12): the host's CollectKept, the client
+*                keeps its copies (KeepForSceneChange), rebinds them from the new world, drops the rest
 *
 **************************************************************************/
 #include "Network/Systems/NetReceiveSystem.h"
@@ -155,6 +158,12 @@ namespace Crucible
 
 	void NetReceiveSystem::Update(World& world, SystemContext& ctx)
 	{
+		m_lastWorld = &world;
+		if (!m_keptQuerySet)
+		{
+			m_keptQuerySet = true;
+			m_session.SetKeptObjectsQuery([this](std::vector<std::pair<Net::NetworkId, Entity>>& out) { CollectKept(out); });
+		}
 		m_session.Update();   // Offline: returns at once
 
 		// Entities whose NetworkIdentity the session rejected (no id, or an id already in use).
@@ -313,6 +322,7 @@ namespace Crucible
 			if (!CheckSequence(end.lifecycleSeq, "WorldEnd")) return false;
 			if (state != ClientWorld::Receiving) { Leave(CloseReason::Malformed, "WorldEnd without WorldBegin"); return false; }
 			RemoveUnboundSceneObjects(world);   // the host's world no longer has them
+			DropUnboundKept(world);             // nor these (destroyed during the change)
 			m_session.SetWorldState(ClientWorld::Ready);
 			m_session.MarkLifecycleApplied(end.lifecycleSeq);
 			return m_session.CompleteWorld(end.lifecycleSeq, m_session.Entities().Count());   // ClientReady
@@ -360,9 +370,11 @@ namespace Crucible
 			if (!Decode(reader, change)) { Leave(CloseReason::Malformed, "malformed SceneChange"); return false; }
 			if (!CheckSequence(change.lifecycleSeq, "SceneChange")) return false;
 			m_session.MarkLifecycleApplied(change.lifecycleSeq);
-			m_session.BeginClientSceneLoad(change);
+			KeepForSceneChange(world, change, m_kept);   // before the load: they must survive it
+			m_session.BeginClientSceneLoad(change, m_kept);
 			m_localSceneObjects.clear();
-			if (!m_scenes.RequestLoadAsset(change.sceneAsset, true))   // past any loading screen: the host is waiting
+			const bool requested = m_sceneLoader ? m_sceneLoader(change.sceneAsset) : m_scenes.RequestLoadAsset(change.sceneAsset, true);   // past any loading screen
+			if (!requested)
 			{
 				++m_session.MutableStats().sceneMismatches;
 				Leave(CloseReason::SceneMismatch, std::format("the host moved to scene {:016X}, which this project does not have", change.sceneAsset));
@@ -439,8 +451,9 @@ namespace Crucible
 	// "complete" are the same thing. Any failure destroys the root, and with it the subtree.
 	bool NetReceiveSystem::CreateProxy(World& world, const SpawnView& spawn, Net::NetTick tick, std::string& why)
 	{
-		if (world.IsAlive(m_session.Entities().Find(spawn.id)))
+		if (const Entity existing = m_session.Entities().Find(spawn.id); world.IsAlive(existing))
 		{
+			if (m_session.TakeKept(spawn.id)) return Rebind(world, existing, spawn, tick, why);   // kept through the scene change
 			++m_session.MutableStats().duplicateSpawns;   // reliable and ordered: should not happen
 			return true;
 		}
@@ -492,6 +505,94 @@ namespace Crucible
 			why = e.what();
 			return false;
 		}
+	}
+
+	// ---- kept across scene changes (protocol 12) ---------------------------------------------
+
+	// Host, from the session at a scene change (the safe point, before the load): the spawned network
+	// objects that survive it - marked DontDestroyOnLoad, themselves or through an ancestor. With
+	// KeepPlayers, every player character is marked first. Scene objects belong to their scene and
+	// are never kept (ForgetPersistentIdentities says so if one was marked).
+	void NetReceiveSystem::CollectKept(std::vector<std::pair<Net::NetworkId, Entity>>& out)
+	{
+		out.clear();
+		if (m_lastWorld == nullptr) return;
+		World& world = *m_lastWorld;
+		if (m_session.KeepPlayers() && m_content.PlayerPrefab() != Net::kInvalidNetPrefab)
+		{
+			for (const auto& [id, entity] : m_session.Entities())
+			{
+				const NetworkIdentity* identity = world.IsAlive(entity) ? world.Read<NetworkIdentity>(entity) : nullptr;
+				if (identity != nullptr && identity->prefab == m_content.PlayerPrefab() && !world.GetParent(entity).IsValid())
+					m_scenes.DontDestroyOnLoad(entity);
+			}
+		}
+		for (const auto& [id, entity] : m_session.Entities())
+			if (world.IsAlive(entity) && m_session.SceneIdOf(id) == 0 && m_scenes.IsPersistent(entity)) out.emplace_back(id, entity);
+	}
+
+	// Client: the host keeps these objects through its scene change, so this client keeps its copies:
+	// the roots are marked DontDestroyOnLoad (an attached one goes with the root it hangs under).
+	// Ids this client does not have are skipped; the new world spawns them.
+	void NetReceiveSystem::KeepForSceneChange(World& world, const SceneChange& change, std::vector<std::pair<Net::NetworkId, Entity>>& out)
+	{
+		out.clear();
+		for (const Net::NetworkId id : change.Kept())
+		{
+			const Entity e = m_session.Entities().Find(id);
+			if (world.IsAlive(e) && !world.GetParent(e).IsValid()) m_scenes.DontDestroyOnLoad(e);
+		}
+		for (const Net::NetworkId id : change.Kept())
+		{
+			const Entity e = m_session.Entities().Find(id);
+			if (world.IsAlive(e) && m_scenes.IsPersistent(e)) out.emplace_back(id, e);
+		}
+	}
+
+	// Client: the new world names a kept object again: its record is applied to the copy kept here (as
+	// a snapshot would), and its interpolation starts over, so a player the host moved to the new
+	// scene's spawn point is drawn there at once instead of sliding across.
+	bool NetReceiveSystem::Rebind(World& world, Entity root, const SpawnView& spawn, Net::NetTick tick, std::string& why)
+	{
+		const NetworkIdentity* identity = world.Read<NetworkIdentity>(root);
+		const NetPrefabDesc* desc = m_content.Prefabs().Desc(spawn.prefab);
+		if (identity == nullptr || desc == nullptr || identity->prefab != spawn.prefab)
+		{
+			why = "a kept object came back as another prefab";
+			return false;
+		}
+		const ReplicationContext context{ .desc = desc, .tick = tick };
+		m_content.Serializers().EnsureRuntimeComponents(world, root, context);
+		std::string error;
+		if (!m_content.Serializers().ApplyRecord(world, root, spawn.mask, spawn.state, context, &error))
+		{
+			why = "kept object's state: " + error;
+			return false;
+		}
+		if (ResizesQueryBodies(*desc)) RefreshClientQueryBodies(world, root);
+		if (SyncsChildren(*desc)) BindSyncedChildren(world, root, *desc);
+		if (SyncsRenderers(*desc)) ApplyRenderers(world, root, *desc);
+		if (SyncsChildOnOff(*desc)) ApplyChildOnOff(world, root, *desc);
+		if (SyncsAttachment(*desc)) AttachOrWait(world, root);
+		if (NetInterpolation* interpolation = world.Write<NetInterpolation>(root)) *interpolation = SeededInterpolation(world, root, tick);
+		else world.AddComponent(root, SeededInterpolation(world, root, tick));
+		if (identity->owner != spawn.owner) SetOwner(world, root, spawn.owner);
+		++m_session.MutableStats().keptRebound;
+		return true;
+	}
+
+	void NetReceiveSystem::DropUnboundKept(World& world)
+	{
+		m_session.TakeUnboundKept(m_unbound);
+		for (const Net::NetworkId id : m_unbound)
+		{
+			const Entity e = m_session.Entities().Find(id);
+			if (!world.IsAlive(e)) continue;
+			DetachNetworkDescendants(world, e);
+			world.DestroyEntity(e);
+			++m_session.MutableStats().keptDropped;
+		}
+		m_unbound.clear();
 	}
 
 	bool NetReceiveSystem::ApplyDespawnBatch(World& world, ByteReader& reader)
@@ -634,6 +735,7 @@ namespace Crucible
 			if (world.HasComponent<NetAttachment>(object.entity)) world.RemoveComponent<NetAttachment>(object.entity);
 			if (world.HasComponent<NetRenderers>(object.entity)) world.RemoveComponent<NetRenderers>(object.entity);
 			if (world.HasComponent<NetChildEnabled>(object.entity)) world.RemoveComponent<NetChildEnabled>(object.entity);
+			if (world.HasComponent<NetData>(object.entity)) world.RemoveComponent<NetData>(object.entity);   // the next session starts empty
 			SetComponentsEnabled(world, object.entity, object.switchedOff, true, m_scratch);   // what the client switched off
 		}
 		for (const Entity e : spawned)

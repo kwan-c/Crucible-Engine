@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.7
+* \version       1.10
 * \brief
 *                The wire protocol between the host and its clients:
 *                message types, their fields, and an Encode/Decode pair
@@ -62,8 +62,10 @@
 *                                           varint length, body }
 *                  Input          u8 count (0..3), count x { u32 sequence,
 *                                 u32 clientTick, i8 moveX, i8 moveZ, u16 yaw,
-*                                 u8 buttons }, u16 ackedSnapshot, u32 ackBits,
-*                                 u32 appliedLifecycle  (12 / 25 / 38 / 51 bytes)
+*                                 u8 buttons, varint actions, varint
+*                                 actionsPressed, u16 pitch }, u16 ackedSnapshot,
+*                                 u32 ackBits, u32 appliedLifecycle
+*                                 (12 bytes plus 17..25 per command; at most 87)
 *                  GameplayEvent  u32 lifecycleSeq, u16 kind (non-zero),
 *                                 varint target (a NetworkId, 0 = none),
 *                                 payload = the rest of the message
@@ -76,10 +78,14 @@
 *                                 varint target (a NetworkId, 0 = none),
 *                                 payload = the rest (<= kMaxCommandPayload)
 *                  SceneChange    u32 lifecycleSeq, u32 transition (non-zero),
-*                                 u64 sceneAsset (non-zero), u32 sceneSeed
+*                                 u64 sceneAsset (non-zero), u32 sceneSeed,
+*                                 varint keptCount (<= 64), keptCount x varint
+*                                 id (non-zero, unique; protocol 12)
 *                  SceneLoaded    u32 transition (non-zero)
 *                  OwnerChange    u32 lifecycleSeq, varint id (non-zero),
 *                                 u8 owner (0 = host, 1..kMaxClients)
+*                  PeerPings      u8 count (1..4), count x { u8 peer, u16 pingMs
+*                                 (0xFFFF = unknown) }, peers unique
 *
 *                Lifecycle sequence: every reliable lane-0 message the
 *                host sends a client (JoinAccepted, WorldBegin, SpawnBatch,
@@ -118,6 +124,23 @@
 *                length above the limit is malformed before anything is
 *                read past it.
 *
+*                Player input (protocol 10): besides the movement intent,
+*                every input command carries the player's game actions -
+*                32 bits a script binds to whatever it likes (fire, use,
+*                reload) - as held this frame and as pressed since the last
+*                command, so a tap shorter than one send is never lost; and
+*                the aim pitch next to the yaw.
+*
+*                Kept objects (protocol 12): a SceneChange lists the network
+*                objects the host keeps through the change (KeepAcrossScenes).
+*                Each client keeps its copies of them; the new world names
+*                them again with the same ids, and a client that kept one
+*                applies that record to its copy instead of spawning it.
+*
+*                Pings (protocol 11): once a second the host tells every
+*                client each player's ping to the host (its own is 0), on
+*                the unreliable lane: a lost one is replaced a second later.
+*
 *                The scene seed (protocol 9): one 32-bit number the host
 *                picks for every scene of the session - at random, or the
 *                one its script asked for - so procedural content (a
@@ -154,6 +177,11 @@
 *                kMaxRecordBytes, up to 16 entries); the scene seed in WorldBegin and
 *                SceneChange; OwnerChange (still protocol 9:
 *                no build with protocol 9 was released before it)
+*    -v1.8       protocol version 10: input commands carry game actions (held and pressed)
+*                and the aim pitch
+*    -v1.9       protocol version 11: PeerPings (message 18); 64 NetVariables slots and the NetData
+*                serializer (ReplicationRegistry)
+*    -v1.10      protocol version 12: SceneChange lists the network objects kept through the change
 *
 **************************************************************************/
 #pragma once
@@ -171,12 +199,14 @@
 
 namespace Crucible
 {
-	// Bump on ANY change to the bytes of any message. (9 = varint record mask and length, the
-	// scene seed; 8 = SceneChange and SceneLoaded; 7 =
+	// Bump on ANY change to the bytes of any message. (12 = kept objects in SceneChange; 11 =
+	// PeerPings, 64 NetVariables slots, the
+	// NetData serializer; 10 = actions and pitch in input commands;
+	// 9 = varint record mask and length, the scene seed; 8 = SceneChange and SceneLoaded; 7 =
 	// UnreliableEvent, and the NetVariables serializer; 6 = GameplayEvent's target; 5 = PeerRoster
 	// and Command; 4 = scene objects and the scene identity in WorldBegin; 3 = lifecycle
 	// sequence; versions 1 and 2 were earlier development versions.)
-	inline constexpr std::uint32_t kProtocolVersion = 9;
+	inline constexpr std::uint32_t kProtocolVersion = 12;
 
 	inline constexpr std::size_t   kMaxSnapshotBytes      = 1100;        // one MTU-sized unreliable message
 	inline constexpr std::size_t   kMaxReliableBytes      = 16 * 1024;   // spawn / despawn / event messages
@@ -188,6 +218,7 @@ namespace Crucible
 	inline constexpr std::size_t   kMaxRecordEntries      = 16;          // entries in one record (bits of its mask)
 	inline constexpr std::size_t   kMaxPlayerNameBytes    = 32;
 	inline constexpr std::size_t   kMaxInputCommands      = 3;           // each command is sent 3 times
+	inline constexpr std::size_t   kMaxKeptObjects        = 64;          // network objects one scene change keeps
 	inline constexpr std::uint32_t kFirstLifecycleSeq     = 1;           // JoinAccepted's; 0 = none
 
 	/// Which entries of an object's replicated list a record carries: bit i = entry i.
@@ -217,6 +248,7 @@ namespace Crucible
 		SceneChange   = 15,   // H->C reliable, lane 0, lifecycle: load this scene (protocol 8)
 		SceneLoaded   = 16,   // C->H reliable, lane 0: that scene is loaded (protocol 8)
 		OwnerChange   = 17,   // H->C reliable, lane 0, lifecycle: a network object has a new owner (protocol 9)
+		PeerPings     = 18,   // H->C unreliable, lane 1: every player's ping to the host, once a second (protocol 11)
 		Count                 // not a message; append new types above it, never renumber
 	};
 
@@ -297,6 +329,10 @@ namespace Crucible
 		std::uint32_t transition = 0;   // non-zero; one per scene change in a session
 		std::uint64_t sceneAsset = 0;   // non-zero
 		std::uint32_t sceneSeed = 0;    // the new scene's seed (protocol 9): any value
+		std::array<Net::NetworkId, kMaxKeptObjects> kept{};   // kept through the change (protocol 12)
+		std::uint8_t  keptCount = 0;    // 0..kMaxKeptObjects; ids non-zero and unique
+
+		std::span<const Net::NetworkId> Kept() const noexcept { return { kept.data(), keptCount }; }
 	};
 	struct SceneLoaded { std::uint32_t transition = 0; };   // must equal the SceneChange's
 
@@ -307,6 +343,22 @@ namespace Crucible
 		std::uint32_t  lifecycleSeq = 0;
 		Net::NetworkId id = Net::kInvalidNetworkId;   // non-zero
 		Net::PeerId    owner = Net::kServerPeer;      // 0 = the host, 1..kMaxClients = a client
+	};
+
+	/// Every player's ping to the host, as the host measures it (protocol 11).
+	struct PeerPings
+	{
+		static constexpr std::uint16_t kUnknown = 0xFFFF;
+
+		struct Entry
+		{
+			Net::PeerId   peer = Net::kInvalidPeer;   // 0 = the host (ping 0), 1..kMaxClients = a client
+			std::uint16_t pingMs = kUnknown;
+		};
+		std::array<Entry, Net::kMaxPlayers> entries{};
+		std::uint8_t count = 0;   // 1..kMaxPlayers, peers unique
+
+		std::span<const Entry> Entries() const noexcept { return { entries.data(), count }; }
 	};
 
 	// ---- the roster (host to client, reliable) ---------------------------------------------
@@ -360,6 +412,9 @@ namespace Crucible
 		std::int8_t   moveZ = 0;
 		std::uint16_t yaw = 0;          // Quantize::AngleToU16
 		std::uint8_t  buttons = 0;      // only kKnownButtons bits
+		std::uint32_t actions = 0;          // game actions held (bit i = action i; the script's meaning)
+		std::uint32_t actionsPressed = 0;   // actions that went down since the previous command
+		std::uint16_t pitch = 0;            // aim pitch, Quantize::AngleToU16 (-10 degrees = 350)
 	};
 
 	/// Also the client's heartbeat and acknowledgement carrier: sent every input interval,
@@ -525,4 +580,6 @@ namespace Crucible
 
 	ENGINE_API bool Encode(ByteWriter& w, const OwnerChange& m) noexcept;
 	ENGINE_API bool Decode(ByteReader& r, OwnerChange& m) noexcept;
+	ENGINE_API bool Encode(ByteWriter& w, const PeerPings& m) noexcept;
+	ENGINE_API bool Decode(ByteReader& r, PeerPings& m) noexcept;
 }

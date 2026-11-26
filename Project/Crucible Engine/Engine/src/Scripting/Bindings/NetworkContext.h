@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          16 November 2026
-* \version       1.4
+* \version       1.5
 * \brief         INTERNAL: the network events waiting for the C# scripts
 *                (EntityScript.OnNetworkStarted, OnPeerJoined,
 *                OnNetworkCommand, ...).
@@ -30,6 +30,7 @@
 *    -v1.2       VarChanged and GatherVariableChanges (Networking C# Phase 4)
 *    -v1.3       SceneLoading, AllPeersReady (Networking C# Phase 9)
 *    -v1.4       OwnershipChanged
+*    -v1.5       DataChanged and GatherDataChanges (NetData)
 *
 **************************************************************************/
 #pragma once
@@ -66,6 +67,7 @@ namespace Crucible::ScriptBindings::NetworkContext
 			SceneLoading = 8,   // the session is moving to another scene (Phase 9)
 			AllPeersReady = 9,  // host: every client has the new scene's world (Phase 9)
 			OwnershipChanged = 10,   // peer = the new owner, code = the previous one; always targeted
+			DataChanged = 11,        // the entity's NetData changed; always targeted
 		};
 
 		Kind    kind = Kind::Started;
@@ -90,10 +92,18 @@ namespace Crucible::ScriptBindings::NetworkContext
 	/*********************************************************************
 	 \brief  Queues a VarChanged for every NetVariables slot that changed
 	         since the last call (a snapshot on a client, a script's Set on
-	         the authority) and clears the marks. EntityScriptSystem calls
-	         it once per Playing frame, right before BeginDispatch.
+	         the authority) and clears the marks, then GatherDataChanges.
+	         EntityScriptSystem calls it once per Playing frame, right
+	         before BeginDispatch.
 	 *********************************************************************/
 	void GatherVariableChanges(World& world);
+
+	/*********************************************************************
+	 \brief  Queues a DataChanged for every entity whose NetData changed
+	         since the last call and clears the marks. GatherVariableChanges
+	         calls it, so both reach the scripts in the same frame.
+	 *********************************************************************/
+	void GatherDataChanges(World& world);
 
 	/*********************************************************************
 	 \brief  Makes everything received since the last call the batch being

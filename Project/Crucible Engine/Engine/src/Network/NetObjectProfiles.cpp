@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          6 November 2026
-* \version       1.7
+* \version       1.8
 * \brief
 *                NetworkObjectAuthoring -> NetPrefabDesc, and network prefab
 *                discovery (see the header).
@@ -19,6 +19,7 @@
 *    -v1.5       CheckAuthoring: a renderer beyond Renderers' first 7 synced children is reported
 *    -v1.6       CheckAuthoring reports a record that cannot fit (WorstCaseRecordBytes), as a session start would
 *    -v1.7       childEnabledReplicated: BuildProfile, CheckAuthoring, belowRoot
+*    -v1.8       NetData is a network runtime component
 *
 **************************************************************************/
 #include "Network/NetObjectProfiles.h"
@@ -169,7 +170,8 @@ namespace Crucible
 				|| id == ComponentTypeId<PlayerInput>() || id == ComponentTypeId<NetworkObjectAuthoring>()
 				|| id == ComponentTypeId<NetVariables>() || id == ComponentTypeId<NetAnimator>()
 				|| id == ComponentTypeId<NetChildTransforms>() || id == ComponentTypeId<NetAttachment>()
-				|| id == ComponentTypeId<NetRenderers>() || id == ComponentTypeId<NetChildEnabled>();
+				|| id == ComponentTypeId<NetRenderers>() || id == ComponentTypeId<NetChildEnabled>()
+				|| id == ComponentTypeId<NetData>();
 		}
 	}
 

@@ -393,8 +393,40 @@ namespace Crucible
 				}
 			};
 			ScriptBindings::NetworkContext::GatherVariableChanges(world); // NetVars -> OnNetVarChanged
+
+			// Networking helpers (Networking/NetRouter.cs): every command and event goes once to
+			// the static Crucible.NetRouter.Route before any script hears it - named-message
+			// handlers, effects, the game state's requests. It returns 1 for the helpers' own
+			// messages (kinds 0xFF00-0xFFFF), which scripts never hear.
+			ScriptAssemblyHandle networkingCore;
+			bool routerReady = false, routerFailed = false;
+			const auto routed = [&](const ScriptBindings::NetworkContext::ScriptNetEvent& event) -> bool
+			{
+				using Kind = ScriptBindings::NetworkContext::ScriptNetEvent::Kind;
+				if ((event.kind != Kind::Command && event.kind != Kind::Event) || routerFailed)
+					return false;
+				if (!routerReady && !(routerReady = m_runtime.LoadAssembly("Managed/Crucible.ScriptCore.dll", networkingCore)))
+				{
+					routerFailed = true;
+					return false;
+				}
+				const std::vector<ScriptValue> arguments{ static_cast<int32_t>(event.kind), event.peer, event.code, event.serial,
+					event.targeted ? static_cast<int32_t>(event.target.index) : -1,
+					event.targeted ? static_cast<int32_t>(event.target.generation) : -1 };
+				ScriptValue result;
+				if (!m_runtime.InvokeStatic(networkingCore, "Crucible", "NetRouter", "Route", arguments, result))
+				{
+					routerFailed = true;   // logged once per frame; the scripts still hear everything
+					CRU_USER_ERROR("Networking helpers (NetRouter.Route) failed: {}", m_runtime.LastError());
+					return false;
+				}
+				return std::holds_alternative<int32_t>(result) && std::get<int32_t>(result) != 0;
+			};
+
 			for (const auto& event : ScriptBindings::NetworkContext::BeginDispatch())
 			{
+				if (routed(event))
+					continue;   // a helper's own message
 				if (event.targeted)
 				{
 					const auto found = m_records.find(Key(event.target));

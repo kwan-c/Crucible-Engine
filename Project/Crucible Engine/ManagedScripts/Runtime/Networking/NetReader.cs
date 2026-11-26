@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          16 November 2026
-* \version       1.0
+* \version       1.1
 * \brief         Reads the values a NetWriter packed, in the same order
 *                (EntityScript.OnNetworkCommand). Part of
 *                Crucible.ScriptCore.dll.
@@ -29,6 +29,7 @@
 *
 * \history
 *    -v1.0       the readers matching NetWriter (Networking C# Phase 2)
+*    -v1.1       moved to ManagedScripts/Runtime/Networking (with the other networking scripts)
 *
 **************************************************************************/
 using System;

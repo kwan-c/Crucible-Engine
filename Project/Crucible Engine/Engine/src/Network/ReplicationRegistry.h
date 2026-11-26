@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.8
+* \version       1.9
 * \brief
 *                ReplicationRegistry: how each replicated piece of state is
 *                written, decoded and committed, keyed by a stable protocol
@@ -70,11 +70,15 @@
 *                  TransformYawOnly  position + yaw (u16): 14 bytes
 *                  EnabledMask       on/off of the prefab's enabledReplicated
 *                                    components, bit i = entry i: 1 byte
-*                  NetVariables      the 16 script value slots: a u16 mask of
-*                                    the non-zero ones, then 4 bytes each:
-*                                    2 to 66 bytes. Its component is added by
+*                  NetVariables      the 64 script value slots: the mask of
+*                                    the non-zero ones as two varints (slots
+*                                    0-31, 32-63), then 4 bytes each: 2 to
+*                                    266 bytes. Its component is added by
 *                                    the network layer (addedAtRuntime), not
 *                                    saved with the object.
+*                  NetData           the object's byte block: a varint
+*                                    length (<= 256), then the bytes: 1 to
+*                                    258 bytes. Added at runtime too.
 *                  Animator          the 32 Animator parameter slots
 *                                    (NetAnimator): a u32 mask of the slots
 *                                    the host has set, then 4 bytes each: 4
@@ -125,6 +129,7 @@
 *    -v1.7       maxBytesFor, WorstCaseBytes, WorstCaseRecordBytes: an object's own worst case (the child
 *                serializers and Renderers grow with its synced children)
 *    -v1.8       ChildOnOff (Children/OnOff)
+*    -v1.9       NetVariables 64 slots (schema 2); NetData (14) - protocol 11
 *
 **************************************************************************/
 #pragma once
@@ -158,7 +163,7 @@ namespace Crucible
 		TransformFull    = 1,   // position + rotation (smallest three)
 		TransformYawOnly = 2,   // position + yaw: upright characters and enemies
 		EnabledMask      = 3,   // on/off state of the prefab's enabledReplicated components
-		NetVariables     = 4,   // the object's 16 replicated script value slots
+		NetVariables     = 4,   // the object's 64 replicated script value slots (16 before protocol 11)
 		Animator         = 5,   // the object's replicated Animator parameters (NetAnimator)
 		TransformFullScale = 6, // TransformFull + the scale
 		TransformYawScale  = 7, // TransformYawOnly + the scale
@@ -168,6 +173,7 @@ namespace Crucible
 		Attachment       = 11,  // the network object (and mount) this one hangs under
 		Renderers        = 12,  // MeshRenderer and MaterialParams of the root and synced children
 		ChildOnOff       = 13,  // on/off states of components on the synced children
+		NetData          = 14,  // the object's replicated byte block (protocol 11)
 		FirstGameId      = 64,
 	};
 

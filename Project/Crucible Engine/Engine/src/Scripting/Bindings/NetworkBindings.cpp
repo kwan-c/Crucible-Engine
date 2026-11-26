@@ -3,9 +3,9 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          16 November 2026
-* \version       1.9
+* \version       1.13
 * \brief         Internal calls behind the C# Network class
-*                (ManagedScripts/Runtime/Network.cs) and the network part of
+*                (ManagedScripts/Runtime/Networking/Network.cs) and the network part of
 *                Entity (NetworkId, Owner, IsMine), and the queue of network
 *                events for the scripts' callbacks.
 *
@@ -67,6 +67,11 @@
 *                on a query body (Networking C# Phase 8)
 *    -v1.8       the scene seed: LoadSceneSeeded, SceneSeed (protocol 9)
 *    -v1.9       SetOwner and OnOwnershipChanged
+*    -v1.10      player input: SetLocalInput and GetInput (protocol 10)
+*    -v1.11      the shared clock (GetTime), pings (GetPing), Kick; NetVars 64 slots; NetData Get/Set and
+*                DataChanged (protocol 11)
+*    -v1.12      KeepAcrossScenes, KeepPlayersAcrossScenes, IsKeptAcrossScenes (protocol 12)
+*    -v1.13      lag compensation: ViewTick, MaxRewindSeconds, RaycastHistory (Network.RaycastAt)
 *
 **************************************************************************/
 #include "Scripting/ScriptBindings.h"
@@ -121,9 +126,10 @@ namespace Crucible::ScriptBindings
 
 		// Results of SetVarInternal. Must match NetVars.cs.
 		constexpr int32_t kVarOk = 0;
-		constexpr int32_t kVarBadEntity = 1;      // destroyed, or a slot outside 0..15
+		constexpr int32_t kVarBadEntity = 1;      // destroyed, or a slot outside 0..63
 		constexpr int32_t kVarNotAuthority = 2;   // a client writing a network object's variable
-		constexpr int32_t kVarNotReplicated = 3;  // a network object whose settings do not replicate NetVariables
+		constexpr int32_t kVarNotReplicated = 3;  // a network object whose settings do not replicate NetVariables (or NetData)
+		constexpr int32_t kDataTooLong = 4;       // NetData: more than NetData::kMaxBytes
 
 		// Results of SpawnInternal. Must match Network.cs.
 		constexpr int32_t kSpawnOk = 0;
@@ -607,7 +613,7 @@ namespace Crucible::ScriptBindings
 		/*********************************************************************
 		 \brief  C# NetVars.Get*: the raw 32 bits of one slot (0 if the entity
 		         has no variables yet). Returns 0 for a destroyed entity or a
-		         slot outside 0..15.
+		         slot outside 0..63.
 		 *********************************************************************/
 		int32_t ManagedNetVarsGet(int32_t index, int32_t generation, int32_t slot, uint32_t* bits) noexcept
 		{
@@ -665,7 +671,7 @@ namespace Crucible::ScriptBindings
 				if (value != bits)
 				{
 					value = bits;
-					variables->changed = static_cast<std::uint16_t>(variables->changed | (1u << slot));
+					variables->changed |= std::uint64_t{ 1 } << slot;
 				}
 				return kVarOk;
 			}
@@ -881,6 +887,367 @@ namespace Crucible::ScriptBindings
 			catch (...)
 			{
 				return 1;
+			}
+		}
+
+		/*********************************************************************
+		 \brief  C# Network.SetLocalInput / SetLocalActions: this machine's
+		         player input for this frame (NetworkSession::SetLocalInput).
+		         Works offline too.
+		 *********************************************************************/
+		void ManagedNetworkSetLocalInput(float moveX, float moveZ, float yaw, float pitch, uint32_t actions,
+			int32_t hasMotion) noexcept
+		{
+			try
+			{
+				if (NetworkSession* session = Session())
+					session->SetLocalInput(Math::vec3(moveX, 0.f, moveZ), yaw, pitch, actions, hasMotion != 0);
+			}
+			catch (...)
+			{
+			}
+		}
+
+		/*********************************************************************
+		 \brief  C# Network.GetInput(peer) / LocalInput: what a player does this
+		         frame (NetworkSession::GetPlayerInput). peer < 0 = this machine's
+		         own. 1 known (the host: any player in the game; a client: its
+		         own; offline: its own), 0 otherwise (and neutral).
+		 *********************************************************************/
+		int32_t ManagedNetworkGetInput(int32_t peer, float* moveX, float* moveZ, float* yaw, float* pitch,
+			uint32_t* held, uint32_t* pressed, int32_t* live) noexcept
+		{
+			try
+			{
+				if (!moveX || !moveZ || !yaw || !pitch || !held || !pressed || !live)
+					return 0;
+				NetPlayerInput input;
+				bool known = false;
+				if (const NetworkSession* session = Session())
+				{
+					if (peer < 0)
+					{
+						input = session->LocalPlayerInput();
+						known = true;
+					}
+					else if (peer <= static_cast<int32_t>(Net::kMaxClients))
+					{
+						known = session->GetPlayerInput(static_cast<Net::PeerId>(peer), input);
+					}
+				}
+				*moveX = input.move.x;
+				*moveZ = input.move.z;
+				*yaw = input.yawDegrees;
+				*pitch = input.pitchDegrees;
+				*held = input.held;
+				*pressed = input.pressed;
+				*live = input.live ? 1 : 0;
+				return known ? 1 : 0;
+			}
+			catch (...)
+			{
+				return 0;
+			}
+		}
+
+		/*********************************************************************
+		 \brief  C# Network.Time / Tick: the shared clock, in ticks
+		         (NetworkSession::SharedTicks). 1 shared, 0 none (offline,
+		         joining): the C# side uses this machine's own time then.
+		 *********************************************************************/
+		int32_t ManagedNetworkGetTime(double* ticks) noexcept
+		{
+			try
+			{
+				if (!ticks)
+					return 0;
+				*ticks = 0.0;
+				const NetworkSession* session = Session();
+				return session && session->SharedTicks(*ticks) ? 1 : 0;
+			}
+			catch (...)
+			{
+				return 0;
+			}
+		}
+
+		/*********************************************************************
+		 \brief  C# Network.GetPing(peer): milliseconds, -1 unknown
+		         (NetworkSession::PingOf).
+		 *********************************************************************/
+		int32_t ManagedNetworkGetPing(int32_t peer) noexcept
+		{
+			try
+			{
+				const NetworkSession* session = Session();
+				if (!session || peer < 0 || peer >= static_cast<int32_t>(Net::kMaxPlayers))
+					return -1;
+				return session->PingOf(static_cast<Net::PeerId>(peer));
+			}
+			catch (...)
+			{
+				return -1;
+			}
+		}
+
+		/*********************************************************************
+		 \brief  C# Network.Kick(peer, reason): 0 removed, 1 not the running
+		         host, 2 no such client (or the host itself).
+		 *********************************************************************/
+		int32_t ManagedNetworkKick(int32_t peer, MonoString* reason) noexcept
+		{
+			try
+			{
+				NetworkSession* session = Session();
+				if (!session || !session->IsServer() || session->State() != SessionState::Running)
+					return 1;
+				if (peer <= 0 || peer > static_cast<int32_t>(Net::kMaxClients))
+					return 2;
+				return session->Kick(static_cast<Net::PeerId>(peer), ReadString(reason)) ? 0 : 2;
+			}
+			catch (...)
+			{
+				return 1;
+			}
+		}
+
+		/*********************************************************************
+		 \brief  C# NetData.Read: a copy of the entity's byte block (empty if
+		         it has none yet); null for a destroyed entity.
+		 *********************************************************************/
+		MonoArray* ManagedNetDataGet(int32_t index, int32_t generation) noexcept
+		{
+			try
+			{
+				Entity entity;
+				const World* world = EntityContext::GetWorld();
+				if (!world || !EntityContext::ResolveEntity(index, generation, entity))
+					return nullptr;
+				const NetData* data = world->Read<NetData>(entity);
+				const std::size_t length = data ? data->length : 0u;
+				MonoArray* bytes = mono_array_new(mono_domain_get(), mono_get_byte_class(), length);
+				if (bytes && length > 0)
+					std::memcpy(mono_array_addr(bytes, uint8_t, 0), data->bytes.data(), length);
+				return bytes;
+			}
+			catch (...)
+			{
+				return nullptr;
+			}
+		}
+
+		/*********************************************************************
+		 \brief  C# NetData.Set: replaces the entity's byte block with the
+		         first `length` bytes of `data`. The same rules as NetVars.Set:
+		         on a network object only the authority, and only if it
+		         replicates NetData; any other entity keeps a local block.
+		         Returns one of the kVar* codes, or kDataTooLong.
+		 *********************************************************************/
+		int32_t ManagedNetDataSet(int32_t index, int32_t generation, MonoArray* bytes, int32_t length) noexcept
+		{
+			try
+			{
+				Entity entity;
+				NetworkSession* session = Session();
+				World* world = EntityContext::GetWorld();
+				if (!session || !world || !EntityContext::ResolveEntity(index, generation, entity))
+					return kVarBadEntity;
+				if (length < 0 || length > static_cast<int32_t>(NetData::kMaxBytes))
+					return kDataTooLong;
+				std::vector<std::byte> copy;
+				if (!CopyBytes(bytes, length, copy))
+					return kVarBadEntity;
+				const bool networked = IdentityOf(*session, *world, entity) != nullptr;
+				if (networked && session->IsClient())
+					return kVarNotAuthority;
+				NetData* data = world->Write<NetData>(entity);
+				if (!data)
+				{
+					if (networked)
+						return kVarNotReplicated;
+					world->AddComponent(entity, NetData{});   // scripts run in an Exclusive system
+					data = world->Write<NetData>(entity);
+					if (!data)
+						return kVarBadEntity;
+				}
+				const bool same = data->length == copy.size() && std::equal(copy.begin(), copy.end(), data->bytes.begin());
+				if (!same)
+				{
+					data->bytes = {};
+					std::copy(copy.begin(), copy.end(), data->bytes.begin());
+					data->length = static_cast<std::uint16_t>(copy.size());
+					data->changed = true;
+				}
+				return kVarOk;
+			}
+			catch (...)
+			{
+				return kVarBadEntity;
+			}
+		}
+
+		/*********************************************************************
+		 \brief  C# Network.KeepAcrossScenes(entity): the host keeps a spawned
+		         network object through the next scene changes (it becomes
+		         DontDestroyOnLoad; SceneChange lists it). 0 kept, 1 not the
+		         running host, 2 not a network object, 3 a scene object (it
+		         belongs to its scene), 4 attached under another object (keep
+		         that one), 5 SceneManager refused.
+		 *********************************************************************/
+		int32_t ManagedNetworkKeepAcrossScenes(int32_t index, int32_t generation) noexcept
+		{
+			try
+			{
+				NetworkSession* session = Session();
+				World* world = EntityContext::GetWorld();
+				SceneManager* scenes = EntityContext::GetScenes();
+				if (!session || !world || !scenes || !session->IsServer() || session->State() != SessionState::Running)
+					return 1;
+				Entity entity;
+				if (!EntityContext::ResolveEntity(index, generation, entity))
+					return 2;
+				const NetworkIdentity* identity = IdentityOf(*session, *world, entity);
+				if (!identity)
+					return 2;
+				if (session->SceneIdOf(identity->id) != 0)
+					return 3;
+				if (world->GetParent(entity).IsValid())
+					return 4;
+				return scenes->DontDestroyOnLoad(entity) ? 0 : 5;
+			}
+			catch (...)
+			{
+				return 1;
+			}
+		}
+
+		/*********************************************************************
+		 \brief  C# Network.KeepPlayersAcrossScenes: get (value < 0) or set.
+		         Returns the setting.
+		 *********************************************************************/
+		int32_t ManagedNetworkKeepPlayers(int32_t value) noexcept
+		{
+			try
+			{
+				NetworkSession* session = Session();
+				if (!session)
+					return 0;
+				if (value >= 0)
+					session->SetKeepPlayers(value != 0);
+				return session->KeepPlayers() ? 1 : 0;
+			}
+			catch (...)
+			{
+				return 0;
+			}
+		}
+
+		/*********************************************************************
+		 \brief  C# Network.IsKeptAcrossScenes(entity): a network object a
+		         scene change keeps (DontDestroyOnLoad, itself or an ancestor).
+		 *********************************************************************/
+		int32_t ManagedNetworkIsKept(int32_t index, int32_t generation) noexcept
+		{
+			try
+			{
+				const NetworkSession* session = Session();
+				const World* world = EntityContext::GetWorld();
+				SceneManager* scenes = EntityContext::GetScenes();
+				Entity entity;
+				if (!session || !world || !scenes || !EntityContext::ResolveEntity(index, generation, entity))
+					return 0;
+				return IdentityOf(*session, *world, entity) && scenes->IsPersistent(entity) ? 1 : 0;
+			}
+			catch (...)
+			{
+				return 0;
+			}
+		}
+
+		/*********************************************************************
+		 \brief  C# Network.ViewTick: the tick this machine shows other objects
+		         at (NetworkSession::ViewTicks). 0 offline / joining.
+		 *********************************************************************/
+		int32_t ManagedNetworkViewTick(double* ticks) noexcept
+		{
+			try
+			{
+				if (!ticks)
+					return 0;
+				*ticks = 0.0;
+				const NetworkSession* session = Session();
+				return session && session->ViewTicks(*ticks) ? 1 : 0;
+			}
+			catch (...)
+			{
+				return 0;
+			}
+		}
+
+		/*********************************************************************
+		 \brief  C# Network.MaxRewindSeconds: get (seconds < 0) or set (0 to 1).
+		 *********************************************************************/
+		float ManagedNetworkMaxRewind(float seconds) noexcept
+		{
+			try
+			{
+				NetworkSession* session = Session();
+				if (!session)
+					return 0.f;
+				if (seconds >= 0.f && std::isfinite(seconds))
+					session->LagHistory().SetMaxRewindTicks(std::min(seconds, 1.f) * static_cast<double>(NetClock::kTickRate));
+				return static_cast<float>(session->LagHistory().MaxRewindTicks() / NetClock::kTickRate);
+			}
+			catch (...)
+			{
+				return 0.f;
+			}
+		}
+
+		/*********************************************************************
+		 \brief  C# Network.RaycastAt, the network objects' part: the ray
+		         against the shapes as they were at `tick` (the host's lag
+		         history). `ignore`'s network object is skipped. 1 with the
+		         entity hit (the part carrying the shape) and the tick used.
+		 *********************************************************************/
+		int32_t ManagedNetworkRaycastHistory(double tick, const ScriptVec3* origin, const ScriptVec3* direction, float maxDistance,
+			int32_t ignoreIndex, int32_t ignoreGeneration, int32_t* outIndex, int32_t* outGeneration, ScriptVec3* outPoint,
+			ScriptVec3* outNormal, float* outDistance, double* outTick) noexcept
+		{
+			try
+			{
+				if (!origin || !direction || !outIndex || !outGeneration || !outPoint || !outNormal || !outDistance || !outTick)
+					return 0;
+				*outIndex = 0;
+				*outGeneration = 0;
+				const NetworkSession* session = Session();
+				const World* world = EntityContext::GetWorld();
+				if (!session || !world || !session->IsServer() || session->State() != SessionState::Running)
+					return 0;
+				Net::NetworkId ignore = Net::kInvalidNetworkId;
+				Entity shooter;
+				if (ignoreIndex != 0 || ignoreGeneration != 0)
+					if (EntityContext::ResolveEntity(ignoreIndex, ignoreGeneration, shooter))
+						if (const Entity root = FindNetworkRoot(*world, shooter); world->IsAlive(root))
+							if (const NetworkIdentity* identity = world->Read<NetworkIdentity>(root))
+								ignore = identity->id;
+				LagHit hit;
+				if (!session->LagHistory().Raycast(tick, Math::vec3(origin->x, origin->y, origin->z),
+				        Math::vec3(direction->x, direction->y, direction->z), maxDistance, ignore, hit))
+					return 0;
+				if (!world->IsAlive(hit.entity))
+					return 0;   // destroyed since
+				*outIndex = static_cast<int32_t>(hit.entity.index);
+				*outGeneration = static_cast<int32_t>(hit.entity.generation);
+				*outPoint = { hit.point.x, hit.point.y, hit.point.z };
+				*outNormal = { hit.normal.x, hit.normal.y, hit.normal.z };
+				*outDistance = hit.distance;
+				*outTick = hit.tick;
+				return 1;
+			}
+			catch (...)
+			{
+				return 0;
 			}
 		}
 
@@ -1286,7 +1653,7 @@ namespace Crucible::ScriptBindings
 		void GatherVariableChanges(World& world)
 		{
 			// Collected first: nothing is queued while the query walks the components.
-			std::vector<std::pair<Entity, std::uint16_t>> changes;
+			std::vector<std::pair<Entity, std::uint64_t>> changes;
 			world.BuildQuery<const NetVariables>().Build().ForEach([&](Entity entity, const NetVariables& variables) {
 				if (variables.changed != 0)
 					changes.emplace_back(entity, variables.changed);
@@ -1297,7 +1664,7 @@ namespace Crucible::ScriptBindings
 					variables->changed = 0;
 				for (std::uint32_t slot = 0; slot < NetVariables::kSlots; ++slot)
 				{
-					if ((mask & (1u << slot)) == 0)
+					if ((mask & (std::uint64_t{ 1 } << slot)) == 0)
 						continue;
 					ScriptNetEvent event;
 					event.kind = ScriptNetEvent::Kind::VarChanged;
@@ -1306,6 +1673,28 @@ namespace Crucible::ScriptBindings
 					event.target = entity;
 					waiting.push_back(std::move(event));
 				}
+			}
+			GatherDataChanges(world);   // NetData -> OnNetDataChanged, in the same batch
+		}
+
+		// NetData blocks that changed (a record on a client, a script's Set on the authority): one
+		// DataChanged each, for the scripts on that entity.
+		void GatherDataChanges(World& world)
+		{
+			std::vector<Entity> changed;
+			world.BuildQuery<const NetData>().Build().ForEach([&](Entity entity, const NetData& data) {
+				if (data.changed)
+					changed.push_back(entity);
+			});
+			for (const Entity entity : changed)
+			{
+				if (NetData* data = world.Write<NetData>(entity))
+					data->changed = false;
+				ScriptNetEvent event;
+				event.kind = ScriptNetEvent::Kind::DataChanged;
+				event.targeted = true;
+				event.target = entity;
+				waiting.push_back(std::move(event));
 			}
 		}
 
@@ -1342,6 +1731,19 @@ namespace Crucible::ScriptBindings
 		Add("Crucible.Network::LoadSceneInternal", &ManagedNetworkLoadScene);
 		Add("Crucible.Network::LoadSceneSeededInternal", &ManagedNetworkLoadSceneSeeded);
 		Add("Crucible.Network::SetOwnerInternal", &ManagedNetworkSetOwner);
+		Add("Crucible.Network::SetLocalInputInternal", &ManagedNetworkSetLocalInput);
+		Add("Crucible.Network::GetInputInternal", &ManagedNetworkGetInput);
+		Add("Crucible.Network::GetTimeInternal", &ManagedNetworkGetTime);
+		Add("Crucible.Network::GetPingInternal", &ManagedNetworkGetPing);
+		Add("Crucible.Network::KickInternal", &ManagedNetworkKick);
+		Add("Crucible.Network::KeepAcrossScenesInternal", &ManagedNetworkKeepAcrossScenes);
+		Add("Crucible.Network::ViewTickInternal", &ManagedNetworkViewTick);
+		Add("Crucible.Network::MaxRewindInternal", &ManagedNetworkMaxRewind);
+		Add("Crucible.Network::RaycastHistoryInternal", &ManagedNetworkRaycastHistory);
+		Add("Crucible.Network::KeepPlayersInternal", &ManagedNetworkKeepPlayers);
+		Add("Crucible.Network::IsKeptInternal", &ManagedNetworkIsKept);
+		Add("Crucible.NetData::GetInternal", &ManagedNetDataGet);
+		Add("Crucible.NetData::SetInternal", &ManagedNetDataSet);
 		Add("Crucible.Network::SceneSeedInternal", &ManagedNetworkSceneSeed);
 		Add("Crucible.Network::BrowseInternal", &ManagedNetworkBrowse);
 		Add("Crucible.Network::LobbyCountInternal", &ManagedNetworkLobbyCount);

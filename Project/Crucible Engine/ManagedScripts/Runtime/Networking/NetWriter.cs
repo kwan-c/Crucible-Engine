@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          16 November 2026
-* \version       1.0
+* \version       1.2
 * \brief         Packs values into the bytes a network message carries
 *                (Network.SendCommand). Part of Crucible.ScriptCore.dll.
 *
@@ -32,6 +32,8 @@
 * \history
 *    -v1.0       bool, byte, short, ushort, int, uint, float, string,
 *                Vector3, Quaternion, Entity (Networking C# Phase 2)
+*    -v1.1       moved to ManagedScripts/Runtime/Networking (with the other networking scripts)
+*    -v1.2       WriteRaw (internal): NetEffect's extra data
 *
 **************************************************************************/
 using System;
@@ -64,6 +66,21 @@ namespace Crucible
         /// skipped, so the message is incomplete: Network refuses to send it.
         /// </summary>
         public bool Overflowed { get { return overflowed; } }
+
+        /// <summary>Appends another writer's bytes as they are (NetEffect's extra data).</summary>
+        internal NetWriter WriteRaw(NetWriter other)
+        {
+            if (ReferenceEquals(other, null))
+                return this;
+            if (other.overflowed)
+            {
+                overflowed = true;
+                return this;
+            }
+            for (int i = 0; i < other.length; ++i)
+                WriteByte(other.buffer[i]);
+            return this;
+        }
 
         /// <summary>The bytes; only the first Length are meaningful. For Network.cs.</summary>
         internal byte[] Buffer { get { return buffer; } }

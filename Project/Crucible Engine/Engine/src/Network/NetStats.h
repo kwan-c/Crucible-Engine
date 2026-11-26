@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.16
+* \version       1.18
 * \brief
 *                Counters the networking code measures itself, per session
 *                (reset by every Start).
@@ -36,6 +36,8 @@
 *    -v1.15      kMessageTypes 17: SceneChange, SceneLoaded; scene change counters
 *    -v1.16      kMessageTypes 18: OwnerChange; ownerChanges, ownerChangesRefused,
 *                unknownOwnerChanges
+*    -v1.17      kMessageTypes 19: PeerPings; pingsSent, pingsReceived
+*    -v1.18      playersKept, keptRebound, keptDropped (protocol 12)
 *
 **************************************************************************/
 #pragma once
@@ -97,6 +99,12 @@ namespace Crucible
 		std::uint32_t ownerChanges = 0;        // every role: ownership changes applied
 		std::uint32_t ownerChangesRefused = 0; // host: requests refused (a player, gone, an unknown peer)
 		std::uint32_t unknownOwnerChanges = 0; // client: an OwnerChange for an id it does not have (ignored)
+		std::uint32_t pingsSent = 0;           // host: PeerPings messages GNS accepted (one per client per second)
+		std::uint32_t pingsReceived = 0;       // client: PeerPings applied
+		std::uint32_t peersKicked = 0;         // host: clients removed with Kick
+		std::uint32_t playersKept = 0;         // host: players kept through a scene change (not spawned again)
+		std::uint32_t keptRebound = 0;         // client: kept objects the new world named again
+		std::uint32_t keptDropped = 0;         // client: kept objects the new world did not name
 
 		// Snapshots and acknowledgements
 		std::uint64_t snapshotsSent = 0;       // server: snapshot messages GNS accepted, all clients
@@ -173,7 +181,7 @@ namespace Crucible
 
 		// Bytes of our messages by MessageType (index = the type's value), both directions; GNS's
 		// own headers, encryption and acks are not included (GnsTransport::Status has those).
-		static constexpr std::size_t kMessageTypes = 18;   // MessageType::Count (checked in NetworkSession.cpp)
+		static constexpr std::size_t kMessageTypes = 19;   // MessageType::Count (checked in NetworkSession.cpp)
 		std::array<std::uint64_t, kMessageTypes> bytesSentByType{};
 		std::array<std::uint64_t, kMessageTypes> bytesReceivedByType{};
 

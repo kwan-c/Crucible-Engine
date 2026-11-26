@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          6 November 2026
-* \version       1.4
+* \version       1.6
 * \brief
 *                NetInputSystem: client commands and heartbeat, the host's
 *                per-client intents, and the auto-spawned players.
@@ -15,6 +15,10 @@
 *                there is one (Networking Phase 14.2)
 *    -v1.3       players spawn at the scene's placed players (Phase 14.6)
 *    -v1.4       players spawned again after each scene change (Networking C# Phase 9)
+*    -v1.5       a client's commands carry the script's input (actions and pitch; its move
+*                and yaw when it owns no PlayerInput), also without a player (protocol 10)
+*    -v1.6       players kept through a scene change are adopted and moved to the new scene's
+*                spawn point instead of spawned again (protocol 12)
 *
 **************************************************************************/
 #include "Network/Systems/NetInputSystem.h"
@@ -74,6 +78,7 @@ namespace Crucible
 			m_hostPlayer = Net::kInvalidNetworkId;
 			m_slots = {};
 			m_historyCount = 0;
+			if (m_session.IsServer() && m_session.State() == SessionState::Running) AdoptKeptPlayers(world);
 		}
 		if (m_session.State() != SessionState::Running) return;     // Offline, or stopping
 		if (m_session.IsClient()) UpdateClient(world);
@@ -116,7 +121,11 @@ namespace Crucible
 
 		if (!m_session.Clock().InputDue(world.DeltaTime())) return;   // 30 Hz from frame time
 
-		// 1. A command for the player this machine owns (the first, if it somehow owns several).
+		// 1. A command for the player this machine owns (the first, if it somehow owns several),
+		//    then the script's input on top: its actions and pitch always; its move and yaw only
+		//    when no PlayerInput gave them (a PlayerController keeps driving its own player). A
+		//    client with script input but no PlayerInput still sends commands.
+		InputCommand command;   // fields by name
 		bool commanded = false;
 		world.CreateQuery<const NetworkIdentity, PlayerInput>().ForEach([&](Entity e, const NetworkIdentity& identity, PlayerInput& input) {
 			if (commanded || identity.owner != m_session.LocalPeer()) return;
@@ -133,15 +142,26 @@ namespace Crucible
 			if (!input.hasYaw)
 				if (const Transform* t = world.Read<Transform>(e)) yaw = Quantize::YawDegrees(t->rotation);
 
-			InputCommand command;   // fields by name
-			command.sequence = ++m_sequence;                                   // strictly increasing
-			command.clientTick = m_session.Stats().lastSnapshotTick;           // the newest server tick seen (an estimator comes later)
 			command.moveX = fresh ? Quantize::SignedUnitToI8(input.moveDirection.x) : std::int8_t{ 0 };
 			command.moveZ = fresh ? Quantize::SignedUnitToI8(input.moveDirection.z) : std::int8_t{ 0 };
 			command.yaw = Quantize::AngleToU16(yaw);
 			command.buttons = fresh && input.jump ? InputCommand::kJump : std::uint8_t{ 0 };
 			input.jump = false;   // consumed by this command (the proxy's controller is off: nothing else uses it)
-
+		});
+		InputCommand script;
+		bool motion = false;
+		const bool scripted = m_session.TakeLocalCommandInput(script, motion);
+		if (scripted)
+		{
+			command.actions = script.actions;
+			command.actionsPressed = script.actionsPressed;
+			command.pitch = script.pitch;
+			if (motion && !commanded) { command.moveX = script.moveX; command.moveZ = script.moveZ; command.yaw = script.yaw; }
+		}
+		if (commanded || scripted)
+		{
+			command.sequence = ++m_sequence;                                   // strictly increasing
+			command.clientTick = m_session.Stats().lastSnapshotTick;           // the newest server tick seen (an estimator comes later)
 			if (m_historyCount == m_history.size())
 			{
 				std::move(m_history.begin() + 1, m_history.end(), m_history.begin());
@@ -149,8 +169,8 @@ namespace Crucible
 			}
 			m_history[m_historyCount++] = command;
 			++m_session.MutableStats().commandsSent;
-		});
-		if (!commanded) m_historyCount = 0;   // no player: never resend old commands
+		}
+		else m_historyCount = 0;   // no player and no script input: never resend old commands
 
 		// 2. The message: commands (oldest first), acks, lifecycle confirmation.
 		InputMessage message;
@@ -207,6 +227,50 @@ namespace Crucible
 			input.tick = tick;
 			++input.sampleSerial;
 		});
+	}
+
+	// After a scene change: a player kept through it (KeepAcrossScenes) is still its peer's player, so
+	// it is not spawned again; it moves to where this scene would have spawned it (a Transform write
+	// is a teleport for physics too).
+	void NetInputSystem::AdoptKeptPlayers(World& world)
+	{
+		const Net::NetPrefabId playerPrefab = PlayerPrefab();
+		if (playerPrefab == Net::kInvalidNetPrefab) return;
+		const std::span<const PeerState> peers = m_session.Peers();
+		const std::span<const PlayerSpawnPoint> placed = m_session.PlayerSpawnPoints();
+		for (const auto& [id, entity] : m_session.Entities())
+		{
+			const NetworkIdentity* identity = world.IsAlive(entity) ? world.Read<NetworkIdentity>(entity) : nullptr;
+			if (identity == nullptr || identity->prefab != playerPrefab) continue;
+			const Net::PeerId peer = identity->owner;
+			if (peer == Net::kServerPeer)
+			{
+				if (m_hostSpawned) continue;   // one player per peer
+				m_hostSpawned = true;
+				m_hostPlayer = id;
+			}
+			else if (peer <= Net::kMaxClients && peer <= peers.size() && peers[peer - 1].phase != PeerState::Phase::Free)
+			{
+				PlayerSlot& slot = m_slots[peer - 1];
+				if (slot.player != Net::kInvalidNetworkId) continue;
+				slot.connection = peers[peer - 1].connection;
+				slot.player = id;
+			}
+			else continue;
+
+			if (Transform* t = world.Write<Transform>(entity))
+			{
+				if (!m_customSpawnPoint && !placed.empty())
+				{
+					const PlayerSpawnPoint& point = placed[peer % placed.size()];
+					t->positions = point.position + Math::vec3(3.f * static_cast<float>(peer / placed.size()), 0.f, 0.f);
+					t->rotation = point.rotation;
+				}
+				else t->positions = m_spawnPoint(peer);
+			}
+			++m_session.MutableStats().playersKept;
+			CRU_INFO("[Net] player {} of peer {} kept through the scene change", id, peer);
+		}
 	}
 
 	// The host's player when the session starts; a client's when it reaches InGame;

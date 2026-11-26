@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.6
+* \version       1.7
 * \brief
 *                The networking ECS components: NetworkIdentity,
 *                NetInterpolation and PlayerInput (ComponentKind 33-35),
@@ -37,6 +37,7 @@
 *    -v1.5       NetworkObjectAuthoring::syncedChildren; NetChildTransforms,
 *                NetAttachment, NetRenderers; kMaxSyncedChildren
 *    -v1.6       NetworkObjectAuthoring::childEnabledReplicated, NetChildEnabled
+*    -v1.7       NetVariables: 64 slots, a 64-bit changed mask; NetData (protocol 11)
 *
 **************************************************************************/
 #pragma once
@@ -172,7 +173,8 @@ namespace Crucible
 	/*************************************************************************
 	 \brief
 		A network object's replicated script values (Networking C# Phase 4):
-		16 numbered 32-bit slots the host writes and every client receives.
+		64 numbered 32-bit slots the host writes and every client receives
+		(16 before protocol 11).
 	 \details
 		The engine gives the slots no meaning: gameplay (C# NetVars) decides
 		that slot 0 is health and stores an int, a float's bits, a bool or a
@@ -186,10 +188,35 @@ namespace Crucible
 	 *************************************************************************/
 	struct NetVariables
 	{
-		static constexpr std::uint32_t kSlots = 16;
+		static constexpr std::uint32_t kSlots = 64;
 
 		std::array<std::uint32_t, kSlots> slots{};
-		std::uint16_t changed = 0;   // bit i: slot i changed since the scripts last heard
+		std::uint64_t changed = 0;   // bit i: slot i changed since the scripts last heard
+	};
+
+	/*************************************************************************
+	 \brief
+		A network object's replicated byte block (protocol 11): up to 256
+		bytes the host writes and every client receives - lists and other
+		state that does not fit numbered slots (ammo per weapon, a loadout).
+	 \details
+		The engine gives the bytes no meaning: gameplay writes them with a C#
+		NetWriter and reads them with a NetReader. An object replicates them
+		when its Network Object settings list the "NetData" serializer; the
+		network layer then adds this component itself on every machine (never
+		saved: it starts empty).
+
+		The whole block is sent whenever the object's record is (it changed,
+		or anything else of the object did), so keep it small on objects that
+		move every frame. `changed` is local bookkeeping, never sent.
+	 *************************************************************************/
+	struct NetData
+	{
+		static constexpr std::size_t kMaxBytes = 256;
+
+		std::array<std::byte, kMaxBytes> bytes{};
+		std::uint16_t length = 0;    // bytes[0, length) are the data
+		bool          changed = false;   // the data changed since the scripts last heard
 	};
 
 	/*************************************************************************
@@ -364,6 +391,7 @@ namespace Crucible
 	CRUCIBLE_COMPONENT(NetRenderers, NetRenderers);
 	CRUCIBLE_COMPONENT(NetAnimator, NetAnimator);
 	CRUCIBLE_COMPONENT(NetVariables, NetVariables);
+	CRUCIBLE_COMPONENT(NetData, NetData);
 	CRUCIBLE_COMPONENT(NetworkIdentity, NetworkIdentity);
 	CRUCIBLE_COMPONENT(NetInterpolation, NetInterpolation);
 	CRUCIBLE_COMPONENT(PlayerInput, PlayerInput);
@@ -379,6 +407,7 @@ namespace Crucible
 	template <> struct RuntimeOnly<NetAttachment>    : std::true_type {};
 	template <> struct RuntimeOnly<NetRenderers>     : std::true_type {};
 	template <> struct RuntimeOnly<NetChildEnabled>  : std::true_type {};
+	template <> struct RuntimeOnly<NetData>          : std::true_type {};
 
 	template <> struct NotToggleable<NetworkIdentity>  : std::true_type {};
 	template <> struct NotToggleable<NetInterpolation> : std::true_type {};
@@ -389,6 +418,7 @@ namespace Crucible
 	template <> struct NotToggleable<NetAttachment>    : std::true_type {};
 	template <> struct NotToggleable<NetRenderers>     : std::true_type {};
 	template <> struct NotToggleable<NetChildEnabled>  : std::true_type {};
+	template <> struct NotToggleable<NetData>          : std::true_type {};
 
 	// Authored settings: saved (not RuntimeOnly), but never switched off - "networking off for
 	// now" is not a state an object can be in; remove the component instead.
@@ -399,5 +429,6 @@ namespace Crucible
 	static_assert(std::is_trivially_copyable_v<NetInterpolation>);
 	static_assert(std::is_trivially_copyable_v<PlayerInput>);
 	static_assert(std::is_trivially_copyable_v<NetVariables>);
+	static_assert(std::is_trivially_copyable_v<NetData>);
 	static_assert(sizeof(NetInterpolation::Sample) == 32, "Sample layout changed: update the size note above");
 }

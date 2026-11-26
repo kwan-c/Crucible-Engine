@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          19 September 2026
-* \version       1.11
+* \version       1.12
 * \brief
 *                Declares the fixed ComponentKind enum (one entry per
 *                engine component type) and the CRUCIBLE_COMPONENT /
@@ -41,6 +41,7 @@
 *                only, never saved
 *    -v1.11      NetChildEnabled (48): synced children's on/off states
 *
+*    -v1.12      NetData (49): a network object's replicated byte block - runtime only
 *
 **************************************************************************/
 #pragma once
@@ -121,8 +122,9 @@ namespace Crucible
 		NetAttachment = 46,      // Network: which network object (and mount) a network object hangs under
 		NetRenderers = 47,       // Network: a network object's replicated MeshRenderer / MaterialParams values
 		NetChildEnabled = 48,    // Network: a network object's synced children's replicated on/off states
+		NetData = 49,            // Network: a network object's replicated byte block (Network/NetComponents.h)
 
-		MAXCOMPONENT = 49
+		MAXCOMPONENT = 50
 	};
 
 
@@ -346,5 +348,6 @@ namespace Crucible
  X(NetAttachment)                                                              \
  X(NetRenderers)                                                               \
  X(NetChildEnabled)                                                            \
+ X(NetData)                                                                    \
 
 }

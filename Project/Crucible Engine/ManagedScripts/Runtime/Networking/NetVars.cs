@@ -3,13 +3,13 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          17 November 2026
-* \version       1.0
+* \version       1.2
 * \brief         An entity's network variables: values the host sets and
 *                every player sees (health, ammo, a state). Part of
 *                Crucible.ScriptCore.dll.
 *
 * \details
-*    Every entity has 16 numbered slots, 0 to 15 (Entity.NetVars). Number
+*    Every entity has 64 numbered slots, 0 to 63 (Entity.NetVars). Number
 *    them yourself, like command kinds, and keep the numbers in one place:
 *
 *        const int Health = 0, Ammo = 1;            // this object's slots
@@ -46,17 +46,19 @@
 * \history
 *    -v1.0       int, float, bool, Vector3 and Entity slots (Networking C#
 *                Phase 4)
+*    -v1.1       moved to ManagedScripts/Runtime/Networking (with the other networking scripts)
+*    -v1.2       64 slots (protocol 11)
 *
 **************************************************************************/
 using System.Runtime.CompilerServices;
 
 namespace Crucible
 {
-    /// <summary>An entity's 16 network variables. Get it with Entity.NetVars.</summary>
+    /// <summary>An entity's 64 network variables. Get it with Entity.NetVars.</summary>
     public sealed class NetVars
     {
         /// <summary>How many slots an entity has: 0 to SlotCount - 1.</summary>
-        public const int SlotCount = 16;
+        public const int SlotCount = 64;
 
         // Must match NetworkBindings.cpp.
         private const int VarOk = 0, VarNotAuthority = 2, VarNotReplicated = 3;
@@ -103,7 +105,7 @@ namespace Crucible
         // --- writing (the authority) ---------------------------------------------------- //
         // Each returns false, with the reason logged, if nothing was written: a client
         // writing a network object's variable, an object that does not replicate
-        // NetVariables, a destroyed entity, or a slot outside 0 to 15.
+        // NetVariables, a destroyed entity, or a slot outside 0 to 63.
 
         public bool SetInt(int slot, int value)
         {

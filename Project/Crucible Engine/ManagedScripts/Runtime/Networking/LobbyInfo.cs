@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          21 November 2026
-* \version       1.1
+* \version       1.3
 * \brief         One session found on the local network (Network.Lobbies),
 *                and the numbers a session can end with (EndCode).
 *                Part of Crucible.ScriptCore.dll.
@@ -24,6 +24,8 @@
 * \history
 *    -v1.0       LobbyInfo, EndCode (Networking C# lobby browser)
 *    -v1.1       FromLan, FromServer, StaleAfterServer; LobbyServerStatus, LobbyDiscoveryMode (LAN connection server)
+*    -v1.2       moved to ManagedScripts/Runtime/Networking (with the other networking scripts)
+*    -v1.3       EndCode.Kicked
 *
 **************************************************************************/
 namespace Crucible
@@ -144,6 +146,8 @@ namespace Crucible
         public const int SceneMismatch = 1008;
         /// <summary>The host is not taking players now (the game has started).</summary>
         public const int LobbyClosed = 1009;
+        /// <summary>The host removed this player (Network.Kick); the reason is in OnNetworkStopped.</summary>
+        public const int Kicked = 1010;
         /// <summary>The host stopped answering (crashed, or the network went away).</summary>
         public const int ConnectionLostRemote = 4001;
         public const int ConnectionLostMisc = 5003;

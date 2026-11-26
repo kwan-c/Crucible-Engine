@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          16 November 2026
-* \version       1.9
+* \version       1.16
 * \brief         The multiplayer session for scripts: who am I, who else is
 *                here, and how a client asks the host to do something.
 *                Part of Crucible.ScriptCore.dll.
@@ -96,6 +96,15 @@
 *    -v1.7       ObjectOf (Networking C# Phase 8: client physics queries)
 *    -v1.8       SceneSeed, HasSceneSeed and LoadScene(path, seed): the scene seed (protocol 9)
 *    -v1.9       SetOwner
+*    -v1.10      player input: SetLocalInput, SetLocalActions, GetInput, LocalInput
+*    -v1.11      moved to ManagedScripts/Runtime/Networking (with the other networking scripts)
+*    -v1.12      the shared clock (Time, Tick, TickRate, HasSharedTime), GetPing, Ping, Kick
+*    -v1.13      where logic runs: IsLocalPlayer, HasAuthority, RequireAuthority; kinds 0xFF00-0xFFFF
+*                reserved for the networking helpers (NetRouter)
+*    -v1.14      RequireAuthority's warning set as a Dictionary (HashSet is in System.Core, which the
+*                engine cannot load); LastAuthorityRefusal starts empty, not null
+*    -v1.15      KeepAcrossScenes, KeepPlayersAcrossScenes, IsKeptAcrossScenes (protocol 12)
+*    -v1.16      lag compensation: ViewTick, MaxRewindSeconds, RaycastAt
 *
 **************************************************************************/
 using System.Collections.Generic;
@@ -663,6 +672,11 @@ namespace Crucible
                 Log.Error("Network.SendCommand: kind 0 is reserved - number your commands from 1");
                 return false;
             }
+            if (kind >= NetRouter.FirstReservedKind && !sendingHelper)
+            {
+                Log.Error("Network.SendCommand(" + kind + "): kinds 0xFF00 to 0xFFFF belong to the networking helpers");
+                return false;
+            }
             if (data != null && (data.Overflowed || data.Length > MaxCommandBytes))
             {
                 Log.Error("Network.SendCommand(" + kind + "): the data is " + (data.Overflowed ? "over the NetWriter limit" : data.Length + " bytes") +
@@ -752,6 +766,11 @@ namespace Crucible
             if (kind == 0)
             {
                 Log.Error("Network.SendEvent: kind 0 is reserved - number your events from 1");
+                return false;
+            }
+            if (kind >= NetRouter.FirstReservedKind && !sendingHelper)
+            {
+                Log.Error("Network." + call + "(" + kind + "): kinds 0xFF00 to 0xFFFF belong to the networking helpers");
                 return false;
             }
             if (data != null && data.Overflowed)
@@ -867,6 +886,326 @@ namespace Crucible
             }
         }
 
+        // --- player input (each machine gives its own; the host reads everyone's) ------------- //
+
+        /// <summary>
+        /// This machine's player input for this frame: the game actions held (bit i = action i;
+        /// ActionMap builds them from keys), the aim pitch, the move direction (world X/Z, up to
+        /// length 1) and the yaw. Call it every frame from one script on every machine - the host
+        /// and offline too, so the same gameplay code reads Network.GetInput everywhere. A client
+        /// sends it to the host with its input commands (30 a second, each sent three times); an
+        /// action pressed between two calls is never lost, however short the tap. A client that
+        /// owns a PlayerController keeps moving it with its own keys: only the actions and pitch
+        /// go out then. Input that stops for about a quarter second reads as neutral.
+        /// </summary>
+        public static void SetLocalInput(Vector3 move, float yawDegrees, float pitchDegrees, uint actions)
+        {
+            SetLocalInputInternal(move.X, move.Z, yawDegrees, pitchDegrees, actions, 1);
+        }
+
+        /// <summary>
+        /// Like SetLocalInput, but only the game actions and the aim pitch (the move and yaw read
+        /// as zero): for a game whose players move with the PlayerController.
+        /// </summary>
+        public static void SetLocalActions(uint actions, float pitchDegrees = 0f)
+        {
+            SetLocalInputInternal(0f, 0f, 0f, pitchDegrees, actions, 0);
+        }
+
+        /// <summary>
+        /// What player <paramref name="peer"/> does this frame. The host reads every player in
+        /// the game (0 is itself); a client only its own (Network.LocalPeerId) - anyone else
+        /// reads as NetInput.None. Seen one frame after it was given on the host, and once the
+        /// command arrives from a client. A press shows in WasPressed for exactly one frame.
+        /// </summary>
+        public static NetInput GetInput(int peer)
+        {
+            float x, z, yaw, pitch;
+            uint held, pressed;
+            int live;
+            if (GetInputInternal(peer, out x, out z, out yaw, out pitch, out held, out pressed, out live) == 0)
+                return NetInput.None;
+            return new NetInput(new Vector3(x, 0f, z), yaw, pitch, held, pressed, live != 0);
+        }
+
+        /// <summary>This machine's own input this frame (what SetLocalInput gave, a frame ago).</summary>
+        public static NetInput LocalInput
+        {
+            get { return GetInput(-1); }
+        }
+
+        // --- the shared clock -------------------------------------------------------------- //
+
+        /// <summary>Ticks of the shared clock per second.</summary>
+        public const int TickRate = 60;
+
+        /// <summary>
+        /// Is there a shared clock now? True on the host and on a joined client; false offline
+        /// and while joining (Time and Tick are this machine's own time then).
+        /// </summary>
+        public static bool HasSharedTime
+        {
+            get { double ticks; return GetTimeInternal(out ticks) != 0; }
+        }
+
+        /// <summary>
+        /// The game's time in seconds, the same on every machine: the host's clock, which a client
+        /// estimates (within about a frame, corrected for its ping). Use it for countdowns,
+        /// cooldowns and waves: the host stores an end time (Tick + seconds * TickRate) in a
+        /// network variable, and every machine shows endTick / (double)TickRate - Network.Time.
+        /// It stops while the host is paused. Offline it is Time.ElapsedTime.
+        /// </summary>
+        public static double Time
+        {
+            get
+            {
+                double ticks;
+                return GetTimeInternal(out ticks) != 0 ? ticks / TickRate : global::Crucible.Time.ElapsedTime;
+            }
+        }
+
+        /// <summary>The shared clock in whole ticks (TickRate a second). Offline: from Time.ElapsedTime.</summary>
+        public static int Tick
+        {
+            get
+            {
+                double ticks;
+                if (GetTimeInternal(out ticks) == 0)
+                    ticks = global::Crucible.Time.ElapsedTime * (double)TickRate;
+                return (int)System.Math.Floor(ticks);
+            }
+        }
+
+        // --- pings and kicking ------------------------------------------------------------ //
+
+        /// <summary>
+        /// Player <paramref name="peer"/>'s ping to the host, in milliseconds; -1 if unknown or
+        /// not in the session. The host's own is 0. On a client its own is live and the others
+        /// are the host's figures, refreshed every second. Offline: 0 for player 0.
+        /// </summary>
+        public static int GetPing(int peer)
+        {
+            return GetPingInternal(peer);
+        }
+
+        /// <summary>This player's ping to the host (0 on the host and offline, -1 while joining).</summary>
+        public static int Ping
+        {
+            get { int peer = LocalPeerId; return peer < 0 ? -1 : GetPingInternal(peer); }
+        }
+
+        /// <summary>
+        /// Host only: removes a client from the session now. It hears OnNetworkStopped with
+        /// "kicked by the host: " and the reason (Network.LastEndCode is EndCode.Kicked); every
+        /// other machine hears OnPeerLeft. Its player and objects are handled as when a player
+        /// leaves. It can join again.
+        /// </summary>
+        public static bool Kick(int peer, string reason = null)
+        {
+            switch (KickInternal(peer, reason))
+            {
+                case 0:
+                    return true;
+                case 1:
+                    Log.Error("Network.Kick(" + peer + "): only the running host removes players");
+                    return false;
+                default:
+                    Log.Error("Network.Kick(" + peer + "): no such client (the host cannot kick itself)");
+                    return false;
+            }
+        }
+
+        // --- lag compensation ------------------------------------------------------------ //
+
+        /// <summary>
+        /// The moment of the shared clock this machine shows other objects at, in ticks: on a
+        /// Client about 100 ms behind Network.Tick (other objects are drawn that far in the past,
+        /// to move smoothly); the Host's own tick on the Host; Network.Tick offline. A Client puts
+        /// it in its fire command, and the Host tests the shot with RaycastAt at that moment.
+        /// </summary>
+        public static double ViewTick
+        {
+            get { double ticks; return ViewTickInternal(out ticks) != 0 ? ticks : Tick; }
+        }
+
+        /// <summary>
+        /// How far back RaycastAt may test (0 to 1 s, default 0.3 s). A shot older than this is
+        /// tested at the limit: a very laggy player cannot hit what was long gone.
+        /// </summary>
+        public static float MaxRewindSeconds
+        {
+            get { return MaxRewindInternal(-1f); }
+            set { MaxRewindInternal(value); }
+        }
+
+        private static readonly RaycastHit[] rewindHits = new RaycastHit[32];
+
+        /// <summary>
+        /// The Host: Physics.Raycast as the shooter saw the world at <paramref name="viewTick"/>
+        /// (their Network.ViewTick). Network objects are tested where they were then (the Host's
+        /// last second of their shapes); walls and other objects that are not networked are
+        /// tested now (they do not move). Everywhere else (a Client, offline) it is a plain
+        /// Physics.Raycast. <paramref name="ignore"/>: the shooter (its whole network object).
+        /// <code>
+        /// // Client:  FireCmd.SendCommand(new NetWriter().WriteFloat((float)Network.ViewTick).WriteVector3(o).WriteVector3(d));
+        /// // Host:    if (Network.RaycastAt(viewTick, o, d, out hit, 100f, shooter)) Damage(Network.ObjectOf(hit.Entity));
+        /// </code>
+        /// </summary>
+        public static bool RaycastAt(double viewTick, Vector3 origin, Vector3 direction, out RaycastHit hit,
+                                     float maxDistance = 1000f, Entity ignore = null)
+        {
+            hit = new RaycastHit();
+            if (!IsHost)
+                return Physics.Raycast(origin, direction, out hit, maxDistance, ignore);
+
+            // The nearest wall: the first hit that is not part of a network object.
+            int count = Physics.RaycastNonAlloc(origin, direction, rewindHits, maxDistance, LayerMask.All, ignore);
+            bool wall = false;
+            float limit = maxDistance;
+            for (int i = 0; i < count; ++i)
+            {
+                if (!ReferenceEquals(ObjectOf(rewindHits[i].Entity), null))
+                    continue;
+                hit = rewindHits[i];
+                wall = true;
+                limit = rewindHits[i].Distance;
+                break;
+            }
+
+            int index, generation;
+            Vector3 point, normal;
+            float distance;
+            double used;
+            int ignoreIndex = ReferenceEquals(ignore, null) ? 0 : (int)ignore.Index;
+            int ignoreGeneration = ReferenceEquals(ignore, null) ? 0 : (int)ignore.Generation;
+            if (RaycastHistoryInternal(viewTick, ref origin, ref direction, limit, ignoreIndex, ignoreGeneration, out index,
+                                       out generation, out point, out normal, out distance, out used) != 0)
+            {
+                hit = new RaycastHit();
+                hit.Entity = new Entity(unchecked((uint)index), unchecked((uint)generation));
+                hit.Point = point;
+                hit.Normal = normal;
+                hit.Distance = distance;
+                return true;
+            }
+            return wall;
+        }
+
+        // --- keeping network objects across scene changes ------------------------------ //
+
+        /// <summary>
+        /// Host only: keeps a spawned network object - and what is attached to it - through the
+        /// next scene changes (Network.LoadScene), on every machine: same NetworkId, same state,
+        /// its scripts keep running. It becomes DontDestroyOnLoad; to drop it later, Despawn it.
+        /// Scene objects belong to their scene and cannot be kept; an object attached under
+        /// another is kept with that one. At most 64 objects per scene change.
+        /// </summary>
+        public static bool KeepAcrossScenes(Entity entity)
+        {
+            if (ReferenceEquals(entity, null) || !entity.IsAlive)
+                return false;
+            switch (KeepAcrossScenesInternal((int)entity.Index, (int)entity.Generation))
+            {
+                case 0: return true;
+                case 1: Log.Error("Network.KeepAcrossScenes(" + entity + "): only the running host keeps objects"); return false;
+                case 2: Log.Error("Network.KeepAcrossScenes(" + entity + "): not a network object"); return false;
+                case 3: Log.Error("Network.KeepAcrossScenes(" + entity + "): a scene object belongs to its scene - spawn it with Network.Spawn to keep it"); return false;
+                case 4: Log.Error("Network.KeepAcrossScenes(" + entity + "): it is attached under another object - keep that one"); return false;
+                default: Log.Error("Network.KeepAcrossScenes(" + entity + "): the scene manager refused (see the log)"); return false;
+            }
+        }
+
+        /// <summary>
+        /// Host: every player character is kept by the next scene changes, and stands at the new
+        /// scene's player spawn point when it arrives (instead of a new one being spawned).
+        /// </summary>
+        public static bool KeepPlayersAcrossScenes
+        {
+            get { return KeepPlayersInternal(-1) != 0; }
+            set { KeepPlayersInternal(value ? 1 : 0); }
+        }
+
+        /// <summary>Will a scene change keep this network object (KeepAcrossScenes, itself or its root)?</summary>
+        public static bool IsKeptAcrossScenes(Entity entity)
+        {
+            return !ReferenceEquals(entity, null) && IsKeptInternal((int)entity.Index, (int)entity.Generation) != 0;
+        }
+
+        // --- where does this logic run? -------------------------------------------------- //
+
+        /// <summary>
+        /// Is <paramref name="entity"/> this machine's own player character? In a session: the
+        /// character spawned for this player (GetPlayerEntity(LocalPeerId)). Single player: true
+        /// for any live entity - everything is the one player's.
+        /// </summary>
+        public static bool IsLocalPlayer(Entity entity)
+        {
+            if (ReferenceEquals(entity, null) || !entity.IsAlive)
+                return false;
+            if (!IsOnline)
+                return true;
+            Entity mine = LocalPlayerEntity;
+            return !ReferenceEquals(mine, null) && mine == entity;
+        }
+
+        /// <summary>
+        /// Does this machine decide what happens to <paramref name="entity"/> - its health, its
+        /// death, its spawning? The Host and a single-player game do; a Client never does (it asks
+        /// with a command).
+        /// </summary>
+        public static bool HasAuthority(Entity entity)
+        {
+            return IsAuthority && !ReferenceEquals(entity, null) && entity.IsAlive;
+        }
+
+        // A set kept as Dictionary<..., bool>, NOT HashSet: HashSet lives in System.Core.dll, which
+        // the engine's Mono cannot load (see AI/NodeHost.cs) - Network itself would fail to load.
+        private static readonly Dictionary<string, bool> authorityWarnings = new Dictionary<string, bool>();
+        private static string lastAuthorityRefusal = string.Empty;
+
+        /// <summary>
+        /// The guard at the top of Host-only gameplay: true on the authority. On a Client it logs
+        /// once per <paramref name="what"/> and returns false.
+        /// <code>if (!Network.RequireAuthority("TakeDamage")) return;</code>
+        /// </summary>
+        public static bool RequireAuthority(string what)
+        {
+            if (IsAuthority)
+                return true;
+            lastAuthorityRefusal = what ?? string.Empty;
+            if (!authorityWarnings.ContainsKey(lastAuthorityRefusal) && (authorityWarnings[lastAuthorityRefusal] = true))
+                Log.Warning(lastAuthorityRefusal + ": only the Host (or a single-player game) does this - a Client asks with " +
+                            "SendCommand, and sees the result when it arrives");
+            return false;
+        }
+
+        /// <summary>The last <c>what</c> RequireAuthority refused on this machine ("" if none).</summary>
+        public static string LastAuthorityRefusal { get { return lastAuthorityRefusal; } }
+
+        // --- the networking helpers' own messages (NetRouter: kinds 0xFF00 to 0xFFFF) -------- //
+
+        private static bool sendingHelper;
+
+        internal static bool SendHelperCommand(ushort kind, NetWriter data)
+        {
+            sendingHelper = true;
+            try { return SendCommand(kind, data); }
+            finally { sendingHelper = false; }
+        }
+
+        // unreliable: to everyone (this machine too); otherwise to everyone except `exceptPeer`
+        // (-1: nobody left out).
+        internal static bool SendHelperEvent(ushort kind, NetWriter data, bool unreliable, int exceptPeer)
+        {
+            sendingHelper = true;
+            try
+            {
+                if (unreliable) return SendEventUnreliable(kind, data);
+                return exceptPeer >= 0 ? SendEventExcept(exceptPeer, kind, data) : SendEvent(kind, data);
+            }
+            finally { sendingHelper = false; }
+        }
+
         public static bool Despawn(Entity entity, float delay = 0f)
         {
             if (ReferenceEquals(entity, null) || !entity.IsAlive)
@@ -941,6 +1280,32 @@ namespace Crucible
         private static extern int LoadSceneSeededInternal(string path, int seed);
         [MethodImpl(MethodImplOptions.InternalCall)]
         private static extern int SetOwnerInternal(int index, int generation, int peer);
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int ViewTickInternal(out double ticks);
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern float MaxRewindInternal(float seconds);
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int RaycastHistoryInternal(double tick, ref Vector3 origin, ref Vector3 direction, float maxDistance,
+                                                         int ignoreIndex, int ignoreGeneration, out int index, out int generation,
+                                                         out Vector3 point, out Vector3 normal, out float distance, out double usedTick);
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int KeepAcrossScenesInternal(int index, int generation);
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int KeepPlayersInternal(int value);
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int IsKeptInternal(int index, int generation);
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int GetTimeInternal(out double ticks);
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int GetPingInternal(int peer);
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int KickInternal(int peer, string reason);
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern void SetLocalInputInternal(float moveX, float moveZ, float yaw, float pitch, uint actions,
+                                                         int hasMotion);
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int GetInputInternal(int peer, out float moveX, out float moveZ, out float yaw, out float pitch,
+                                                   out uint held, out uint pressed, out int live);
         [MethodImpl(MethodImplOptions.InternalCall)]
         private static extern int SceneSeedInternal(out int seed);
         [MethodImpl(MethodImplOptions.InternalCall)]

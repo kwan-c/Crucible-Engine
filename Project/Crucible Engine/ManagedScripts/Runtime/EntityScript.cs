@@ -130,7 +130,14 @@ namespace Crucible
                 throw new InvalidOperationException("An EntityScript instance cannot be rebound.");
             Entity = new global::Crucible.Entity(unchecked((uint)index), unchecked((uint)generation));
             bound = true;
+            OnEntityBound();
         }
+
+        /// <summary>
+        /// Called right after BindEntity, before OnCreate. For ScriptCore base classes
+        /// (Networking/NetScript.cs binds its synced fields here); not for game scripts.
+        /// </summary>
+        internal virtual void OnEntityBound() {}
         /// <summary>Called once when Play starts (or when the script is first enabled).</summary>
         public virtual void OnCreate() {}
         /// <summary>Called every frame while Playing and enabled.</summary>
@@ -169,7 +176,7 @@ namespace Crucible
         public virtual void OnTriggerExit(Entity other) {}
 
         // --- network callbacks ------------------------------------------------------
-        // Multiplayer (see Network.cs). Called at the start of the frame the event
+        // Multiplayer (see Networking/Network.cs). Called at the start of the frame the event
         // happened in, before OnUpdate, in the order the events arrived. Every running
         // script hears them, except a command aimed at one entity (see OnNetworkCommand).
         // A script that starts later does not hear earlier events: read Network.Peers,
@@ -204,7 +211,7 @@ namespace Crucible
         /// that entity; one without reaches every script, so check <paramref name="kind"/>.
         /// <paramref name="sender"/> is who asked (0 = this machine itself) and cannot be
         /// faked; everything in <paramref name="data"/> can: read it, check data.Ok, then
-        /// check that this player may ask for this before acting. See NetReader.cs.
+        /// check that this player may ask for this before acting. See Networking/NetReader.cs.
         /// </summary>
         public virtual void OnNetworkCommand(int sender, ushort kind, NetReader data) {}
         /// <summary>
@@ -245,9 +252,15 @@ namespace Crucible
         public virtual void OnOwnershipChanged(int previousOwner, int newOwner) {}
 
         /// <summary>
+        /// Every machine, on this object's scripts: its NetData (Entity.NetData) changed - the host
+        /// set it, or a client received the new bytes. Read it with Entity.NetData.Read().
+        /// </summary>
+        public virtual void OnNetDataChanged() {}
+
+        /// <summary>
         /// Called by the engine (ScriptRuntime::DispatchNetworkEvent) with plain values.
         /// kind: 0 started, 1 stopped, 2 peer joined, 3 peer ready, 4 peer left, 5 command, 6 event,
-        /// 7 variable changed, 8 scene loading, 9 all peers ready, 10 ownership changed
+        /// 7 variable changed, 8 scene loading, 9 all peers ready, 10 ownership changed, 11 data changed
         /// (ScriptNetEvent::Kind in Bindings/NetworkContext.h - keep the two in step).
         /// </summary>
         internal void DispatchNetworkEvent(int kind, int peer, int code, int serial, string text)
@@ -276,6 +289,7 @@ namespace Crucible
                 case 8: OnNetworkSceneLoading(); break;
                 case 9: OnAllPeersReady(); break;
                 case 10: OnOwnershipChanged(code, peer); break;
+                case 11: OnNetDataChanged(); break;
             }
         }
 

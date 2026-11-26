@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.10
+* \version       1.11
 * \brief
 *                ReplicationRegistry and the built-in serializers (see the
 *                header).
@@ -28,6 +28,8 @@
 *    -v1.8       registers Renderers (NetRendererSync.cpp)
 *    -v1.9       WorstCaseBytes and WorstCaseRecordBytes (maxBytesFor)
 *    -v1.10      registers Children/OnOff (NetSyncedChildren.cpp)
+*    -v1.11      NetVariables: 64 slots, the mask as two varints (schema 2); the NetData
+*                serializer (protocol 11)
 *
 **************************************************************************/
 #include "Network/ReplicationRegistry.h"
@@ -250,8 +252,9 @@ namespace Crucible
 
 	namespace
 	{
-		// NetVariables on the wire: a u16 mask of the slots that are not 0, then those slots, 4 bytes
-		// each, lowest first. A listed slot that is 0 is malformed: one state, one encoding.
+		// NetVariables on the wire: the mask of the slots that are not 0 as two varints (slots 0-31,
+		// then 32-63), then those slots, 4 bytes each, lowest first. A listed slot that is 0 is
+		// malformed: one state, one encoding.
 		struct NetVariablesState
 		{
 			std::array<std::uint32_t, NetVariables::kSlots> slots;
@@ -261,10 +264,11 @@ namespace Crucible
 		{
 			const NetVariables* variables = world.Read<NetVariables>(entity);
 			if (variables == nullptr) return false;
-			std::uint16_t mask = 0;
+			std::uint64_t mask = 0;
 			for (std::uint32_t i = 0; i < NetVariables::kSlots; ++i)
-				if (variables->slots[i] != 0) mask = static_cast<std::uint16_t>(mask | (1u << i));
-			out.U16(mask);
+				if (variables->slots[i] != 0) mask |= std::uint64_t{ 1 } << i;
+			out.VarU32(static_cast<std::uint32_t>(mask));
+			out.VarU32(static_cast<std::uint32_t>(mask >> 32));
 			for (std::uint32_t i = 0; i < NetVariables::kSlots; ++i)
 				if (variables->slots[i] != 0) out.U32(variables->slots[i]);
 			return out.Ok();
@@ -273,10 +277,12 @@ namespace Crucible
 		bool DecodeNetVariables(ByteReader& in, const ReplicationContext&, NetVariablesState& out)
 		{
 			out.slots = {};
-			const std::uint16_t mask = in.U16();
+			const std::uint64_t low = in.VarU32();
+			const std::uint64_t mask = low | (static_cast<std::uint64_t>(in.VarU32()) << 32);
+			if (!in.Ok()) return false;
 			for (std::uint32_t i = 0; i < NetVariables::kSlots; ++i)
 			{
-				if ((mask & (1u << i)) == 0) continue;
+				if ((mask & (std::uint64_t{ 1 } << i)) == 0) continue;
 				out.slots[i] = in.U32();
 				if (!in.Ok() || out.slots[i] == 0) return false;
 			}
@@ -287,7 +293,7 @@ namespace Crucible
 		bool CommitNetVariables(NetVariables& variables, const NetVariablesState& state, const ReplicationContext&)
 		{
 			for (std::uint32_t i = 0; i < NetVariables::kSlots; ++i)
-				if (variables.slots[i] != state.slots[i]) variables.changed = static_cast<std::uint16_t>(variables.changed | (1u << i));
+				if (variables.slots[i] != state.slots[i]) variables.changed |= std::uint64_t{ 1 } << i;
 			variables.slots = state.slots;
 			return true;
 		}
@@ -295,10 +301,65 @@ namespace Crucible
 		ReplicatedComponent NetVariablesSerializer()
 		{
 			ReplicatedComponent serializer = MakeSerializer<NetVariables, NetVariablesState, &DecodeNetVariables, &CommitNetVariables>({
-				.id = NetComponentId::NetVariables, .name = "NetVariables", .schemaVersion = 1,
-				.maxBytes = 2 + 4 * NetVariables::kSlots, .write = &WriteNetVariables });
+				.id = NetComponentId::NetVariables, .name = "NetVariables", .schemaVersion = 2,
+				.maxBytes = 5 + 5 + 4 * NetVariables::kSlots, .write = &WriteNetVariables });
 			serializer.addedAtRuntime = true;
 			serializer.ensure = [](World& world, Entity entity) { world.AddComponent(entity, NetVariables{}); };
+			return serializer;
+		}
+	}
+
+	namespace
+	{
+		// NetData on the wire: a varint length (<= NetData::kMaxBytes), then the bytes.
+		struct NetDataState
+		{
+			std::array<std::byte, NetData::kMaxBytes> bytes;
+			std::uint16_t length;
+		};
+
+		bool WriteNetData(const World& world, Entity entity, const ReplicationContext&, ByteWriter& out)
+		{
+			const NetData* data = world.Read<NetData>(entity);
+			if (data == nullptr || data->length > NetData::kMaxBytes) return false;
+			out.VarU32(data->length);
+			out.Bytes(std::span(data->bytes.data(), data->length));
+			return out.Ok();
+		}
+
+		bool DecodeNetData(ByteReader& in, const ReplicationContext&, NetDataState& out)
+		{
+			const std::uint32_t length = in.VarU32();
+			if (!in.Ok() || length > NetData::kMaxBytes) return false;   // checked BEFORE taking the bytes
+			const std::span<const std::byte> bytes = in.Sub(length);
+			if (!in.Ok()) return false;
+			out.bytes = {};
+			std::copy(bytes.begin(), bytes.end(), out.bytes.begin());
+			out.length = static_cast<std::uint16_t>(length);
+			return true;
+		}
+
+		// Scripts hear about it only when the bytes really changed.
+		bool CommitNetData(NetData& data, const NetDataState& state, const ReplicationContext&)
+		{
+			const bool same = data.length == state.length
+				&& std::equal(data.bytes.begin(), data.bytes.begin() + data.length, state.bytes.begin());
+			if (!same)
+			{
+				data.bytes = state.bytes;
+				data.length = state.length;
+				data.changed = true;
+			}
+			return true;
+		}
+
+		ReplicatedComponent NetDataSerializer()
+		{
+			ReplicatedComponent serializer = MakeSerializer<NetData, NetDataState, &DecodeNetData, &CommitNetData>({
+				.id = NetComponentId::NetData, .name = "NetData", .schemaVersion = 1,
+				.maxBytes = 2 + NetData::kMaxBytes, .write = &WriteNetData });
+			serializer.addedAtRuntime = true;
+			serializer.ensure = [](World& world, Entity entity) { world.AddComponent(entity, NetData{}); };
 			return serializer;
 		}
 	}
@@ -495,6 +556,7 @@ namespace Crucible
 	bool ReplicationRegistry::RegisterBuiltIns(std::string& error)
 	{
 		return Register(NetVariablesSerializer(), error)
+			&& Register(NetDataSerializer(), error)
 			&& Register(NetAnimatorSerializer(), error)
 			&& Register(ChildRotationsSerializer(), error)
 			&& Register(ChildTransformsSerializer(), error)

@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.22
+* \version       1.26
 * \brief
 *                NetworkSession: start/stop, connection events, the join
 *                handshake, bounded receive, quotas and timeouts, spawn
@@ -56,6 +56,13 @@
 *                RequestSceneChange(asset, seed)), sent in SceneChange, set on clients before the load
 *    -v1.22      ownership transfer: requests, applied changes, OwnerChange is a
 *                lifecycle message
+*    -v1.23      player input for scripts (protocol 10): SetLocalInput, TakeLocalCommandInput,
+*                GetPlayerInput, PublishPlayerInput at the end of every Update; commands' pressed actions
+*    -v1.24      pings and kicking (protocol 11): PeerPings once a second, PingOf, Kick; a kicked
+*                client stops with 'kicked by the host: <reason>'
+*    -v1.25      kept network objects (protocol 12): the host keeps their mapping and lists them in
+*                SceneChange; a client keeps its copies; ClientReady after kReadyAfterFrames frames
+*    -v1.26      ViewTicks; the lag history is cleared when the session ends
 *
 **************************************************************************/
 #include "Network/NetworkSession.h"
@@ -68,8 +75,10 @@
 #include "Network/Quantize.h"
 
 #include <algorithm>
+#include <cmath>
 #include <format>
 #include <random>
+#include <utility>
 
 namespace Crucible
 {
@@ -184,6 +193,7 @@ namespace Crucible
 		m_serverTime.Reset();
 		m_latency = {};
 		m_roster = {};
+		m_peerPings.fill(-1);
 		m_rosterChanged = false;
 		m_nextCommandSequence = 1;
 		ResetSceneChange();
@@ -288,6 +298,12 @@ namespace Crucible
 		m_serverTickAtJoin = 0;
 		m_joinDeadline = {};
 		m_roster = {};
+		m_peerPings.fill(-1);
+		m_nextPingBroadcast = {};
+		m_keptPending.clear();
+		m_readySeq = 0;
+		m_readyFramesLeft = 0;
+		m_lagHistory.Clear();
 		m_rosterChanged = false;
 		m_nextCommandSequence = 1;
 		ResetSceneChange();
@@ -553,16 +569,24 @@ namespace Crucible
 	bool NetworkSession::CompleteWorld(std::uint32_t worldEndSeq, std::size_t entities)
 	{
 		if (!IsClient() || m_transport == nullptr) return false;
-		ClientReady ready;
-		ready.worldEndSeq = worldEndSeq;
-		if (SendReliable(m_serverConnection, ready) != SendResult::Ok)
-		{
-			CloseAndStop(CloseReason::SendFailed, "could not send ClientReady");
-			return false;
-		}
+		// ClientReady waits until this machine has drawn the new world a few times: the first
+		// draws compile pipelines and upload textures, which would stall the start of a round.
+		// The scripts hear WorldReady now.
+		m_readySeq = worldEndSeq;
+		m_readyFramesLeft = kReadyAfterFrames;
 		CRU_INFO("[Net] world received: {} networked entities", entities);
 		Post(NetworkEvents::WorldReady{ .entities = entities });
 		return true;
+	}
+
+	// Once per frame on a client (Update): counts down the frames before ClientReady.
+	void NetworkSession::SendDeferredReady()
+	{
+		if (m_readySeq == 0 || !IsClient() || m_transport == nullptr) return;
+		if (m_readyFramesLeft > 0 && --m_readyFramesLeft > 0) return;
+		ClientReady ready;
+		ready.worldEndSeq = std::exchange(m_readySeq, 0u);
+		if (SendReliable(m_serverConnection, ready) != SendResult::Ok) CloseAndStop(CloseReason::SendFailed, "could not send ClientReady");
 	}
 
 	void NetworkSession::RequestStop(std::string_view reason)
@@ -581,9 +605,10 @@ namespace Crucible
 		{
 			const std::string reason = std::move(m_stopReason);
 			Stop(reason);
+			PublishPlayerInput();
 			return;
 		}
-		if (m_transport == nullptr) return;
+		if (m_transport == nullptr) { PublishPlayerInput(); return; }   // offline: this machine's own input
 		const SteadyClock::time_point start = SteadyClock::now();
 		if (m_latency.pending && start - m_latency.started > kLatencyProbeTimeout) AbandonLatencyProbe();   // whether or not it is drawn
 
@@ -607,6 +632,11 @@ namespace Crucible
 		{
 			EnforceQuotas();
 			EnforceJoinTimeouts(start);
+			if (start >= m_nextPingBroadcast)
+			{
+				m_nextPingBroadcast = start + kPingInterval;
+				BroadcastPings();
+			}
 			// After everything that can change it this frame, and before the send system streams
 			// the world to a peer that just joined (PostUpdate): its roster comes first.
 			if (m_rosterChanged)
@@ -623,6 +653,10 @@ namespace Crucible
 				Post(NetworkEvents::AllPeersReady{ .transition = m_transition });
 			}
 		}
+		else if (m_clientPhase == ClientPhase::Joined)
+		{
+			SendDeferredReady();
+		}
 		else if (m_clientPhase == ClientPhase::Joining && start >= m_joinDeadline)
 		{
 			// The host accepted the connection but never answered JoinRequest.
@@ -630,6 +664,7 @@ namespace Crucible
 			Post(NetworkEvents::JoinRefused{ .reason = static_cast<int>(CloseReason::Timeout), .debug = why });
 			CloseAndStop(CloseReason::Timeout, why);
 		}
+		PublishPlayerInput();   // after this frame's commands, before the scripts run
 		m_stats.receiveMicros = std::chrono::duration_cast<std::chrono::microseconds>(SteadyClock::now() - start).count();
 	}
 
@@ -968,6 +1003,10 @@ namespace Crucible
 			if (command.sequence <= peer.lastInputSequence) { ++m_stats.commandsDuplicate; continue; }   // 32 bits: never wraps
 			peer.lastInputSequence = command.sequence;
 			peer.lastInputTick = m_clock.Tick();
+			// Pressed: what the client saw go down, plus anything held now that was not before (a
+			// press whose every copy was lost still shows once).
+			const std::uint32_t heldBefore = peer.hasCommand ? peer.latest.actions : 0u;
+			peer.actionsPressedPending |= command.actionsPressed | (command.actions & ~heldBefore);
 			peer.latest = command;
 			peer.hasCommand = true;
 			peer.inputTimedOut = false;
@@ -1031,6 +1070,195 @@ namespace Crucible
 		out.jump = peer->jumpLatched;
 		peer->jumpLatched = false;
 		return true;
+	}
+
+	// ---- the shared clock -----------------------------------------------------------------------
+
+	bool NetworkSession::SharedTicks(double& ticks) const noexcept
+	{
+		ticks = 0.0;
+		if (m_state != SessionState::Running) return false;
+		if (IsServer()) { ticks = static_cast<double>(m_clock.Tick()); return true; }
+		if (!IsClient() || m_clientPhase != ClientPhase::Joined) return false;
+		ticks = m_serverTime.Valid() ? std::max(0.0, m_serverTime.Estimate()) : static_cast<double>(m_serverTickAtJoin);
+		return true;
+	}
+
+	bool NetworkSession::ViewTicks(double& ticks) const noexcept
+	{
+		if (!SharedTicks(ticks)) return false;
+		if (IsClient()) ticks = std::max(0.0, ticks - kViewDelayTicks);
+		return true;
+	}
+
+	// ---- pings and kicking ----------------------------------------------------------------------
+
+	int NetworkSession::PingOf(Net::PeerId peer) const noexcept
+	{
+		if (peer >= Net::kMaxPlayers) return -1;
+		if (m_role == Net::NetRole::Offline) return peer == Net::kServerPeer ? 0 : -1;
+		ConnectionStatus status;
+		if (IsServer())
+		{
+			if (peer == Net::kServerPeer) return 0;
+			return PeerLinkStatus(peer, status) ? std::max(0, status.pingMs) : -1;
+		}
+		if (!m_roster[peer].Present()) return -1;   // not (or no longer) in the session
+		if (peer == m_localPeer && HostLinkStatus(status)) return std::max(0, status.pingMs);
+		return m_peerPings[peer];
+	}
+
+	// Every player's ping, to every InGame client, unreliably: a lost one is replaced a second
+	// later. A client still loading gets the next one once it is in the game.
+	void NetworkSession::BroadcastPings()
+	{
+		if (m_transport == nullptr) return;
+		PeerPings pings;
+		pings.entries[pings.count++] = PeerPings::Entry{ .peer = Net::kServerPeer, .pingMs = 0 };
+		for (const PeerState& peer : m_peers)
+		{
+			if (!peer.IsJoined() || peer.peer == Net::kInvalidPeer || peer.peer > Net::kMaxClients) continue;
+			ConnectionStatus status;
+			const bool known = m_transport->Status(peer.connection, status) && status.pingMs >= 0;
+			pings.entries[pings.count++] = PeerPings::Entry{ .peer = peer.peer,
+				.pingMs = known ? static_cast<std::uint16_t>(std::min(status.pingMs, 0xFFFE)) : PeerPings::kUnknown };
+		}
+		std::array<std::byte, 32> buffer;
+		ByteWriter writer(buffer);
+		if (!Encode(writer, pings)) return;
+		for (const PeerState& peer : m_peers)
+		{
+			if (peer.phase != PeerState::Phase::InGame) continue;
+			if (m_transport->Send(peer.connection, writer.Written(), Delivery::Unreliable, Lane::Snapshot) != SendResult::Ok) continue;
+			++m_stats.pingsSent;
+			CountBytes(m_stats.bytesSentByType, writer.Written());
+		}
+	}
+
+	bool NetworkSession::Kick(Net::PeerId peerId, std::string_view reason)
+	{
+		if (!IsServer() || m_state != SessionState::Running || m_transport == nullptr || peerId == Net::kServerPeer) return false;
+		PeerState* peer = PeerById(peerId);
+		if (peer == nullptr) return false;
+		const std::string why = reason.empty() ? std::string("removed by the host") : std::string(reason.substr(0, 128));
+		++m_stats.peersKicked;
+		ClosePeer(*peer, CloseReason::Kicked, why);
+		return true;
+	}
+
+	// ---- player input for scripts --------------------------------------------------------------
+
+	namespace
+	{
+		float SignedDegrees(float degrees) noexcept   // [0, 360) to (-180, 180]
+		{
+			return degrees > 180.f ? degrees - 360.f : degrees;
+		}
+
+		Math::vec3 FlatMove(const Math::vec3& move) noexcept   // world XZ, never longer than 1
+		{
+			Math::vec3 flat(std::isfinite(move.x) ? move.x : 0.f, 0.f, std::isfinite(move.z) ? move.z : 0.f);
+			if (glm::dot(flat, flat) > 1.f) flat = glm::normalize(flat);
+			return flat;
+		}
+	}
+
+	void NetworkSession::SetLocalInput(const Math::vec3& move, float yawDegrees, float pitchDegrees, std::uint32_t held,
+		bool hasMotion) noexcept
+	{
+		LocalInputState& in = m_localInput;
+		const std::uint32_t wentDown = held & ~in.held;
+		in.pressedFrame |= wentDown;
+		in.pressedCommand |= wentDown;
+		in.held = held;
+		in.hasMotion = hasMotion;
+		in.move = hasMotion ? FlatMove(move) : Math::vec3(0.f);
+		in.yawDegrees = hasMotion && std::isfinite(yawDegrees) ? yawDegrees : 0.f;
+		in.pitchDegrees = std::isfinite(pitchDegrees) ? pitchDegrees : 0.f;
+		in.everSet = true;
+		in.setFrame = m_inputFrame;
+	}
+
+	bool NetworkSession::LocalInputLive() const noexcept
+	{
+		return m_localInput.everSet && m_inputFrame - m_localInput.setFrame <= kLocalInputTimeoutFrames;
+	}
+
+	bool NetworkSession::TakeLocalCommandInput(InputCommand& command, bool& motion) noexcept
+	{
+		motion = false;
+		if (!LocalInputLive()) { m_localInput.pressedCommand = 0; return false; }
+		const LocalInputState& in = m_localInput;
+		command.actions = in.held;
+		command.actionsPressed = std::exchange(m_localInput.pressedCommand, 0u);
+		command.pitch = Quantize::AngleToU16(in.pitchDegrees);
+		if (in.hasMotion)
+		{
+			motion = true;
+			command.moveX = Quantize::SignedUnitToI8(in.move.x);
+			command.moveZ = Quantize::SignedUnitToI8(in.move.z);
+			command.yaw = Quantize::AngleToU16(in.yawDegrees);
+		}
+		return true;
+	}
+
+	// Once per frame, at the end of Update: what scripts read until the next one. A press is
+	// handed out in exactly one publish; input that stopped arriving is neutral (no move, nothing
+	// held), facing and pitch kept.
+	void NetworkSession::PublishPlayerInput() noexcept
+	{
+		NetPlayerInput& local = m_localPublished;
+		local = NetPlayerInput{};
+		if (m_localInput.everSet)
+		{
+			local.yawDegrees = Quantize::U16ToAngle(Quantize::AngleToU16(m_localInput.yawDegrees));   // [0, 360), as remote
+			local.pitchDegrees = m_localInput.pitchDegrees;
+			if (LocalInputLive())
+			{
+				local.move = m_localInput.move;
+				local.held = m_localInput.held;
+				local.pressed = m_localInput.pressedFrame;
+				local.live = true;
+			}
+		}
+		m_localInput.pressedFrame = 0;
+		++m_inputFrame;
+
+		for (PeerState& peer : m_peers)
+		{
+			NetPlayerInput& out = peer.published;
+			out = NetPlayerInput{};
+			if (IsServer() && peer.phase == PeerState::Phase::InGame && peer.hasCommand)
+			{
+				const InputCommand& c = peer.latest;
+				out.yawDegrees = Quantize::U16ToAngle(c.yaw);
+				out.pitchDegrees = SignedDegrees(Quantize::U16ToAngle(c.pitch));
+				if (m_clock.Tick() - peer.lastInputTick <= kInputTimeoutTicks)
+				{
+					out.move = FlatMove({ Quantize::I8ToSignedUnit(c.moveX), 0.f, Quantize::I8ToSignedUnit(c.moveZ) });
+					out.held = c.actions;
+					out.pressed = peer.actionsPressedPending;
+					out.live = true;
+				}
+			}
+			peer.actionsPressedPending = 0;
+		}
+	}
+
+	bool NetworkSession::GetPlayerInput(Net::PeerId peer, NetPlayerInput& out) const noexcept
+	{
+		out = NetPlayerInput{};
+		const bool local = (m_role == Net::NetRole::Offline && peer == Net::kServerPeer)
+			|| (m_localPeer != Net::kInvalidPeer && peer == m_localPeer);
+		if (local) { out = m_localPublished; return true; }
+		if (!IsServer() || peer == Net::kInvalidPeer) return false;
+		for (const PeerState& p : m_peers)
+		{
+			if (p.phase == PeerState::Phase::Free || p.peer != peer) continue;
+			out = p.published;
+			return p.phase == PeerState::Phase::InGame;
+		}
+		return false;
 	}
 
 	// ---- scene objects ----------------------------------------------------------------------------
@@ -1624,9 +1852,22 @@ namespace Crucible
 	void NetworkSession::BeginSceneTransition(std::uint64_t sceneAsset)
 	{
 		if (!IsServer() || m_state != SessionState::Running) return;
+		// The objects kept through the load (DontDestroyOnLoad, KeepAcrossScenes): their mapping
+		// stays, so destroying the rest still announces nothing and the kept ones keep their ids.
+		std::vector<std::pair<Net::NetworkId, Entity>> kept;
+		if (m_keptQuery) m_keptQuery(kept);
+		std::ranges::sort(kept, {}, [](const auto& k) { return k.first; });   // by id
+		if (kept.size() > kMaxKeptObjects)
+		{
+			CRU_ERROR("[Net] scene change: {} network objects are kept, at most {} can be - the rest stop being network objects",
+				kept.size(), kMaxKeptObjects);
+			kept.resize(kMaxKeptObjects);
+		}
 		const Net::NetworkId nextId = m_nextId;
 		ClearEntityState();
 		m_nextId = nextId;
+		for (const auto& [id, entity] : kept) m_entities.TryAdd(id, entity, [](Entity) { return true; });
+		m_lastKeptCount = kept.size();
 		++m_transition;
 		m_sceneChangeExpected = true;
 		m_waitingForPeers = true;
@@ -1634,16 +1875,17 @@ namespace Crucible
 		m_sceneSeed = m_requestedSeedSet ? m_requestedSeed : NewSceneSeed();
 		m_sceneSeedKnown = true;
 		m_requestedSeedSet = false;
-		CRU_INFO("[Net] scene change {}: loading scene {:016X} (seed {})", m_transition, sceneAsset, m_sceneSeed);
+		CRU_INFO("[Net] scene change {}: loading scene {:016X} (seed {}), keeping {} network objects", m_transition, sceneAsset, m_sceneSeed, kept.size());
 
 		const SteadyClock::time_point deadline = SteadyClock::now() + kSceneLoadTimeout;
 		for (std::size_t i = 0; i < m_peers.size(); ++i)   // by index: a failed send resets the slot
 		{
 			PeerState& peer = m_peers[i];
 			if (!peer.IsJoined()) continue;
-			std::array<std::byte, 32> buffer;
+			std::array<std::byte, 384> buffer;
 			ByteWriter writer(buffer);
-			const SceneChange change{ .lifecycleSeq = peer.nextLifecycleSeq, .transition = m_transition, .sceneAsset = sceneAsset, .sceneSeed = m_sceneSeed };
+			SceneChange change{ .lifecycleSeq = peer.nextLifecycleSeq, .transition = m_transition, .sceneAsset = sceneAsset, .sceneSeed = m_sceneSeed };
+			for (const auto& [id, entity] : kept) change.kept[change.keptCount++] = id;
 			const Net::PeerId id = peer.peer;
 			if (!Encode(writer, change) || !SendLifecycle(id, writer.Written())) continue;   // closed on failure
 			peer.phase = PeerState::Phase::Loading;
@@ -1678,10 +1920,19 @@ namespace Crucible
 		CRU_INFO("[Net] peer {} '{}' loaded scene change {}", peer.peer, peer.name, m_transition);
 	}
 
-	void NetworkSession::BeginClientSceneLoad(const SceneChange& change)
+	void NetworkSession::BeginClientSceneLoad(const SceneChange& change, std::span<const std::pair<Net::NetworkId, Entity>> kept)
 	{
 		if (!IsClient()) return;
-		ClearEntityState();   // AwaitingWorld; the proxies go with the scene
+		ClearEntityState();   // AwaitingWorld; the proxies go with the scene, but the kept ones
+		m_readySeq = 0;       // a ClientReady still waiting belongs to the old world
+		m_readyFramesLeft = 0;
+		m_keptPending.clear();
+		for (const auto& [id, entity] : kept)
+		{
+			m_entities.TryAdd(id, entity, [](Entity) { return true; });
+			m_keptPending.push_back(id);
+		}
+		m_lastKeptCount = kept.size();
 		m_snapshotAcks.Reset();
 		m_latency = {};
 		m_transition = change.transition;
@@ -1689,8 +1940,28 @@ namespace Crucible
 		m_confirmPending = true;
 		++m_stats.sceneChanges;
 		SetSceneSeedFromHost(change.sceneSeed);   // before the scene loads: its scripts' OnCreate sees it
-		CRU_INFO("[Net] the host changes scene ({}): loading scene {:016X} (seed {})", change.transition, change.sceneAsset, change.sceneSeed);
+		CRU_INFO("[Net] the host changes scene ({}): loading scene {:016X} (seed {}), keeping {} of its {} kept network objects",
+			change.transition, change.sceneAsset, change.sceneSeed, kept.size(), change.keptCount);
 		Post(NetworkEvents::SceneChangeStarted{ .sceneAsset = change.sceneAsset, .transition = change.transition });
+	}
+
+	bool NetworkSession::IsKeptPending(Net::NetworkId id) const noexcept
+	{
+		return std::ranges::find(m_keptPending, id) != m_keptPending.end();
+	}
+
+	bool NetworkSession::TakeKept(Net::NetworkId id) noexcept
+	{
+		const auto it = std::ranges::find(m_keptPending, id);
+		if (it == m_keptPending.end()) return false;
+		m_keptPending.erase(it);
+		return true;
+	}
+
+	void NetworkSession::TakeUnboundKept(std::vector<Net::NetworkId>& out)
+	{
+		out = std::move(m_keptPending);
+		m_keptPending.clear();
 	}
 
 	bool NetworkSession::AcceptSceneChange() noexcept
@@ -1887,7 +2158,10 @@ namespace Crucible
 				CRU_WARN("[Net] join refused or failed: {}", why);
 				Post(NetworkEvents::JoinRefused{ .reason = event.endReason, .debug = event.debug });
 			}
-			RequestStop(m_clientPhase == ClientPhase::Joined ? "host ended the session: " + why : "could not join: " + why);
+			if (event.endReason == static_cast<int>(CloseReason::Kicked))
+				RequestStop("kicked by the host: " + event.debug);
+			else
+				RequestStop(m_clientPhase == ClientPhase::Joined ? "host ended the session: " + why : "could not join: " + why);
 			return;
 		}
 		default:
@@ -1922,6 +2196,17 @@ namespace Crucible
 			m_clientWorld = ClientWorld::AwaitingWorld;
 			CRU_INFO("[Net] joined {}:{} as peer {}", m_active.connectAddress, m_active.connectPort, m_localPeer);
 			Post(NetworkEvents::SessionStarted{ .role = Net::NetRole::Client, .localPeer = m_localPeer });
+			return;
+		}
+		case MessageType::PeerPings:
+		{
+			if (m_clientPhase != ClientPhase::Joined) { ++m_stats.unexpected; return; }
+			PeerPings pings;
+			if (!Decode(reader, pings)) { ++m_stats.malformed; return; }   // unreliable: the next one replaces it
+			m_peerPings.fill(-1);
+			for (const PeerPings::Entry& e : pings.Entries())
+				m_peerPings[e.peer] = e.pingMs == PeerPings::kUnknown ? -1 : static_cast<int>(e.pingMs);
+			++m_stats.pingsReceived;
 			return;
 		}
 		case MessageType::JoinRequest:

@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          26 November 2026
-* \version       1.0
+* \version       1.1
 * \brief         Networking sample: a key-driven check, in two Editors, of
 *                scale, character size, synced children, attachments,
 *                renderers, on/off below the root and ownership.
@@ -30,9 +30,17 @@
 *    On a client the keys do nothing (the host decides). Offline it runs as
 *    on a host.
 *
+*    Player input (every machine): J, K and L are three game actions in an
+*    ActionMap, sent each frame. The host's text shows every player's held
+*    actions and how many presses it counted (one per press, however short
+*    the tap); a client's shows its own.
+*
 * \history
 *    -v1.0       sample for scale, character size, synced children, attachments,
 *                renderers, on/off below the root and ownership
+*    -v1.1       player input: J, K, L as game actions on every machine; the host shows each
+*                player's held actions and press count
+*
 **************************************************************************/
 namespace Crucible.@Scripts
 {
@@ -48,6 +56,11 @@ namespace Crucible.@Scripts
         private float torsoYaw;
         private bool crouched;
         private bool useB;
+
+        // Player input: three game actions on every machine; the host counts every player's presses.
+        private const int ActJ = 0, ActK = 1, ActL = 2;
+        private readonly ActionMap actions = new ActionMap().Bind(ActJ, KeyCode.J).Bind(ActK, KeyCode.K).Bind(ActL, KeyCode.L);
+        private readonly System.Collections.Generic.Dictionary<int, int> presses = new System.Collections.Generic.Dictionary<int, int>();
 
         public override void OnCreate()
         {
@@ -68,8 +81,12 @@ namespace Crucible.@Scripts
         {
             if (mech == null || torso == null || gun == null || part == null || crate == null)
                 return;
+            actions.Send();
             if (Network.IsAuthority)
+            {
                 HandleKeys();
+                CountPresses();
+            }
             if (text != null)
                 text.Text = Describe();
         }
@@ -142,6 +159,38 @@ namespace Crucible.@Scripts
                 ResetAll();
         }
 
+        // Whose input this machine can read: every player on the host, only its own elsewhere.
+        private static int[] InputPeers()
+        {
+            return Network.IsHost ? Network.Peers : new int[] { Network.LocalPeerId };
+        }
+
+        private void CountPresses()
+        {
+            foreach (int peer in InputPeers())
+            {
+                NetInput input = Network.GetInput(peer);
+                int n = (input.WasPressed(ActJ) ? 1 : 0) + (input.WasPressed(ActK) ? 1 : 0) + (input.WasPressed(ActL) ? 1 : 0);
+                int before;
+                presses.TryGetValue(peer, out before);
+                presses[peer] = before + n;
+            }
+        }
+
+        private string DescribeInput()
+        {
+            string line = "\ninput (J K L)";
+            foreach (int peer in InputPeers())
+            {
+                NetInput input = Network.GetInput(peer);
+                int n;
+                presses.TryGetValue(peer, out n);
+                line += "   " + peer + ": " + (input.IsDown(ActJ) ? "J" : "-") + (input.IsDown(ActK) ? "K" : "-") + (input.IsDown(ActL) ? "L" : "-")
+                     + (Network.IsAuthority ? " x" + n : "") + (input.IsFresh ? "" : " (none)");
+            }
+            return line;
+        }
+
         // The host, then each player in the session in turn, then the host again.
         private static int NextOwner(int current)
         {
@@ -190,7 +239,8 @@ namespace Crucible.@Scripts
                 + "   mech " + (renderer != null && renderer.Visible ? "shown" : "hidden")
                 + "\ngun " + (gun.IsEnabled<MeshRenderer>() ? "on" : "off")
                 + "   part on " + (parent != null ? parent.Name : "nothing")
-                + "\ncrate owner " + crate.Owner + (crate.IsMine ? " (mine: light on)" : "");
+                + "\ncrate owner " + crate.Owner + (crate.IsMine ? " (mine: light on)" : "")
+                + DescribeInput();
         }
     }
 }

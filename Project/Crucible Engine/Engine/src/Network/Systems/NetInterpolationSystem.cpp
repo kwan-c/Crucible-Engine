@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          6 November 2026
-* \version       1.3
+* \version       1.4
 * \brief
 *                NetInterpolationSystem: proxies drawn 100 ms in the past,
 *                between snapshot samples; the key-to-motion measurement.
@@ -14,6 +14,7 @@
 *                Camera applies the local yaw
 *    -v1.2       NetStats::interpolateMicros
 *    -v1.3       synced children drawn at the roots' render tick (ApplyChildTransforms)
+*    -v1.4       checks that its delay is the one Network.ViewTick subtracts (lag compensation)
 *
 **************************************************************************/
 #include "Network/Systems/NetInterpolationSystem.h"
@@ -86,6 +87,7 @@ namespace Crucible
 		ServerTimeEstimate& time = m_session.ServerTime();
 		time.Advance(world.DeltaTime());
 		if (!time.Valid()) return;   // no snapshot yet: proxies stay where their spawn put them
+		static_assert(kInterpolationDelayTicks == NetworkSession::kViewDelayTicks, "Network.ViewTick must name what is drawn");
 		const double renderTick = time.Estimate() - kInterpolationDelayTicks;
 		const Net::PeerId self = m_session.LocalPeer();
 

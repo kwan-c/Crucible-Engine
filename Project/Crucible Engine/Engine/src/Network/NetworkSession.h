@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.20
+* \version       1.25
 * \brief
 *                One multiplayer session: hosting or joining, who is
 *                connected, the join handshake, refusals, receive limits
@@ -125,6 +125,19 @@
 *                intent goes neutral, so a frozen or cut-off client's mech
 *                stops instead of walking until GNS times it out.
 *
+*                Player input for scripts (protocol 10): every machine's
+*                scripts give their own player's input with SetLocalInput
+*                (game actions as 32 bits, aim pitch, and optionally the
+*                move and yaw); a client sends it in its input commands.
+*                GetPlayerInput is what each player does this frame: the
+*                host reads every player's, a client and an offline game
+*                only their own. Input is published once per frame, at the
+*                end of Update (NetReceiveSystem, before the scripts run):
+*                an action pressed shows as pressed for exactly one frame,
+*                however short the tap, and input that stops arriving for
+*                kInputTimeoutTicks steps (16 frames for this machine's
+*                own) goes neutral.
+*
 *                Gameplay events: the host
 *                sends a generic event - a game-defined kind and payload
 *                bytes - with SendGameplayEvent. The send system delivers it
@@ -219,6 +232,14 @@
 *                RequestSceneChange(asset, seed)
 *    -v1.20      ownership transfer: RequestOwnerChange, TakeOwnerRequests,
 *                NoteOwnerChanged, TakeOwnerChanges
+*    -v1.21      player input for scripts (protocol 10): NetPlayerInput, SetLocalInput,
+*                TakeLocalCommandInput, GetPlayerInput; published once per frame by Update
+*    -v1.22      pings and kicking (protocol 11): PingOf, Kick, kPingInterval; PeerPings sent
+*                every second and kept by clients
+*    -v1.23      SharedTicks: the host's game time on every machine
+*    -v1.24      keeping network objects across scene changes (protocol 12): SetKeptObjectsQuery,
+*                SetKeepPlayers, TakeKept, TakeUnboundKept; ClientReady after kReadyAfterFrames frames
+*    -v1.25      LagHistory, ViewTicks (lag compensation)
 *
 **************************************************************************/
 #pragma once
@@ -244,6 +265,7 @@
 #include "Network/NetClock.h"
 #include "Network/NetComponents.h"
 #include "Network/NetEntityMap.h"
+#include "Network/NetLagHistory.h"
 #include "Network/NetStats.h"
 #include "Network/NetTypes.h"
 #include "Network/NetworkSettings.h"
@@ -261,6 +283,17 @@ namespace Crucible
 	enum class ClientPhase : std::uint8_t { None, Connecting, Joining, Joined };
 
 	/// One client slot on the host. Slot i holds PeerId i + 1 (0 is the host itself).
+	/// What one player does this frame, as gameplay scripts read it (NetworkSession::GetPlayerInput).
+	struct NetPlayerInput
+	{
+		Math::vec3    move{ 0.f };           // world XZ, length <= 1
+		float         yawDegrees = 0.f;      // [0, 360)
+		float         pitchDegrees = 0.f;    // (-180, 180], as the player's script gave it
+		std::uint32_t held = 0;              // game actions held (bit i = action i)
+		std::uint32_t pressed = 0;           // actions that went down since the previous frame: set for one frame
+		bool          live = false;          // input is arriving (false: none yet, or it stopped: neutral)
+	};
+
 	struct PeerState
 	{
 		/// Loading (Networking C# Phase 9): the host changed scenes; this client was told and is
@@ -297,6 +330,8 @@ namespace Crucible
 		InputCommand  latest{};                    // no prediction: the newest command wins
 		bool          jumpLatched = false;         // a jump arrived that TakePeerIntent has not handed out
 		bool          inputTimedOut = false;       // counted once per silence (NetStats::inputTimeouts)
+		std::uint32_t actionsPressedPending = 0;   // game actions pressed in commands taken since the last publish
+		NetPlayerInput published{};                // this frame's input, as scripts read it (GetPlayerInput)
 
 		// Commands (InGame only)
 		std::uint32_t lastCommandSequence = 0;     // newest Command accepted; one that is not newer is malformed
@@ -722,6 +757,49 @@ namespace Crucible
 		/// (and `out` neutral) if `peer` is not InGame.
 		bool TakePeerIntent(Net::PeerId peer, PeerIntent& out);
 
+		// ---- player input for scripts (protocol 10) ---------------------------------------------
+
+		/// Frames without SetLocalInput after which this machine's own input goes neutral.
+		static constexpr std::uint32_t kLocalInputTimeoutFrames = 16;
+
+		/// Any role, offline too: this machine's player input for this frame, given by a script.
+		/// `held`: the game actions held (bit i = action i, meaning chosen by the game); an action
+		/// that goes down between two calls is pressed, even if it is up again by the next.
+		/// `hasMotion`: `move` and `yawDegrees` are given too (otherwise they read as zero). A
+		/// client sends it in its next input command; the move and yaw only while it owns no
+		/// PlayerInput (a PlayerController keeps driving its own player). Several calls in a
+		/// frame: the last one wins, presses add up.
+		void SetLocalInput(const Math::vec3& move, float yawDegrees, float pitchDegrees, std::uint32_t held,
+			bool hasMotion) noexcept;
+
+		/// Client: the script input for the next command. False if none was given for
+		/// kLocalInputTimeoutFrames frames. Fills actions, actionsPressed (those pressed since the
+		/// last command, then forgotten) and pitch; move and yaw only when `motion` is set true.
+		bool TakeLocalCommandInput(InputCommand& command, bool& motion) noexcept;
+
+		/// What a player does this frame. The host: any player in the game (peer 0 is itself); a
+		/// client: only its own (LocalPeer); offline: peer 0. False (and `out` neutral) otherwise.
+		bool GetPlayerInput(Net::PeerId peer, NetPlayerInput& out) const noexcept;
+
+		/// This machine's own input this frame, in any role (also a client still joining).
+		const NetPlayerInput& LocalPlayerInput() const noexcept { return m_localPublished; }
+
+		// ---- pings and kicking (protocol 11) --------------------------------------------------
+
+		/// How often the host tells the clients every player's ping (PeerPings).
+		static constexpr std::chrono::milliseconds kPingInterval{ 1000 };
+
+		/// A player's ping to the host, in milliseconds; -1 if unknown or not in the session.
+		/// Host: GNS's for each client, 0 for itself. Client: its own from GNS (live), the
+		/// others from the host's PeerPings (up to a second old). Offline: 0 for peer 0.
+		int PingOf(Net::PeerId peer) const noexcept;
+
+		/// Host: removes client `peer` from the session now. It hears CloseReason::Kicked with
+		/// `reason`; everyone else sees it leave (PeerLeft), and its player and objects are
+		/// handled as when a client leaves. Nothing stops it from joining again. False if this
+		/// is not the running host, or `peer` is the host or no client.
+		bool Kick(Net::PeerId peer, std::string_view reason);
+
 		// ---- gameplay events ----------------------------------------------------------------
 
 		static constexpr Net::PeerId kEveryone = Net::kInvalidPeer;          // SendGameplayEvent: all clients and the host
@@ -848,7 +926,40 @@ namespace Crucible
 
 		/// Client, NetReceiveSystem: a SceneChange arrived. Forgets the old scene's network objects
 		/// (silently: they go with the scene) and waits for its new world. The caller requests the load.
-		void BeginClientSceneLoad(const SceneChange& change);
+		/// `kept`: the change's kept objects this client has (the caller made them survive the
+		/// load): their mapping stays, and the new world's spawn of each rebinds it (TakeKept).
+		void BeginClientSceneLoad(const SceneChange& change, std::span<const std::pair<Net::NetworkId, Entity>> kept = {});
+
+		// ---- keeping network objects across scene changes (protocol 12) ---------------------------
+
+		/// Host, NetReceiveSystem: the spawned network objects that survive the next load (marked
+		/// DontDestroyOnLoad), as (id, entity). BeginSceneTransition asks it; without it nothing is kept.
+		using KeptObjectsQuery = std::function<void(std::vector<std::pair<Net::NetworkId, Entity>>&)>;
+		void SetKeptObjectsQuery(KeptObjectsQuery query) { m_keptQuery = std::move(query); }
+
+		/// Host: where every network object's shapes were over the last second (lag compensation).
+		/// NetReplicationSendSystem records it every frame; cleared with each session and scene.
+		NetLagHistory&       LagHistory() noexcept       { return m_lagHistory; }
+		const NetLagHistory& LagHistory() const noexcept { return m_lagHistory; }
+
+		/// The tick this machine shows other objects at: the host's own tick; a joined client's
+		/// SharedTicks minus the interpolation delay. False offline or before joining.
+		bool ViewTicks(double& ticks) const noexcept;
+		static constexpr double kViewDelayTicks = 6.0;   // = NetInterpolationSystem::kInterpolationDelayTicks
+
+		/// Host: every player character is kept by the next scene changes (C# KeepPlayersAcrossScenes).
+		void SetKeepPlayers(bool keep) noexcept { m_keepPlayers = keep; }
+		bool KeepPlayers() const noexcept { return m_keepPlayers; }
+
+		/// Client: was `id` kept through the current scene change, and not rebound yet? Rebinding
+		/// takes it (true once).
+		bool TakeKept(Net::NetworkId id) noexcept;
+		bool IsKeptPending(Net::NetworkId id) const noexcept;
+		/// Client, WorldEnd: the kept ids the new world did not name (the host destroyed them meanwhile).
+		void TakeUnboundKept(std::vector<Net::NetworkId>& out);
+
+		/// The network objects the last scene change kept (host: sent; client: received and alive).
+		std::size_t LastKeptCount() const noexcept { return m_lastKeptCount; }
 
 		/// The caller asked SceneManager for the scene of the current change (Core checks after the
 		/// next load that it happened: CheckSceneLoad).
@@ -891,6 +1002,12 @@ namespace Crucible
 
 		/// Client: the host's clock as this client estimates it (reset by every Start and Stop).
 		ServerTimeEstimate&       ServerTime() noexcept       { return m_serverTime; }
+
+		/// The session's shared game time, in ticks (NetClock::kTickRate a second). The host:
+		/// its own simulation clock. A joined client: its estimate of the host's clock now
+		/// (smoothed, half the ping ahead of the newest snapshot; before the first snapshot, the
+		/// tick it joined at). False offline or before joining: there is no shared time then.
+		bool SharedTicks(double& ticks) const noexcept;
 		const ServerTimeEstimate& ServerTime() const noexcept { return m_serverTime; }
 
 		/// Client, NetInputSystem: the own player `player`, at `position`, just started being
@@ -928,6 +1045,10 @@ namespace Crucible
 		/// The world arrived (WorldEnd `worldEndSeq` applied): sends ClientReady and posts
 		/// WorldReady. False (and leaving) if ClientReady could not be sent.
 		bool CompleteWorld(std::uint32_t worldEndSeq, std::size_t entities);
+
+		/// Frames a client draws of a new world before it reports ClientReady, so the first draws
+		/// (pipelines, textures) are done before the host's AllPeersReady starts anything.
+		static constexpr std::uint32_t kReadyAfterFrames = 3;
 
 		/// Client: closes the connection with `reason` (the host sees it) and stops next Update.
 		void CloseAndStop(CloseReason reason, const std::string& debug);
@@ -1030,6 +1151,11 @@ namespace Crucible
 
 		// Players (every role)
 		std::array<NetPeerInfo, Net::kMaxPlayers> m_roster{};   // index = PeerId
+
+		// Pings (protocol 11)
+		std::array<int, Net::kMaxPlayers> m_peerPings{ -1, -1, -1, -1 };   // client: from PeerPings, index = PeerId
+		std::chrono::steady_clock::time_point m_nextPingBroadcast{};        // host
+		void                           BroadcastPings();                    // host: PeerPings to every InGame client
 		bool                           m_rosterChanged = false;   // host: send it at the end of this Update
 
 		// Scene changes (Phase 9)
@@ -1044,6 +1170,14 @@ namespace Crucible
 		bool                           m_sceneLoadIssued = false;       // a load for it was requested and not seen yet
 		bool                           m_waitingForPeers = false;       // host: AllPeersReady not posted yet
 		bool                           m_confirmPending = false;        // client: SceneLoaded not sent yet
+		NetLagHistory                  m_lagHistory;                    // host: lag compensation
+		KeptObjectsQuery               m_keptQuery;                     // host: NetReceiveSystem's
+		bool                           m_keepPlayers = false;           // host: players are kept
+		std::vector<Net::NetworkId>    m_keptPending;                   // client: kept, not rebound yet
+		std::size_t                    m_lastKeptCount = 0;
+		std::uint32_t                  m_readySeq = 0;                  // client: a ClientReady waiting for frames
+		std::uint32_t                  m_readyFramesLeft = 0;           // ... frames to draw before it goes
+		void                           SendDeferredReady();
 
 		// Starting from gameplay (Phase 10)
 		bool                           m_startRequested = false;
@@ -1052,6 +1186,25 @@ namespace Crucible
 
 		// Host
 		std::array<PeerState, Net::kMaxClients> m_peers{};
+
+		// Player input for scripts: this machine's own, as set and as published this frame.
+		struct LocalInputState
+		{
+			Math::vec3    move{ 0.f };
+			float         yawDegrees = 0.f;
+			float         pitchDegrees = 0.f;
+			std::uint32_t held = 0;
+			bool          hasMotion = false;
+			bool          everSet = false;
+			std::uint64_t setFrame = 0;          // m_inputFrame of the newest SetLocalInput
+			std::uint32_t pressedFrame = 0;      // pressed since the last publish
+			std::uint32_t pressedCommand = 0;    // pressed since the last command (client)
+		};
+		LocalInputState                m_localInput;
+		NetPlayerInput                 m_localPublished;
+		std::uint64_t                  m_inputFrame = 0;      // publishes so far
+		void                           PublishPlayerInput() noexcept;
+		bool                           LocalInputLive() const noexcept;
 
 		NetClock                       m_clock;
 		NetStats                       m_stats;
