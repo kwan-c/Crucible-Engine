@@ -47,6 +47,9 @@ namespace Crucible
     {
         private readonly EntityIdentity entity;
         internal UIText(EntityIdentity owner) { entity = owner; }
+
+        /// <summary>The entity this component is on (Unity's .gameObject), e.g. target.Entity.Name.</summary>
+        public Entity Entity { get { return new Entity(entity.Index, entity.Generation); } }
         private int I { get { return (int)entity.Index; } }
         private int G { get { return (int)entity.Generation; } }
 
@@ -97,6 +100,9 @@ namespace Crucible
     {
         private readonly EntityIdentity entity;
         internal UIImage(EntityIdentity owner) { entity = owner; }
+
+        /// <summary>The entity this component is on (Unity's .gameObject), e.g. target.Entity.Name.</summary>
+        public Entity Entity { get { return new Entity(entity.Index, entity.Generation); } }
         private int I { get { return (int)entity.Index; } }
         private int G { get { return (int)entity.Generation; } }
 
@@ -126,6 +132,9 @@ namespace Crucible
     {
         private readonly EntityIdentity entity;
         internal UISlider(EntityIdentity owner) { entity = owner; }
+
+        /// <summary>The entity this component is on (Unity's .gameObject), e.g. target.Entity.Name.</summary>
+        public Entity Entity { get { return new Entity(entity.Index, entity.Generation); } }
         private int I { get { return (int)entity.Index; } }
         private int G { get { return (int)entity.Generation; } }
 
@@ -193,6 +202,9 @@ namespace Crucible
     {
         private readonly EntityIdentity entity;
         internal UIButton(EntityIdentity owner) { entity = owner; }
+
+        /// <summary>The entity this component is on (Unity's .gameObject), e.g. target.Entity.Name.</summary>
+        public Entity Entity { get { return new Entity(entity.Index, entity.Generation); } }
         private int I { get { return (int)entity.Index; } }
         private int G { get { return (int)entity.Generation; } }
 
@@ -226,6 +238,9 @@ namespace Crucible
     {
         private readonly EntityIdentity entity;
         internal UIRect(EntityIdentity owner) { entity = owner; }
+
+        /// <summary>The entity this component is on (Unity's .gameObject), e.g. target.Entity.Name.</summary>
+        public Entity Entity { get { return new Entity(entity.Index, entity.Generation); } }
         private int I { get { return (int)entity.Index; } }
         private int G { get { return (int)entity.Generation; } }
 
@@ -273,6 +288,9 @@ namespace Crucible
     {
         private readonly EntityIdentity entity;
         internal UICanvas(EntityIdentity owner) { entity = owner; }
+
+        /// <summary>The entity this component is on (Unity's .gameObject), e.g. target.Entity.Name.</summary>
+        public Entity Entity { get { return new Entity(entity.Index, entity.Generation); } }
         private int I { get { return (int)entity.Index; } }
         private int G { get { return (int)entity.Generation; } }
 

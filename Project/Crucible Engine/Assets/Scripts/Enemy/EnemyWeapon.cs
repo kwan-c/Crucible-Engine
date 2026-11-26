@@ -99,6 +99,7 @@ namespace Crucible.Scripts
         public bool TryAttack()
         {
             if (!IsReady || attacking || cooldownLeft > 0f) return false;
+            if (MechHitStop.BlocksNewActions(Entity)) return false;   // Unity's EnemyAttack: none during a hit stop
             if (targetHealth == null || targetHealth == this || targetHealth.IsDead || !targetHealth.Entity.IsActive) return false;
 
             Entity victim = targetHealth.Entity;
@@ -209,7 +210,11 @@ namespace Crucible.Scripts
             if (ahead < 0f || ahead > weaponReach) return;
             if (Math.Abs(across) > meleeWidth * 0.5f || Math.Abs(offset.Y) > meleeHeight * 0.5f) return;
 
-            attackTarget.ApplyDamage(damage);
+            if (!attackTarget.ApplyDamage(damage)) return;
+            // Unity's CombatFeedback: a melee hit that lands on the mech stops the golem that landed
+            // it as well (bolts don't). The mech decides, since its hit stop settings are its own.
+            MechPlayer player = attackTarget as MechPlayer;
+            if (player != null) player.ConfirmHurtBy(Entity);
         }
 
         void FireBolt()

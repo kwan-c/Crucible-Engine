@@ -2,8 +2,10 @@
 * \file:         MechPart.cs
 * \author:       Tok Duan Jie Nelson
 * \par:          Email: t.duanjienelson@digipen.edu
+* \author:       Hugo Low Ren Hao (M3: settleOnSpawn for enemy drops)
+* \par:          Email: low.h@digipen.edu
 * \date          8 November 2026
-* \version       1.1
+* \version       1.2
 * \brief         One physical part: lying on the ground as a pickup, or
 *                mounted on the mech. Port of Unity's Part (+ the pickup
 *                side of PickupDetector): stand near it, V cycles the
@@ -32,8 +34,12 @@
 *
 *    v1.1  Model children, upright on the ground, drop at the mech's feet;
 *          F no longer swaps (Unity: 1 / 2).
+*    v1.2  settleOnSpawn: a spawned pickup (an enemy's drop) lands upright
+*          on the ground below it.
 *
 **************************************************************************/
+using System;
+
 namespace Crucible.Scripts
 {
     public sealed class MechPart : EntityScript
@@ -54,6 +60,11 @@ namespace Crucible.Scripts
         // Unity's Socket.weaponAttachments: a correction of this part's pose on particular sockets,
         // "Socket:px,py,pz,qx,qy,qz,qw;..." in the mount's frame (SceneGen converts Unity's values).
         public string socketPoses = "";
+        // Tick on a pickup PREFAB that something spawns (an enemy's drop). Unity's dropped part falls
+        // with its Rigidbody; parts here have no physics, so it puts itself on the ground below the
+        // spawn point instead. Off for parts placed in a scene: they are already where the level's
+        // author put them, maybe on a rack, and must not move.
+        public bool settleOnSpawn = false;
 
         public MechPartDef Def { get; private set; }
         public MechWeapon Weapon { get; private set; }     // weapons only
@@ -71,6 +82,22 @@ namespace Crucible.Scripts
             label = labelEntity != null ? labelEntity.GetComponent<WorldText>() : null;
             Entity parent = Transform.Parent;
             SetMounted(parent != null && parent.Name.StartsWith("Mount "));
+            if (settleOnSpawn && !IsMounted) SettleOnGround();
+        }
+
+        // Prefab.Instantiate(position, rotation) REPLACES the root's rotation, so a spawned part
+        // arrives with only the enemy's random yaw and has lost the upright tilt mountFrame needs.
+        // Drop() puts both back and lifts it by groundLift, exactly like a part swapped off the mech.
+        void SettleOnGround()
+        {
+            float yaw = (float)(Math.Atan2(-Transform.Forward.X, -Transform.Forward.Z) * 180.0 / Math.PI);
+            Vector3 from = Transform.WorldPosition;
+            // Level geometry only: the golem that dropped this is still toppling underneath it, and
+            // a part resting on the corpse would float once the corpse is removed.
+            RaycastHit hit;
+            bool ground = Physics.Raycast(from, new Vector3(0f, -1f, 0f), out hit, 50f,
+                                          LayerMask.GetMask(PhysicsLayer.NonMoving), Entity);
+            Drop(ground ? hit.Point : from, yaw);   // no ground found: stay put, but upright
         }
 
         public override void OnDestroy()

@@ -41,7 +41,9 @@ namespace Crucible::ScriptBindings
 		RegisterApplicationBindings();
 		RegisterTagBindings();
 		RegisterNetworkBindings();
+		RegisterRagdollBindings();
 		RegisterGraphicsBindings();
+		RegisterQualitySettingsBindings();
 	}
 
 	void ClearAll()

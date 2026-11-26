@@ -12,7 +12,9 @@
 * \details
 *                EngineConfig.json is the TEAM's file: it is in Assets, in
 *                git, and holds project defaults. UserSettings.json is the
-*                PLAYER's: it sits next to the .exe, never reaches git, and
+*                PLAYER's: it sits in the program's data folder (Local
+*                AppData for the game, see Systems/UserDataPath.h), never
+*                reaches git, and
 *                one player's choices never change anyone else's game.
 *                Unity splits it the same way (Project Settings versus
 *                PlayerPrefs).
@@ -27,6 +29,11 @@
 *                        "input": { "mouseSensitivity": 1.0, "stickSensitivity": 1.0, "invertY": false,
 *                                   "keys": { "forward": "W", "back": "S", "left": "A", "right": "D",
 *                                             "jump": "Space", "jumpButton": "GamepadA" } },
+*                        "quality": { "level": "High", "antiAliasing": "MSAA4x", "shadowQuality": "High",
+*                                     "ambientOcclusion": true, "bloom": true, "volumetricFog": true,
+*                                     "vsync": true, "frameRateLimit": -1,
+*                                     "brightness": 1.0, "fovOffset": 0.0, "vignette": true,
+*                                     "filmGrain": true, "chromaticAberration": true },
 *                        "game":  { "graphics": { "fullScreen": true, "maximized": false } }
 *                    }
 *
@@ -43,11 +50,19 @@
 *                jumpButton), saved by key name; ECSPlayerControllerSystem
 *                reads them instead of hardcoded WASD / Space / A
 *                (Tan Chun Kwang Xavier)
+*    -v1.2       graphics quality (GraphicsSettings: preset, anti-aliasing,
+*                shadows, AO, bloom, volumetric fog), for C# QualitySettings
+*                (Tan Chun Kwang Xavier)
+*    -v1.3       VSync and the frame-rate limit (GraphicsSettings::vsync,
+*                frameRateLimit); outside the presets (Tan Chun Kwang Xavier)
+*    -v1.4       brightness, FOV offset, vignette / film grain / chromatic
+*                aberration switches; outside the presets (Tan Chun Kwang Xavier)
 *
 **************************************************************************/
 #pragma once
 
 // STL
+#include <cstdint>
 #include <filesystem>
 
 // Crucible engine
@@ -87,9 +102,98 @@ namespace Crucible {
         KeyCode jumpButton = KeyCode::GamepadA;     // a second jump binding, for the gamepad
     };  // INPUTSETTINGS STRUCT
 
+    // The options menu's Graphics page (C# QualitySettings). Saved by name ("High",
+    // "MSAA4x"), so reordering these enums never changes what a saved file means.
+    // Core::SetGraphicsSettings turns them into the renderer's PostSettings and
+    // ShadowSettings (Core::ApplyGraphicsSettings has the exact numbers).
+    enum class QualityLevel : uint8_t {
+        Low, Medium, High, Ultra,
+        Custom      // the individual settings match no preset
+    };
+
+    // MSAA smooths geometry edges; FXAA (a screen pass) also catches the edges
+    // shading makes (toon lines, thin highlights), so the MSAA levels keep FXAA on.
+    enum class AntiAliasing : uint8_t {
+        Off,
+        FXAA,
+        MSAA2x,     // + FXAA
+        MSAA4x      // + FXAA
+    };
+
+    // The sun's cascaded shadows: how many cascades and how far they reach.
+    enum class ShadowQuality : uint8_t {
+        Off, Low, Medium, High, Ultra
+    };
+
+    inline constexpr int32_t kFrameRateDefault   = -1;
+    inline constexpr int32_t kFrameRateUnlimited = 0;
+    inline constexpr int32_t kFrameRateMin       = 15;
+    inline constexpr int32_t kFrameRateMax       = 1000;
+
+    // A frame-rate limit made valid: default and unlimited kept, the rest clamped.
+    constexpr int32_t ClampFrameRateLimit(int32_t fps) {
+        return fps < 0 ? kFrameRateDefault : fps == 0 ? kFrameRateUnlimited
+             : fps < kFrameRateMin ? kFrameRateMin : fps > kFrameRateMax ? kFrameRateMax : fps;
+    }
+
+    inline constexpr float kBrightnessMin = 0.5f;
+    inline constexpr float kBrightnessMax = 1.5f;
+    inline constexpr float kFovOffsetMin  = -10.0f;
+    inline constexpr float kFovOffsetMax  = 30.0f;
+
+    // Brightness / FOV offset made valid (NaN -> the default).
+    constexpr float ClampBrightness(float v) {
+        return !(v == v) ? 1.0f : v < kBrightnessMin ? kBrightnessMin : v > kBrightnessMax ? kBrightnessMax : v;
+    }
+    constexpr float ClampFovOffset(float v) {
+        return !(v == v) ? 0.0f : v < kFovOffsetMin ? kFovOffsetMin : v > kFovOffsetMax ? kFovOffsetMax : v;
+    }
+
+    struct GraphicsSettings {
+        // Defaults = the High preset, which is what the renderer drew before these
+        // settings existed (RenderTypes.h's PostSettings / ShadowSettings defaults).
+        QualityLevel  quality          = QualityLevel::High;
+        AntiAliasing  antiAliasing     = AntiAliasing::MSAA4x;
+        ShadowQuality shadowQuality    = ShadowQuality::High;
+        bool          ambientOcclusion = true;
+        bool          bloom            = true;
+        bool          volumetricFog    = true;
+
+        // Display preferences, NOT part of the presets: changing them never makes
+        // the level Custom, and picking a level never changes them.
+        // VSync on = no tearing, the frame rate follows the monitor (FIFO). Off =
+        // MAILBOX where the GPU has it (no tearing either), else IMMEDIATE (may tear).
+        bool          vsync            = true;
+        // Frames per second at most: kFrameRateDefault = the team's EngineConfig
+        // targetFPS, kFrameRateUnlimited = no limit, otherwise kFrameRateMin..Max.
+        int32_t       frameRateLimit   = kFrameRateDefault;
+
+        // The player's view, also outside the presets. Applied on top of the scene's
+        // Skybox and cameras, so every level keeps its own look relative to the others.
+        float         brightness          = 1.0f;   // x the scene's exposure, kBrightnessMin..Max
+        float         fovOffset           = 0.0f;   // degrees added to every camera, kFovOffsetMin..Max
+        bool          vignette            = true;   // false = off even where a scene uses them
+        bool          filmGrain           = true;
+        bool          chromaticAberration = true;
+
+        bool operator==(const GraphicsSettings&) const = default;
+    };  // GRAPHICSSETTINGS STRUCT
+
+    // The settings a preset stands for. Custom gives the defaults (High). Display and
+    // view settings (VSync .. chromaticAberration) are the defaults; ApplyPreset keeps the player's own.
+    ENGINE_API GraphicsSettings GraphicsPreset(QualityLevel level);
+
+    // `settings` with every quality setting changed to `level`'s; display and
+    // view settings (VSync .. chromaticAberration) stay as they are.
+    ENGINE_API GraphicsSettings ApplyPreset(const GraphicsSettings& settings, QualityLevel level);
+
+    // The preset `settings` matches (only the preset fields compared), or Custom.
+    ENGINE_API QualityLevel MatchQualityLevel(const GraphicsSettings& settings);
+
     struct UserSettings {
-        AudioSettings audio;
-        InputSettings input;
+        AudioSettings    audio;
+        InputSettings    input;
+        GraphicsSettings graphics;
     };  // USERSETTINGS STRUCT
 
     class ENGINE_API UserSettingsLoader {
@@ -111,7 +215,7 @@ namespace Crucible {
         */
         static bool Save(const UserSettings& settings);
 
-        // Where the file is: next to the running .exe, the same path as
+        // Where the file is: in the program's data folder, the same path as
         // EngineConfigLoader::UserSettingsFile(). Empty if that is unknown.
         static std::filesystem::path File();
 

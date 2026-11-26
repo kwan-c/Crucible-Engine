@@ -119,6 +119,11 @@ namespace Crucible {
         if ((result == vk::Result::eSuboptimalKHR) || (result == vk::Result::eErrorOutOfDateKHR) || window.m_framebufferResized) {
             window.m_framebufferResized = false;
             swapchain.Recreate(context);
+            // A new present mode (VSync) or surface can come with more images; each needs
+            // its own present semaphore. Extra ones from before are harmless.
+            while (m_presentFinishedSemaphores.size() < swapchain.GetImages().size()) {
+                m_presentFinishedSemaphores.emplace_back(context.GetDevice(), vk::SemaphoreCreateInfo());
+            }
         }
         else {
             // There are no other success codes than eSuccess; on any error code, presentKHR already threw an exception.

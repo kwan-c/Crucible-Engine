@@ -3,7 +3,7 @@
 * \author:       Jean David Vidal Cruzado
 * \par:          Email: jeandavidvidal.c@digipen.edu
 * \date          10 November 2026
-* \version       1.0
+* \version       1.3
 * \brief
 *                Terrain: uneven ground built at runtime from a height grid,
 *                Unity's Terrain (or a generated mesh plus MeshCollider).
@@ -28,6 +28,11 @@
 *
 * \history
 *    -v1.0       first version
+*    -v1.1       TerrainRegion::Tunnel and m_tunnelColour (cave floors)
+*    -v1.2       Optional cave volume (TerrainGrid::volume): rock and air
+*                in a box, replacing the heightfield cells under it
+*    -v1.3       TerrainVolume moved to Math/TerrainVolume.h (physics
+*                needs it without the ECS); Terrain::Volume()
 *
 **************************************************************************/
 #pragma once
@@ -43,6 +48,7 @@
 #include "ECS/Components/ComponentKind.h"
 #include "Math/HeightGrid.h"
 #include "Math/Math.h"
+#include "Math/TerrainVolume.h"
 
 namespace Crucible {
 
@@ -53,24 +59,27 @@ namespace Crucible {
         Ground = 0,   // walkable ground
         Cliff  = 1,   // too steep to walk: a wall for players and enemies alike
         Road   = 2,   // a road the generator laid between chunks
+        Tunnel = 3,   // a cave tunnel's floor (walkable; only Cliff is a wall)
 
         Count         // keep last
 
     };  // TERRAINREGION ENUM
 
-    // One built terrain: its heights and what each cell is. Immutable once
-    // built, and shared (by the component, physics and the renderer's record).
+    // One built terrain: its heights, what each cell is, and an optional cave
+    // volume. Immutable once built, and shared (by the component, physics and
+    // the renderer's record).
     struct TerrainGrid {
 
         HeightGrid                heights;
         std::vector<std::uint8_t> regions;   // heights.cols * heights.rows cells, row-major, one TerrainRegion each
+        TerrainVolume             volume;    // rock and air the heightfield can't hold (caves); often empty
 
         bool IsValid() const {
             if (!heights.IsValid()) return false;
             if (regions.size() != static_cast<std::size_t>(heights.cols) * heights.rows) return false;
             for (std::uint8_t region : regions)
                 if (region >= static_cast<std::uint8_t>(TerrainRegion::Count)) return false;
-            return true;
+            return volume.IsValid(heights);
         }
 
     };  // TERRAINGRID STRUCT
@@ -83,6 +92,7 @@ namespace Crucible {
         Math::vec3 m_groundColour = Math::vec3(0.42f, 0.55f, 0.30f);
         Math::vec3 m_cliffColour  = Math::vec3(0.46f, 0.43f, 0.40f);
         Math::vec3 m_roadColour   = Math::vec3(0.63f, 0.53f, 0.39f);
+        Math::vec3 m_tunnelColour = Math::vec3(0.36f, 0.27f, 0.18f);
 
         // --- runtime only, never saved ---------------------------------------- //
         // The ground as last built. Null until a script builds it.
@@ -106,6 +116,11 @@ namespace Crucible {
         // The heights alone, sharing ownership with the grid: what physics needs.
         std::shared_ptr<const HeightGrid> Heights() const {
             return m_grid ? std::shared_ptr<const HeightGrid>(m_grid, &m_grid->heights) : nullptr;
+        }
+
+        // The cave volume alone, the same way; null when there is none.
+        std::shared_ptr<const TerrainVolume> Volume() const {
+            return m_grid && !m_grid->volume.IsEmpty() ? std::shared_ptr<const TerrainVolume>(m_grid, &m_grid->volume) : nullptr;
         }
 
     };  // TERRAIN STRUCT

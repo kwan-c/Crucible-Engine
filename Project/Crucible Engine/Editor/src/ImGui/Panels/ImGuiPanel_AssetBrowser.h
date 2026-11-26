@@ -41,6 +41,8 @@
 *	Del            delete the selected file or folder. Asks first, listing any other asset that
 *	               still uses it; on Windows it goes to the Recycle Bin, .meta and all
 *	F2             rename the selection (a file's .meta moves with it, so its guid is kept)
+*	Ctrl+D         duplicate the selection beside itself ("Name 1"), each copy with a new guid
+*	images         a texture's tile shows the image itself (ImGuiPanel_AssetBrowser_Thumbnails.cpp)
 *	Backspace      go to parent folder,  F5  refresh
 *
 * Uses Core's shared AssetManager (core.GetAssets()) - the same index the engine resolves
@@ -53,6 +55,7 @@
 #include "ImGui/ImGuiManager.h"
 #include "AssetPipe/Assetmanager.h"
 #include "ECS/Core/ECSCore.h"   // Entity (Create Prefab drops)
+#include "Graphics/TextureHandle.h"   // texture thumbnails
 
 #include <chrono>
 #include <cstdint>
@@ -90,8 +93,9 @@ namespace Crucible {
 		// Rescan the Assets folder (picks up files added / renamed / removed on disk).
 		void Refresh();
 
-		// Show an asset: clears the search, opens its folder, selects it and brings the browser
-		// to the front. Used by the Inspector's prefab bar (Select).
+		// Show an asset ("ping"): clears the search, opens its folder, selects it, scrolls it into
+		// view, flashes its tile and brings the browser to the front. The Inspector's prefab bar
+		// (Select) and its asset fields (click one) use it. The Inspector keeps what it shows.
 		void Reveal(std::string const& virtualPath);
 
 	private:
@@ -131,6 +135,50 @@ namespace Crucible {
 
 		void NavigateTo(std::string const& folder);   // deferred until the end of the frame
 		void CreateFolder();
+
+		// ---- Duplicate (Ctrl+D / right-click; files and folders, one or a whole selection) ----
+		// Copies beside the original as "Name 1", "Name 2"... without the .meta, so each copy gets
+		// a guid of its own. Applied after drawing, like rename. One copy starts a rename.
+		void ApplyPendingDuplicate();
+		std::string DuplicateDestination(std::string const& virtualPath) const;
+		std::optional<std::vector<std::string>> m_pendingDuplicate;
+
+		// ---- Ping (Reveal): the revealed tile flashes, and is scrolled to once ----
+		std::string m_pingPath;
+		double      m_pingStart = 0.0;
+		bool        m_pingScroll = false;
+
+		// ---- Texture thumbnails (ImGuiPanel_AssetBrowser_Thumbnails.cpp) ----
+		// An image's tile shows the image, shrunk on a worker thread and uploaded once. Only tiles
+		// on screen ask for one; the least recently drawn are freed past a cap.
+		struct Thumbnail {
+			TextureHandle texture{};
+			void*         set = nullptr;      // ImGui texture (VkDescriptorSet), once the upload is done
+			int           readyFrame = 0;     // frame from which the texture is on the GPU
+			int           lastUsedFrame = 0;
+			std::uint32_t width = 0, height = 0;
+			std::uint64_t contentHash = 0;    // of the file it was made from: a change makes a new one
+			bool          failed = false;     // the image could not be read: the badge stays
+		};
+		struct ThumbnailResult {
+			std::string                virtualPath;
+			std::uint64_t              contentHash = 0;
+			std::vector<unsigned char> rgba;
+			std::uint32_t              width = 0, height = 0;
+			bool                       failed = false;
+		};
+		struct RetiredThumbnail { void* set; TextureHandle texture; int freeAtFrame; };
+		// The thumbnail to draw for this tile (null: draw the badge), asking for one if needed.
+		void* ThumbnailFor(Item const& item, ImVec2& imageSize);
+		void UpdateThumbnails();            // every frame, before drawing: uploads, starts jobs, frees
+		void RetireThumbnail(Thumbnail& thumbnail);
+		void FreeRetiredThumbnails(bool all);
+		void ReleaseThumbnails();
+		std::unordered_map<std::string, Thumbnail>  m_thumbnails;
+		std::vector<std::string>                    m_thumbnailWanted;   // tiles drawn without one, this frame
+		std::vector<std::future<ThumbnailResult>>   m_thumbnailJobs;
+		std::unordered_set<std::string>             m_thumbnailInFlight;
+		std::vector<RetiredThumbnail>               m_retiredThumbnails;
 		std::string AbsolutePathOf(std::string const& virtualPath) const;
 
 		// ---- Open (double-click) ----

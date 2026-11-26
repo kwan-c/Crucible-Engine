@@ -3,7 +3,7 @@
   \author     Jean David Vidal Cruzado
   \par        Email: jeandavidvidal.c@digipen.edu
   \date       10 November 2026
-  \version    1.0
+  \version    1.1
   \brief
     RTTR registration for Terrain.
   \details
@@ -21,6 +21,7 @@
     ECS/ECSTerrainSystem.h
   \history
     - 1.0 (10 November 2026): First version.
+    - 1.1 (23 November 2026): tunnelColour.
   \copyright
     Copyright (C) 2026 DigiPen Institute of Technology.
 *************************************************************************/
@@ -39,6 +40,8 @@ RTTR_REGISTRATION
         .property("cliffColour",  &Terrain::m_cliffColour)
             (rttr::metadata(MetaDataTypes::COLOUR, true))
         .property("roadColour",   &Terrain::m_roadColour)
+            (rttr::metadata(MetaDataTypes::COLOUR, true))
+        .property("tunnelColour", &Terrain::m_tunnelColour)
             (rttr::metadata(MetaDataTypes::COLOUR, true))
     ;
 }

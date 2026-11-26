@@ -439,7 +439,7 @@ void Crucible::Menu::RequestGuarded(GuardedAction action, std::filesystem::path 
 	// Leaving from Prefab Mode: back to the scene first, then ask about ITS changes (see Update).
 	if (action == GuardedAction::Exit && PrefabStage::IsActive())
 	{
-		PrefabStage::RequestExit();
+		PrefabStage::RequestExitAll();
 		m_exitAfterStop = true;
 		return;
 	}

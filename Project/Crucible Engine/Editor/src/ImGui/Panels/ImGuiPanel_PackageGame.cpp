@@ -16,6 +16,7 @@
 #include "AssetPipe/Assetmanager.h"
 #include "Configuration/EngineConfigLoader.h"
 #include "Diagnostics/Logger.h"
+#include "GameInfo.h"
 #include "Scene/SceneManager.h"
 
 #include <cstring>
@@ -123,7 +124,7 @@ void Crucible::PackageGamePanel::Update(float)
 		bool const playing = m_core.GetScenes().IsPlaySessionActive();
 
 		ImGui::TextWrapped("Builds the game in Release, cooks Resources and zips everything a player needs. "
-		                   "Send the zip: players unzip it and run Mekanomachia.exe.");
+		                   "Send the zip: players unzip it and run %s.exe.", Crucible::GameInfo::Name);
 		ImGui::Separator();
 		DrawSettings(playing);
 		ImGui::Separator();

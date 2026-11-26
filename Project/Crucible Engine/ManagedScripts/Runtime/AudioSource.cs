@@ -36,6 +36,9 @@ namespace Crucible
         private readonly EntityIdentity entity;
         internal AudioSource(EntityIdentity owner) { entity = owner; }
 
+        /// <summary>The entity this component is on (Unity's .gameObject), e.g. target.Entity.Name.</summary>
+        public Entity Entity { get { return new Entity(entity.Index, entity.Generation); } }
+
         private int I { get { return (int)entity.Index; } }
         private int G { get { return (int)entity.Generation; } }
 

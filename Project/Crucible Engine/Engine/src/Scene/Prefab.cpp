@@ -112,7 +112,7 @@ namespace Crucible {
         }
 
         JsonWrapper doc;
-        doc.Set("version", kPrefabVersion);
+        doc.Set("version", kPrefabFlatVersion);   // raised below if something is nested
         doc.Set("name", name.empty() ? file.stem().string() : name);
         doc.EnsureArray(PREFAB_ENTITIES);
 
@@ -122,6 +122,8 @@ namespace Crucible {
         // children in file order restores the sibling order.
         std::vector<std::pair<Entity, std::uint64_t>> entries;   // every saved entity with its entry id
         std::unordered_set<std::uint64_t> usedIds;
+        const auto packed = [](Entity e) { return (static_cast<std::uint64_t>(e.index) << 32) | e.generation; };
+        std::unordered_map<std::uint64_t, std::uint64_t> nestedAsset;   // entity -> inner prefab it stays linked to
         auto visit = [&](auto&& self, Entity entity, int parentIndex) -> void
         {
             const std::size_t index = doc.PushObject(PREFAB_ENTITIES);
@@ -147,13 +149,23 @@ namespace Crucible {
 
             doc.Set(base + "/parent", parentIndex);
             EntityIO::WriteComponents(world, entity, doc, base + "/components");
-            // The link belongs to the scene the entity is in, never to the template.
-            doc.Remove(base + "/components/" + std::string(ComponentTraits<PrefabInstance>::name));
+            // A whole instance below the root stays linked to its prefab (format 4): its root,
+            // and the parts directly under another part of the same instance. Any other link
+            // (the root's own, a stray part) belongs to the scene, never to the template.
+            bool keepLink = false;
+            if (const PrefabInstance* link = world.Read<PrefabInstance>(entity); link != nullptr && !(entity == root))
+            {
+                const auto parentAsset = nestedAsset.find(packed(world.GetParent(entity)));
+                keepLink = link->isRoot || (parentAsset != nestedAsset.end() && parentAsset->second == link->prefabAsset);
+                if (keepLink) nestedAsset[packed(entity)] = link->prefabAsset;
+            }
+            if (!keepLink) doc.Remove(base + "/components/" + std::string(ComponentTraits<PrefabInstance>::name));
 
             const int self_index = static_cast<int>(index);
             world.ForEachChild(entity, [&](Entity child) { self(self, child, self_index); });
         };
         visit(visit, root, -1);
+        if (!nestedAsset.empty()) doc.Set("version", kPrefabVersion);
 
         // Entity references (EntityRefs.h): a scene id means nothing in a template. One to an
         // entity inside the subtree becomes that entity's entry id (Instantiate turns it back
@@ -400,7 +412,11 @@ namespace Crucible {
                 {
                     PrefabInstance link{ m_asset, m_ids[i], i == 0 };
                     if (i == 0) link.prefabHash = m_hash;   // the version of the file this instance matches
-                    world.AddComponent<PrefabInstance>(entity, std::move(link));
+                    world.AddComponent<PrefabInstance>(entity, std::move(link));   // replaces a nested link
+                }
+                else if (!m_keepNested && world.HasComponent<PrefabInstance>(entity))
+                {
+                    world.RemoveComponent<PrefabInstance>(entity);
                 }
 
                 // The root goes under the caller's parent (if any); everyone else

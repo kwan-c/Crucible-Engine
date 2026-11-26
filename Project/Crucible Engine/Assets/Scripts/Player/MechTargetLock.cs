@@ -37,7 +37,7 @@ namespace Crucible.Scripts
         public float LockRange = 60f;
         public float ScreenPadding = 0.04f;        // viewport fraction; acquisition only
         public float TargetSwitchRadius = 0.025f;  // fraction of the smaller screen dimension
-        public float AutoAimRadius = 0.18f;
+        public float AutoAimRadius = 0.4f;         // Unity main's player prefab (the code default there is 0.18)
         public float SwitchFlickDistance = 80f;    // pixels within the gesture window
         public float SwitchGestureWindow = 0.2f;
         public float SwitchMinimumSpeed = 120f;    // pixels / second

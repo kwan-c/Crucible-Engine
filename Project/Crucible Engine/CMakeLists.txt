@@ -2,6 +2,16 @@
 cmake_minimum_required(VERSION 3.23.1)
 project(Crucible LANGUAGES CXX C)
 
+# ------------------------------------------------------------
+# The game's name and version: change them HERE, and only here
+# ------------------------------------------------------------
+# Everything else reads these: the .exe's name (Game/CMakeLists.txt), the zip's name (CPack
+# below), the installer, and the C++ code through the generated GameInfo.h
+# (Engine/src/GameInfo.h.in): the window title, the Local AppData folder, error boxes and the
+# name Vulkan reports to the GPU driver. Re-run run.bat after changing them.
+set(CRUCIBLE_GAME_NAME    "Lithomachia")
+set(CRUCIBLE_GAME_VERSION "0.1.0")   # major.minor.patch
+
 # Force consistent CRT selection across every target (including third-party ones)
 if(POLICY CMP0091)
     cmake_policy(SET CMP0091 NEW)
@@ -47,18 +57,18 @@ add_subdirectory(Tools/ShaderGraphTests)   # tests for Editor/src/ShaderGraph; n
 # Packaging (CPack): the PACKAGE target zips the game folder
 # ------------------------------------------------------------
 # Packs only the "Game" install component (see Game/CMakeLists.txt) into
-# Build/Mekanomachia-<version>-win64.zip, holding one Mekanomachia-<version>-win64 folder.
-# Players unzip it and run Mekanomachia.exe. Build the Cook target first:
+# Build/<game name>-<version>-win64.zip, holding one <game name>-<version>-win64 folder.
+# Players unzip it and run <game name>.exe. Build the Cook target first:
 #
 #   cmake --build Build --config Release --target Game Cook
 #   cmake --build Build --config Release --target PACKAGE
 #
 # FreeType, glm and rttr call include(CPack) in their own folders too. This one runs
 # last, so the Build/CPackConfig.cmake it writes is the one PACKAGE uses.
-set(CPACK_PACKAGE_NAME        "Mekanomachia")
+set(CPACK_PACKAGE_NAME        "${CRUCIBLE_GAME_NAME}")
 set(CPACK_PACKAGE_VENDOR      "Team Medium-Well")
-set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Mekanomachia, made with the Crucible Engine")
-set(CPACK_PACKAGE_VERSION     "0.1.0")   # default; File > Package Game (or cpack -R) can give another
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "${CRUCIBLE_GAME_NAME}, made with the Crucible Engine")
+set(CPACK_PACKAGE_VERSION     "${CRUCIBLE_GAME_VERSION}")   # default; File > Package Game (or cpack -R) can give another
 # Names the zip <name>-<version>-win64 when cpack runs, so a version given then is used too.
 set(CPACK_PROJECT_CONFIG_FILE "${CMAKE_SOURCE_DIR}/Tools/Package/CPackOptions.cmake")
 set(CPACK_GENERATOR           "ZIP")

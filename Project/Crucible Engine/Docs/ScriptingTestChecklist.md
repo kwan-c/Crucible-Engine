@@ -208,7 +208,7 @@ In the editor: on any entity, press Play.
 - [y] "ignored in the editor" is logged once only.
 - [y] H and L work (they only read).
 
-In the game build (`Mekanomachia.exe`, scene with this script):
+In the game build (`Lithomachia.exe`, scene with this script):
 
 - [y] F8 windowed, F9 maximized, F10 fullscreen, G toggles fullscreen.
 - [y] L lists the monitor's resolutions.

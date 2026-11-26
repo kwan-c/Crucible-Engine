@@ -289,58 +289,64 @@ namespace Crucible
         /// </summary>
         public T GetComponent<T>() where T : class
         {
-            Type type = typeof(T);
+            return (T)GetComponentOfType(typeof(T));
+        }
+
+        // GetComponent<T> for a Type known only at run time. Also called by native code
+        // (ScriptRuntime.cpp, NewManagedComponent) to fill `public Transform target;`
+        // fields assigned in the Inspector - do not rename.
+        internal object GetComponentOfType(Type type)
+        {
             if (type == typeof(Transform))
-                return Has(ComponentKind.Transform) ? (T)(object)Transform : null;
+                return Has(ComponentKind.Transform) ? (object)Transform : null;
             if (type == typeof(RigidBody))
-                return Has(ComponentKind.RigidBody) ? (T)(object)RigidBody : null;
+                return Has(ComponentKind.RigidBody) ? (object)RigidBody : null;
             if (type == typeof(Animator))
-                return Has(ComponentKind.Animator) ? (T)(object)Animator : null;
+                return Has(ComponentKind.Animator) ? (object)Animator : null;
             if (type == typeof(AudioSource))
-                return Has(ComponentKind.AudioSource) ? (T)(object)AudioSource : null;
+                return Has(ComponentKind.AudioSource) ? (object)AudioSource : null;
             if (type == typeof(CharacterController))
-                return Has(ComponentKind.CharacterController) ? (T)(object)CharacterController : null;
+                return Has(ComponentKind.CharacterController) ? (object)CharacterController : null;
             if (type == typeof(Camera))
-                return Has(ComponentKind.Camera) ? (T)(object)Camera : null;
+                return Has(ComponentKind.Camera) ? (object)Camera : null;
             if (type == typeof(CameraOrbit))
-                return Has(ComponentKind.CameraOrbit) ? (T)(object)CameraOrbit : null;
+                return Has(ComponentKind.CameraOrbit) ? (object)CameraOrbit : null;
             if (type == typeof(Light))
-                return Has(ComponentKind.Light) ? (T)(object)Light : null;
+                return Has(ComponentKind.Light) ? (object)Light : null;
             if (type == typeof(ParticleEmitter))
-                return Has(ComponentKind.ParticleEmitter) ? (T)(object)ParticleEmitter : null;
+                return Has(ComponentKind.ParticleEmitter) ? (object)ParticleEmitter : null;
             if (type == typeof(Collider))
-                return Has(ComponentKind.Collider) ? (T)(object)Collider : null;
+                return Has(ComponentKind.Collider) ? (object)Collider : null;
             if (type == typeof(MeshRenderer))
-                return Has(ComponentKind.MeshRenderer) ? (T)(object)MeshRenderer : null;
+                return Has(ComponentKind.MeshRenderer) ? (object)MeshRenderer : null;
             if (type == typeof(PlayerController))
-                return Has(ComponentKind.PlayerController) ? (T)(object)PlayerController : null;
+                return Has(ComponentKind.PlayerController) ? (object)PlayerController : null;
             if (type == typeof(WorldText))
-                return Has(ComponentKind.WorldText) ? (T)(object)WorldText : null;
+                return Has(ComponentKind.WorldText) ? (object)WorldText : null;
             if (type == typeof(MaterialParams))
-                return Has(ComponentKind.MaterialParams) ? (T)(object)MaterialParams : null;
+                return Has(ComponentKind.MaterialParams) ? (object)MaterialParams : null;
             if (type == typeof(FlowFieldAgent))
-                return Has(ComponentKind.FlowFieldAgent) ? (T)(object)FlowFieldAgent : null;
+                return Has(ComponentKind.FlowFieldAgent) ? (object)FlowFieldAgent : null;
             if (type == typeof(FlowFieldSurface))
-                return Has(ComponentKind.FlowFieldSurface) ? (T)(object)FlowFieldSurface : null;
+                return Has(ComponentKind.FlowFieldSurface) ? (object)FlowFieldSurface : null;
             if (type == typeof(StateGraphAgent))
-                return Has(ComponentKind.StateGraphAgent) ? (T)(object)StateGraphAgent : null;
+                return Has(ComponentKind.StateGraphAgent) ? (object)StateGraphAgent : null;
             if (type == typeof(Terrain))
-                return Has(ComponentKind.Terrain) ? (T)(object)Terrain : null;
-            if (type == typeof(UIText))   return Has(ComponentKind.UIText)   ? (T)(object)new UIText(Identity)   : null;
-            if (type == typeof(UIImage))  return Has(ComponentKind.UIImage)  ? (T)(object)new UIImage(Identity)  : null;
-            if (type == typeof(UISlider)) return Has(ComponentKind.UISlider) ? (T)(object)new UISlider(Identity) : null;
-            if (type == typeof(UIButton)) return Has(ComponentKind.UIButton) ? (T)(object)new UIButton(Identity) : null;
-            if (type == typeof(UIRect))   return Has(ComponentKind.UIRect)   ? (T)(object)new UIRect(Identity)   : null;
-            if (type == typeof(UICanvas)) return Has(ComponentKind.UICanvas) ? (T)(object)new UICanvas(Identity) : null;
+                return Has(ComponentKind.Terrain) ? (object)Terrain : null;
+            if (type == typeof(UIText))   return Has(ComponentKind.UIText)   ? (object)new UIText(Identity)   : null;
+            if (type == typeof(UIImage))  return Has(ComponentKind.UIImage)  ? (object)new UIImage(Identity)  : null;
+            if (type == typeof(UISlider)) return Has(ComponentKind.UISlider) ? (object)new UISlider(Identity) : null;
+            if (type == typeof(UIButton)) return Has(ComponentKind.UIButton) ? (object)new UIButton(Identity) : null;
+            if (type == typeof(UIRect))   return Has(ComponentKind.UIRect)   ? (object)new UIRect(Identity)   : null;
+            if (type == typeof(UICanvas)) return Has(ComponentKind.UICanvas) ? (object)new UICanvas(Identity) : null;
             if (typeof(EntityScript).IsAssignableFrom(type))
             {
                 object[] scripts = GetScriptsInternal((int)index, (int)generation);
                 if (scripts != null)
                     foreach (object script in scripts)
                     {
-                        T match = script as T;
-                        if (match != null)
-                            return match;
+                        if (type.IsInstanceOfType(script))
+                            return script;
                     }
                 return null;
             }

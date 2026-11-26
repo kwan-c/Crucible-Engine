@@ -4,12 +4,13 @@ using Crucible;
 
 namespace Crucible.Scripts
 {
-    // The golem enemy's one script. A Crucible entity holds only one script, so what Gam3333
+    // The golem enemy's one script. A Crucible entity holds only one script, so what
     // (Unity) spreads over several MonoBehaviours is one class here, split over files like
     // Unity's were (it is a partial class):
     //
-    //   Enemy.cs                    health, hit flash, health bar, part drop
-    //                               (CombatHealth, EnemyCombatFeedback, HealthBarDisplay, EnemyPartDrop)
+    //   Enemy.cs                    health, hit flash, health bar, part drop, melee push, hit stop
+    //                               (CombatHealth, EnemyCombatFeedback, HealthBarDisplay, EnemyPartDrop,
+    //                               EnemyAgent.ApplyMeleePush and its CombatHitStop checks)
     //   EnemyController.cs          what the graph nodes ask for: sensing, approaching,
     //                               moving, recovering (EnemyGraphController + EnemyAgent's intents)
     //   EnemyWeapon.cs              the attack: wind-up, hit or bolt, cooldown, and the
@@ -38,10 +39,15 @@ namespace Crucible.Scripts
         public float healthBarHeight = 1.4f;  // above the enemy's position (its middle), as in Unity
         public float healthBarLength = 2f;    // metres at full health
 
-        // Death (stand-in for Unity's CombatDeathRagdoll until bones exist for a real
-        // ragdoll): the brain and legs switch off, the rotation locks come off, a push
-        // tips it over in the direction of the killing hit, and it is removed after
-        // toppleSeconds. Off: it vanishes at once, as before (CombatHealth's default).
+        // Death (Unity's CombatDeathRagdoll). With ragdollOnDeath the engine turns the "Body"
+        // into a ragdoll (ECSRagdollSystem): one physics piece per rigid mesh, jointed, and the
+        // mesh follows them; the engine removes the golem with it (rest 5 s, 30 s at most, 20
+        // ragdolls at once). Without it, or if the ragdoll can't start, the older topple: the
+        // rotation locks come off, a push tips the whole golem over away from the killing hit,
+        // and it is removed after toppleSeconds. Either way the brain and legs switch off.
+        // Both off: it vanishes at once (CombatHealth's default).
+        public bool ragdollOnDeath = true;
+        public float deathKick = 1.5f;        // m/s backwards on a ragdoll death that isn't a melee kill (Unity's deathKick)
         public bool toppleOnDeath = true;
         public float toppleSeconds = 4f;
         public float toppleTorque = 6000f;    // newton-metres for toppleTwistSeconds: enough to lift a 200 kg golem over its edge (gravity resists with about 1700)
@@ -85,7 +91,7 @@ namespace Crucible.Scripts
             if (bar != null) barScale = bar.Transform.Scale;
 
             // Dying is handled here (toppling), not by switching the entity off.
-            if (toppleOnDeath) deactivateOnDeath = false;
+            if (toppleOnDeath || ragdollOnDeath) deactivateOnDeath = false;
 
             // A dynamic body must not be tipped by collisions while it walks: its
             // FlowFieldAgent turns it. (The prefabs lock rotation too; this makes sure.)
@@ -102,11 +108,13 @@ namespace Crucible.Scripts
         {
             if (pushOverPending) PushOver();  // the death topple's kick, a frame after unlocking
             Twist(deltaTime);
+            UpdatePush(deltaTime);            // a melee push's slide, or standing still in a hit stop (below)
+            UpdateLegs();                     // the agent is off while either of those moves or holds it
 
 
             // The attack's clock runs whatever the graph is doing, as Unity's EnemyAttack
-            // ticked in its own LateUpdate.
-            UpdateWeapon(deltaTime);          // EnemyWeapon.cs
+            // ticked in its own LateUpdate - except in a hit stop, which pauses the wind-up too.
+            if (!IsFrozen) UpdateWeapon(deltaTime);   // EnemyWeapon.cs
             UpdateAnimation();                // EnemyAnimation.cs: Speed and Strafe for the body's Animator
 
             // Hit flash: tinted for a few frames, then back to the material's own colour.
@@ -163,9 +171,18 @@ namespace Crucible.Scripts
         protected override void OnDied()
         {
             MechCombatTargets.Unregister(Entity);   // a toppling golem can't be locked on to or hit
-            CancelAttack();                   // a half-done swing must not land from a dead golem
+            ClearPush();                      // a corpse is not slid; the topple owns its motion now
+
+            // No animation on a corpse: there is no death clip, and the controller would keep
+            // looping its last clip (Idle). Speed 0 holds the pose it died in (Unity's lockPose);
+            // a ragdoll then poses the bones its pieces move on top of that, every frame.
+            // A hit stop it was in is ended first, or its end would restart the clip.
+            MechHitStop.End(Entity);
+            foreach (Entity part in animatedParts) part.Animator.Speed = 0f;
+
+            CancelAttack();                 // a half-done swing must not land from a dead golem
             HideTelegraph();
-            if (toppleOnDeath) Topple();
+            if (!(ragdollOnDeath && StartRagdoll()) && toppleOnDeath) Topple();
 
             // Unity's death particles (CombatFeedback) are not ported.
             if (dropPrefab == null) return;
@@ -181,13 +198,53 @@ namespace Crucible.Scripts
                 drop.RigidBody.Velocity = Vector3.Up * dropPopVelocity;   // Unity's ForceMode.VelocityChange
         }
 
-        // The death topple. The order matters: the agent and brain go first, or the agent
-        // would steer the falling body and the graph would try to attack with it.
-        void Topple()
+        // The death ragdoll (Unity's CombatDeathRagdoll.OnDeath). A melee kill throws every
+        // piece with the swing's launch; any other death keeps the golem's own speed (at most
+        // 15 m/s) with a kick backwards and a little lift. The golem's own body then stays where
+        // it died, frozen and on the Corpse layer: its mesh follows the pieces, which are
+        // separate entities, so nothing needs it to move. False: no ragdoll, topple instead.
+        bool StartRagdoll()
+        {
+            if (body == null) return false;
+            Vector3 velocity;
+            if (meleeKillPending) velocity = meleeKillVelocity;
+            else
+            {
+                Vector3 own = HasComponent<RigidBody>() ? RigidBody.Velocity : Vector3.Zero;
+                if (own.Length > 15f) own = own.Normalized * 15f;
+                velocity = own - Facing * deathKick + Vector3.Up * 0.5f;
+            }
+            // The golem is the ragdoll's owner: the engine removes the two together, once the
+            // pieces have rested 5 s, after 30 s at most, or to make room (20 at most).
+            if (!Ragdoll.Spawn(body, velocity, Entity)) return false;
+
+            StopForDeath();
+            if (HasComponent<Collider>()) Entity.Collider.Layer = PhysicsLayer.Corpse;
+            if (HasComponent<RigidBody>()) RigidBody.IsKinematic = true;
+            // A safety net only: past the engine's 30 s, so it matters just if the ragdoll could
+            // not be built after all (the engine logs why). Destroying a gone entity is ignored.
+            Destroy(Entity, 35f);
+            return true;
+        }
+
+        // Set by ApplyMeleeHit only while a killing blow's damage is applied (Unity's
+        // BeginMeleeLaunch / EndMeleeLaunch): OnDied runs inside ApplyDamage and reads it.
+        bool meleeKillPending;
+        Vector3 meleeKillVelocity;
+
+        // Every death: the agent and brain go first, or the agent would steer the falling body
+        // and the graph would try to attack with it. The health bar goes too.
+        void StopForDeath()
         {
             if (agent != null) { agent.Stop(); Entity.SetEnabled<FlowFieldAgent>(false); }
             if (HasComponent<StateGraphAgent>()) Entity.SetEnabled<StateGraphAgent>(false);
             if (bar != null && bar.HasComponent<MeshRenderer>()) bar.MeshRenderer.Visible = false;
+        }
+
+        // The death topple: the whole golem tips over as one body (no ragdoll).
+        void Topple()
+        {
+            StopForDeath();
 
             // It still falls and lands on the floor, but the player, other enemies and
             // shots go straight through it. Set before the unlock below: one rebuild for both.
@@ -236,6 +293,99 @@ namespace Crucible.Scripts
             if (twistLeft <= 0f || !HasComponent<RigidBody>()) return;
             RigidBody.AddTorque(twistAxis * toppleTorque);
             twistLeft -= deltaTime;
+        }
+
+        // A hit from the mech's melee (Unity's CombatBlast melee branch). push and killLaunch
+        // are velocities in m/s, worked out by the mech (MechPlayer.MeleeHit). A killing hit
+        // throws the ragdoll with its launch (meleeKillPending), or hands it to the topple as
+        // the knockback (PushOver applies it next frame). Any other hit slides the golem.
+        public bool ApplyMeleeHit(float amount, Vector3 push, Vector3 killLaunch, float pushSeconds)
+        {
+            // Asked BEFORE the damage: once ApplyDamage returns, OnDied has already used the
+            // knockback, so the kill has to be known in advance (Unity's BeginMeleeLaunch).
+            bool kills = !IsDead && amount >= CurrentHealth;
+            if (kills)
+            {
+                // An impulse is mass x change in speed, so this gives exactly killLaunch m/s.
+                float mass = HasComponent<RigidBody>() ? RigidBody.Mass : 0f;
+                meleeKillPending = true;
+                meleeKillVelocity = killLaunch;
+                try { return ApplyDamage(amount, killLaunch * mass); }
+                finally { meleeKillPending = false; }   // never leaks into a later, unrelated death
+            }
+            if (!ApplyDamage(amount)) return false;   // dead already, or a broken amount
+            StartPush(push, pushSeconds);
+            return true;
+        }
+
+        // Melee push (Unity's EnemyAgent.ApplyMeleePush). The golem slides along the swing,
+        // upright, slowing evenly to a stop over pushSeconds: about 3 m with Unity's numbers.
+        // Its FlowFieldAgent is off meanwhile (UpdateLegs), otherwise it would steer back at once
+        // and brake the slide at its 15 m/s2 acceleration (about 1.3 m). The brain keeps running,
+        // as in Unity; it just can't walk until the push ends.
+        Vector3 pushVelocity;
+        float pushLeft, pushDeceleration;
+
+        void StartPush(Vector3 velocity, float seconds)
+        {
+            velocity = new Vector3(velocity.X, 0f, velocity.Z);   // upright: a living golem isn't lifted
+            // Only a dynamic body: its speed is what the slide sets.
+            if (velocity.Length < 0.01f || !(seconds > 0f) || !HasComponent<RigidBody>() || RigidBody.IsKinematic) return;
+
+            // A second hit adds to the slide and restarts the clock, capped at 22 m/s (Unity's cap).
+            pushVelocity = pushVelocity + velocity;
+            if (pushVelocity.Length > 22f) pushVelocity = pushVelocity.Normalized * 22f;
+            pushLeft = Math.Min(seconds, 3f);
+            pushDeceleration = pushVelocity.Length / pushLeft;   // reaches 0 exactly when the time is up
+        }
+
+        void UpdatePush(float deltaTime)
+        {
+            if (IsDead || !HasComponent<RigidBody>() || RigidBody.IsKinematic) return;   // the topple owns a corpse
+            if (IsFrozen)
+            {
+                // Hit stop (Unity's EnemyAgent skips its update): stand still where it is. A push
+                // waits with the time it had left and carries on when the stop ends.
+                Vector3 v = RigidBody.Velocity;
+                RigidBody.Velocity = new Vector3(0f, v.Y, 0f);
+                return;
+            }
+            if (pushLeft <= 0f) return;
+            float step = Math.Min(deltaTime, pushLeft);
+            pushLeft -= step;
+
+            // Slower by the same amount every second (Unity's linear slow-down).
+            float speed = pushVelocity.Length;
+            float slower = Math.Max(0f, speed - pushDeceleration * step);
+            pushVelocity = speed > 1e-4f ? pushVelocity * (slower / speed) : Vector3.Zero;
+
+            // Set every frame, so friction can't eat the slide early. Only the flat part:
+            // gravity keeps the vertical one. Physics still stops it at a wall.
+            RigidBody.Velocity = new Vector3(pushVelocity.X, RigidBody.Velocity.Y, pushVelocity.Z);
+            if (pushLeft <= 0f) ClearPush();
+        }
+
+        void ClearPush()
+        {
+            pushLeft = 0f;
+            pushVelocity = Vector3.Zero;
+        }
+
+        // Is this golem in a hit stop (MechHitStop)? Its AI, attack clock and legs wait.
+        public bool IsFrozen { get { return MechHitStop.IsFrozen(Entity); } }
+
+        // The legs (FlowFieldAgent) are off while something else moves the golem or holds it: a
+        // melee push or a hit stop. Back on as soon as neither applies. Only switched when that
+        // changes, and never once dead: the topple has switched them off for good.
+        bool legsPaused;
+
+        void UpdateLegs()
+        {
+            if (agent == null || IsDead) return;
+            bool pause = pushLeft > 0f || IsFrozen;
+            if (pause == legsPaused) return;
+            legsPaused = pause;
+            Entity.SetEnabled<FlowFieldAgent>(!pause);
         }
     }
 }

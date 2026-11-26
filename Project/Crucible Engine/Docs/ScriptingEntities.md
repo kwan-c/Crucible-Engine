@@ -90,8 +90,10 @@ to the attached class and are cleared on a new assignment.
 
 ## Public fields
 
-Supported fields are public mutable instance bool, int, float, double, string
-and `Entity` fields, including inherited fields. Private/protected fields,
+Supported fields are public mutable instance bool, int, float, double, string,
+`Entity` and component (`Transform`, `RigidBody`, ...) fields, plus asset
+fields (`Prefab`, `AudioClip`, `Texture`, `Font`, `Material`, `Model`),
+including inherited fields. Private/protected fields,
 static/const/readonly fields, [NonSerialized] fields, properties, enums, arrays
 and other custom/object types are excluded. This does not yet implement private [SerializeField] or arbitrary
 Unity serialization. Rebuild and use Scripts > Reload Scripts after editing a script's declaration.
@@ -144,6 +146,50 @@ field in the Inspector (X clears it). This is Unity's `public GameObject door;`.
   whatever script is there. Null if the entity has no such component/script.
   Any other T throws.
 - Not yet: more component types.
+
+### Referencing components
+
+Declare a field of a component type, like Unity's `public Transform target;`,
+and drag an entity from the Hierarchy onto it:
+
+```csharp
+public Transform target;   // any entity (every entity has a Transform)
+public Light lamp;         // only entities with a Light can be dropped
+
+public override void OnUpdate(float deltaTime)
+{
+    if (target != null)
+        target.Position += new Vector3(0, deltaTime, 0);
+    if (lamp != null && Input.IsPressed(KeyCode.F6))
+        lamp.Enabled = !lamp.Enabled;
+}
+```
+
+- Any type `GetComponent<T>()` accepts works, except script classes:
+  `Transform`, `RigidBody`, `Animator`, `AudioSource`, `CharacterController`,
+  `Camera`, `CameraOrbit`, `Light`, `ParticleEmitter`, `Collider`,
+  `MeshRenderer`, `PlayerController`, `WorldText`, `MaterialParams`,
+  `FlowFieldAgent`, `FlowFieldSurface`, `StateGraphAgent`, `Terrain`, and the
+  UI components (`UIText`, `UIImage`, `UISlider`, `UIButton`, `UIRect`,
+  `UICanvas`). The list lives in `kScriptComponentTypes` (ScriptTypes.h).
+- The Inspector refuses an entity without the component (no highlight, and a
+  tooltip such as "Barrel has no RigidBody"). The field reads
+  `Door (RigidBody)`, or `Door (no RigidBody)` if the component was removed
+  after it was assigned.
+- It saves exactly what an `Entity` field saves (the target's scene id) plus
+  the component type, so it survives saving, reloading and Stop, and prefabs,
+  prefab spawning and Ctrl+D point it at the copy (EntityRefs).
+- When the script starts, the field is filled the way `GetComponent<T>()`
+  would fill it. An unassigned field, a target that is not in the scene, or a
+  target that no longer has the component is `null`; the last two log a
+  warning. A bad reference never stops the script from starting.
+- Every component has `.Entity`, the entity it is on (Unity's `.gameObject`):
+  `target.Entity.Name`, `lamp.Entity.IsAlive`.
+- Changing a field's type (`Transform t` to `RigidBody t`) drops its saved
+  value, like any other field type change.
+- Example: Assets/Scripts/TestScripts/ComponentRefTest.cs.
+- Not yet: fields of your own script classes (`public EnemyAI enemy;`) and
+  arrays/lists (`public Transform[] waypoints;`).
 
 ### Switching things on and off
 
