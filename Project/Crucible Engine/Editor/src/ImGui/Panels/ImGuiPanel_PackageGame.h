@@ -18,6 +18,7 @@
 #include "ImGui/ImGuiManager.h"
 #include "Packaging/PackageJob.h"
 
+#include <filesystem>
 #include <string>
 
 namespace Crucible {
@@ -52,6 +53,10 @@ namespace Crucible {
 
 		char        m_version[33] = "";
 		char        m_outputDir[512] = "";
+		bool        m_makeZip = true;
+		bool        m_makeInstaller = true;
+		std::filesystem::path m_iscc;          // Inno Setup's ISCC.exe, looked up on Open
+		std::string m_installerProblem;        // why the installer cannot be made ("" = it can)
 		std::string m_startupScene;      // from Assets/Config/EngineConfig.json, read on Open
 		std::string m_startError;        // why the last Package press did not start
 

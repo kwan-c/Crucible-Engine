@@ -61,15 +61,24 @@ namespace {
 		strncpy_s(buffer, N, text.c_str(), _TRUNCATE);   // cuts a too-long text short, always ends with '\0'
 	}
 
-	int StepNumber(Crucible::PackageJob::Stage stage)
+	// Tools/Package/Installer in this checkout (Editor/CMakeLists.txt), or empty.
+	fs::path InstallerDir()
 	{
-		using Stage = Crucible::PackageJob::Stage;
-		switch (stage) {
-		case Stage::Building: return 1;
-		case Stage::Cooking:  return 2;
-		case Stage::Packing:  return 3;
-		default:              return 0;
-		}
+#ifdef CRUCIBLE_INSTALLER_DIR
+		return fs::path(CRUCIBLE_INSTALLER_DIR);
+#else
+		return {};
+#endif
+	}
+
+	// The ISCC.exe CMake found when run.bat ran (may be empty: PackageJob::FindIscc looks further).
+	fs::path ConfiguredIscc()
+	{
+#ifdef CRUCIBLE_ISCC_COMMAND
+		return fs::path(CRUCIBLE_ISCC_COMMAND);
+#else
+		return {};
+#endif
 	}
 
 }	// anonymous namespace
@@ -92,6 +101,11 @@ void Crucible::PackageGamePanel::Open()
 		if (!BuildDir().empty())
 			CopyInto(m_outputDir, ToUtf8((BuildDir() / "Packages").make_preferred()));
 	}
+
+	// Whether the installer can be made: looked up each time the window opens, so installing
+	// Inno Setup or adding VC_redist.x64.exe shows up without restarting the Editor.
+	m_iscc = PackageJob::FindIscc(ConfiguredIscc());
+	m_installerProblem = PackageJob::InstallerProblem(InstallerDir(), m_iscc);
 
 	// The scene the game starts in, as saved (what Cook puts in the zip).
 	m_startupScene.clear();
@@ -123,8 +137,9 @@ void Crucible::PackageGamePanel::Update(float)
 	if (ImGui::Begin(m_panelName.c_str(), &m_open, m_flags)) {
 		bool const playing = m_core.GetScenes().IsPlaySessionActive();
 
-		ImGui::TextWrapped("Builds the game in Release, cooks Resources and zips everything a player needs. "
-		                   "Send the zip: players unzip it and run %s.exe.", Crucible::GameInfo::Name);
+		ImGui::TextWrapped("Builds the game in Release, cooks Resources, then makes a zip (players unzip it and run "
+		                   "%s.exe) and/or an installer (%s_Setup.exe, made with Inno Setup).",
+		                   Crucible::GameInfo::Name, Crucible::GameInfo::Name);
 		ImGui::Separator();
 		DrawSettings(playing);
 		ImGui::Separator();
@@ -159,11 +174,28 @@ void Crucible::PackageGamePanel::DrawSettings(bool playing)
 	}
 	ImGui::SameLine(0.0f, ImGui::GetStyle().ItemInnerSpacing.x);
 	ImGui::TextUnformatted("Output folder");
+
+	ImGui::Checkbox("Zip", &m_makeZip);
+	ImGui::SameLine();
+	ImGui::Checkbox("Installer", &m_makeInstaller);
 	ImGui::EndDisabled();
 
 	ImGui::TextDisabled("Starts in: %s", m_startupScene.empty() ? "(no startup scene)" : m_startupScene.c_str());
 	ImGui::SameLine();
 	ImGui::TextDisabled("- change it in File > Project Settings");
+
+	// The installer's AppId: how Windows knows a new version is the same game. Set once in the
+	// top-level CMakeLists.txt (CRUCIBLE_GAME_APP_ID) and never changed.
+	ImGui::TextDisabled("Installer AppId: {%s}", Crucible::GameInfo::AppId);
+	if (ImGui::IsItemHovered())
+		ImGui::SetTooltip("How Windows knows a new version is the same game, so it upgrades it instead of\n"
+		                  "installing a second copy. Never changes - CRUCIBLE_GAME_APP_ID in the top-level CMakeLists.txt.");
+	ImGui::SameLine();
+	if (ImGui::SmallButton("Copy##AppId"))
+		ImGui::SetClipboardText(Crucible::GameInfo::AppId);
+
+	if (m_makeInstaller && !m_installerProblem.empty())
+		ImGui::TextColored(kWarningColour, "Installer: %s", m_installerProblem.c_str());
 
 	// Things worth knowing before pressing Package.
 	if (playing)
@@ -173,19 +205,28 @@ void Crucible::PackageGamePanel::DrawSettings(bool playing)
 
 	ImGui::Spacing();
 	if (!running) {
-		ImGui::BeginDisabled(playing || !validVersion);
+		bool const nothingChosen = !m_makeZip && !m_makeInstaller;
+		bool const installerBlocked = m_makeInstaller && !m_installerProblem.empty();
+		ImGui::BeginDisabled(playing || !validVersion || nothingChosen || installerBlocked);
 		if (ImGui::Button("Package", ImVec2(120.0f, 0.0f)))
 			StartPackaging();
 		ImGui::EndDisabled();
+		if (nothingChosen) {
+			ImGui::SameLine();
+			ImGui::TextColored(kWarningColour, "Tick Zip, Installer or both.");
+		}
 	}
 	else if (ImGui::Button("Cancel", ImVec2(120.0f, 0.0f))) {
 		m_job.Cancel();
 	}
 
-	if (m_job.GetStage() == PackageJob::Stage::Done && !m_job.ZipPath().empty()) {
-		ImGui::SameLine();
-		if (ImGui::Button("Open Folder"))
-			PackageJob::ShowInExplorer(m_job.ZipPath());
+	if (m_job.GetStage() == PackageJob::Stage::Done) {
+		fs::path const& made = !m_job.InstallerPath().empty() ? m_job.InstallerPath() : m_job.ZipPath();
+		if (!made.empty()) {
+			ImGui::SameLine();
+			if (ImGui::Button("Open Folder"))
+				PackageJob::ShowInExplorer(made);
+		}
 	}
 
 	if (!m_startError.empty()) {
@@ -206,16 +247,21 @@ void Crucible::PackageGamePanel::DrawStatus()
 		break;
 	case PackageJob::Stage::Building:
 	case PackageJob::Stage::Cooking:
-	case PackageJob::Stage::Packing: {
+	case PackageJob::Stage::Packing:
+	case PackageJob::Stage::Staging:
+	case PackageJob::Stage::Compiling: {
 		static char const* const dots[] = { "", ".", "..", "..." };
 		int const tick = static_cast<int>(ImGui::GetTime() * 2.0) % 4;
-		ImGui::Text("Step %d of 3: %s%s   %.0f s", StepNumber(stage), PackageJob::StageText(stage), dots[tick], seconds);
+		ImGui::Text("Step %d of %d: %s%s   %.0f s", m_job.StepNumber(), m_job.StepCount(),
+		            PackageJob::StageText(stage), dots[tick], seconds);
 		break;
 	}
 	case PackageJob::Stage::Done:
 		ImGui::TextColored(kDoneColour, "Done in %.0f s:", seconds);
-		ImGui::SameLine();
-		ImGui::TextUnformatted(ToUtf8(m_job.ZipPath()).c_str());
+		if (!m_job.ZipPath().empty())
+			ImGui::TextUnformatted(("  Zip:       " + ToUtf8(m_job.ZipPath())).c_str());
+		if (!m_job.InstallerPath().empty())
+			ImGui::TextUnformatted(("  Installer: " + ToUtf8(m_job.InstallerPath())).c_str());
 		break;
 	case PackageJob::Stage::Failed:
 		ImGui::PushStyleColor(ImGuiCol_Text, kErrorColour);
@@ -267,6 +313,10 @@ void Crucible::PackageGamePanel::StartPackaging()
 	settings.resources = fs::path(m_core.GetAssets().GetResourceRoot());
 	settings.outputDir = FromUtf8(m_outputDir);
 	settings.version   = m_version;
+	settings.makeZip       = m_makeZip;
+	settings.makeInstaller = m_makeInstaller;
+	settings.installerDir  = InstallerDir();
+	settings.iscc          = m_iscc;
 
 	std::string error;
 	if (settings.buildDir.empty())
@@ -292,7 +342,11 @@ void Crucible::PackageGamePanel::ReportFinish()
 
 	switch (stage) {
 	case PackageJob::Stage::Done:
-		CRU_USER_INFO("[Package] Made {} in {:.0f} s", ToUtf8(m_job.ZipPath()), m_job.Seconds());
+		if (!m_job.ZipPath().empty())
+			CRU_USER_INFO("[Package] Made {}", ToUtf8(m_job.ZipPath()));
+		if (!m_job.InstallerPath().empty())
+			CRU_USER_INFO("[Package] Made {}", ToUtf8(m_job.InstallerPath()));
+		CRU_USER_INFO("[Package] Done in {:.0f} s", m_job.Seconds());
 		break;
 	case PackageJob::Stage::Failed:
 		CRU_USER_ERROR("[Package] {}", m_job.Failure());

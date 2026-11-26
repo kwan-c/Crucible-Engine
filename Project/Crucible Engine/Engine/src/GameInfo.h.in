@@ -26,4 +26,9 @@ namespace Crucible::GameInfo {
 	inline constexpr unsigned    VersionMinor = @CRUCIBLE_GAME_VERSION_MINOR@;
 	inline constexpr unsigned    VersionPatch = @CRUCIBLE_GAME_VERSION_PATCH@;
 
+	// The installer's AppId (CRUCIBLE_GAME_APP_ID), without braces: how Windows tells that a new
+	// version is the same game. Never changes. Shown in the Editor; the installer gets it from
+	// the generated Tools/Package/Installer/GameInfo.iss.
+	inline constexpr const char* AppId = "@CRUCIBLE_GAME_APP_ID@";
+
 }

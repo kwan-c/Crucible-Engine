@@ -6,11 +6,25 @@ project(Crucible LANGUAGES CXX C)
 # The game's name and version: change them HERE, and only here
 # ------------------------------------------------------------
 # Everything else reads these: the .exe's name (Game/CMakeLists.txt), the zip's name (CPack
-# below), the installer, and the C++ code through the generated GameInfo.h
-# (Engine/src/GameInfo.h.in): the window title, the Local AppData folder, error boxes and the
-# name Vulkan reports to the GPU driver. Re-run run.bat after changing them.
+# below), the installer (the generated Tools/Package/Installer/GameInfo.iss), and the C++ code
+# through the generated GameInfo.h (Engine/src/GameInfo.h.in): the window title, the Local
+# AppData folder, error boxes, the Editor and the name Vulkan reports to the GPU driver.
+# Re-run run.bat after changing them.
 set(CRUCIBLE_GAME_NAME    "Lithomachia")
 set(CRUCIBLE_GAME_VERSION "0.1.0")   # major.minor.patch
+
+# The installer's AppId: how Windows knows a new version is the same game, so it upgrades it in
+# place instead of installing a second copy. NEVER change it - not for a new version, and not if
+# the game is renamed. Only a brand-new game gets a new one (Visual Studio: Tools > Create GUID,
+# or PowerShell: [guid]::NewGuid().ToString().ToUpper()). Written here without the { }.
+set(CRUCIBLE_GAME_APP_ID  "CB7DEFE7-76D9-419C-AE99-8187D3FBF97A")
+
+string(LENGTH "${CRUCIBLE_GAME_APP_ID}" CRUCIBLE_GAME_APP_ID_LENGTH)
+if(NOT CRUCIBLE_GAME_APP_ID_LENGTH EQUAL 36
+   OR NOT CRUCIBLE_GAME_APP_ID MATCHES "^[0-9A-F]+-[0-9A-F]+-[0-9A-F]+-[0-9A-F]+-[0-9A-F]+$")
+    message(FATAL_ERROR "CRUCIBLE_GAME_APP_ID must be a GUID in capitals without braces, "
+                        "like CB7DEFE7-76D9-419C-AE99-8187D3FBF97A (it is '${CRUCIBLE_GAME_APP_ID}')")
+endif()
 
 # Force consistent CRT selection across every target (including third-party ones)
 if(POLICY CMP0091)
@@ -79,6 +93,15 @@ set(CPACK_ARCHIVE_COMPONENT_INSTALL ON)
 set(CPACK_COMPONENTS_GROUPING ALL_COMPONENTS_IN_ONE)
 set(CPACK_COMPONENT_INCLUDE_TOPLEVEL_DIRECTORY ON)   # component mode leaves it out by default
 include(CPack)
+
+# ------------------------------------------------------------
+# Installer (Inno Setup): the name, version and AppId for InstallScript.iss
+# ------------------------------------------------------------
+# Written next to InstallScript.iss (which #includes it), so the script also works when opened in
+# the Inno Setup app. Generated, so it is in .gitignore. File > Package Game passes the version
+# typed in its window with /DAppVersion, which wins over the one here.
+configure_file("${CMAKE_SOURCE_DIR}/Tools/Package/Installer/GameInfo.iss.in"
+               "${CMAKE_SOURCE_DIR}/Tools/Package/Installer/GameInfo.iss" @ONLY NEWLINE_STYLE CRLF)
 
 # Set startup project for Visual Studio
 if(MSVC)

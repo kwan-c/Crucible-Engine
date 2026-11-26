@@ -13,6 +13,7 @@
 #include "Packaging/PackageJob.h"
 #include "Cook.h"   // Tools/Cook
 #include "AssetBuildReport.h"   // Tools/Common: assets the build could not compile
+#include "GameInfo.h"           // the game's name (the installer is <name>_Setup.exe)
 
 #include <exception>
 #include <fstream>
@@ -59,14 +60,45 @@ namespace Crucible {
 			return std::string(reinterpret_cast<char const*>(text.data()), text.size());
 		}
 
-		// A line of build output that reports an error (MSVC, MSBuild or CMake).
+		// One command-line argument "<prefix><path>" in quotes, e.g. "/DOutputDir=C:\x". A trailing
+		// separator is dropped, as in Quoted.
+		std::wstring QuotedArg(std::wstring_view prefix, fs::path const& path)
+		{
+			std::wstring const quoted = Quoted(path);   // "C:\x"
+			return L"\"" + std::wstring(prefix) + quoted.substr(1);
+		}
+
+		// A line of build output that reports an error (MSVC, MSBuild, CMake or Inno Setup).
 		bool LooksLikeError(std::string_view line)
 		{
 			return line.find(": error ") != std::string_view::npos
 				|| line.find(": fatal error ") != std::string_view::npos
 				|| line.find("error MSB") != std::string_view::npos
-				|| line.find("CMake Error") != std::string_view::npos;
+				|| line.find("CMake Error") != std::string_view::npos
+				|| line.starts_with("Error on line ")     // ISCC: a problem in InstallScript.iss
+				|| line.starts_with("Error: ");           // ISCC: anything else
 		}
+
+		// Folders and files under Tools/Package/Installer (see InstallScript.iss).
+		fs::path InstallerScript(fs::path const& dir)   { return dir / "InstallScript.iss"; }
+		fs::path InstallerGameInfo(fs::path const& dir) { return dir / "GameInfo.iss"; }
+		fs::path InstallerGameDir(fs::path const& dir)  { return dir / "GAMEDIRECTORY"; }
+		fs::path InstallerRedist(fs::path const& dir)   { return dir / "REDIST" / "VC_redist.x64.exe"; }
+
+#ifdef _WIN32
+		// A REG_SZ value, or empty. `flags` picks the 32- or 64-bit view of the registry.
+		std::wstring ReadRegistryString(HKEY root, wchar_t const* key, wchar_t const* name, DWORD flags)
+		{
+			DWORD bytes = 0;
+			if (RegGetValueW(root, key, name, RRF_RT_REG_SZ | flags, nullptr, nullptr, &bytes) != ERROR_SUCCESS || bytes == 0)
+				return {};
+			std::wstring value(bytes / sizeof(wchar_t), L'\0');
+			if (RegGetValueW(root, key, name, RRF_RT_REG_SZ | flags, nullptr, value.data(), &bytes) != ERROR_SUCCESS)
+				return {};
+			value.resize(wcsnlen(value.c_str(), value.size()));
+			return value;
+		}
+#endif
 
 	}	// anonymous namespace
 
@@ -87,11 +119,82 @@ namespace Crucible {
 		case Stage::Building:  return "Building the game (Release)";
 		case Stage::Cooking:   return "Cooking Assets into Resources";
 		case Stage::Packing:   return "Packing the zip";
+		case Stage::Staging:   return "Copying the game into GAMEDIRECTORY";
+		case Stage::Compiling: return "Making the installer (Inno Setup)";
 		case Stage::Done:      return "Done";
 		case Stage::Failed:    return "Failed";
 		case Stage::Cancelled: return "Cancelled";
 		}
 		return "";
+	}
+
+	int PackageJob::StepNumber() const
+	{
+		// The steps this job runs, in order; a step that is left out is not counted.
+		struct Step { Stage stage; bool used; };
+		Step const steps[] = {
+			{ Stage::Building,  true },
+			{ Stage::Cooking,   true },
+			{ Stage::Packing,   m_settings.makeZip },
+			{ Stage::Staging,   m_settings.makeInstaller },
+			{ Stage::Compiling, m_settings.makeInstaller },
+		};
+		int number = 0;
+		for (Step const& step : steps) {
+			if (!step.used)
+				continue;
+			++number;
+			if (step.stage == m_stage)
+				return number;
+		}
+		return 0;
+	}
+
+	int PackageJob::StepCount() const
+	{
+		return 2 + (m_settings.makeZip ? 1 : 0) + (m_settings.makeInstaller ? 2 : 0);
+	}
+
+	fs::path PackageJob::FindIscc(fs::path const& configured)
+	{
+		std::error_code ec;
+		if (!configured.empty() && fs::is_regular_file(configured, ec))
+			return configured;
+#ifdef _WIN32
+		// Inno Setup is a 32-bit program: installed for everyone, its uninstall entry is in the
+		// 32-bit view of HKLM; installed for one user, in HKCU.
+		constexpr wchar_t const* key = L"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Inno Setup 6_is1";
+		struct Place { HKEY root; DWORD view; };
+		Place const places[] = {
+			{ HKEY_LOCAL_MACHINE, RRF_SUBKEY_WOW6432KEY },
+			{ HKEY_LOCAL_MACHINE, RRF_SUBKEY_WOW6464KEY },
+			{ HKEY_CURRENT_USER,  0 },
+		};
+		for (Place const& place : places) {
+			std::wstring const folder = ReadRegistryString(place.root, key, L"InstallLocation", place.view);
+			if (folder.empty())
+				continue;
+			fs::path const iscc = fs::path(folder) / "ISCC.exe";
+			if (fs::is_regular_file(iscc, ec))
+				return iscc;
+		}
+#endif
+		return {};
+	}
+
+	std::string PackageJob::InstallerProblem(fs::path const& installerDir, fs::path const& iscc)
+	{
+		std::error_code ec;
+		if (iscc.empty() || !fs::is_regular_file(iscc, ec))
+			return "Inno Setup 6 is not installed. Install it (jrsoftware.org/isinfo.php) to make the installer.";
+		if (installerDir.empty() || !fs::is_regular_file(InstallerScript(installerDir), ec))
+			return "InstallScript.iss was not found in " + ToUtf8(installerDir) + ".";
+		if (!fs::is_regular_file(InstallerGameInfo(installerDir), ec))
+			return "GameInfo.iss is missing from " + ToUtf8(installerDir) + ". Run run.bat to make it.";
+		if (!fs::is_regular_file(InstallerRedist(installerDir), ec))
+			return "VC_redist.x64.exe is missing. Put it in " + ToUtf8(InstallerRedist(installerDir).parent_path())
+			     + " (from Microsoft's Visual C++ Redistributable download, or the DigiPen installer sample).";
+		return {};
 	}
 
 	bool PackageJob::IsValidVersion(std::string_view version)
@@ -216,13 +319,25 @@ namespace Crucible {
 			error = "the version may only use letters, digits, '.', '-' and '_' (for example 0.2.0)";
 			return false;
 		}
+		if (!settings.makeZip && !settings.makeInstaller) {
+			error = "choose the zip, the installer or both";
+			return false;
+		}
 		if (!fs::is_regular_file(settings.cmake, ec) || !fs::is_regular_file(settings.cpack, ec)) {
 			error = "CMake was not found at " + ToUtf8(settings.cmake) + " - run run.bat again";
 			return false;
 		}
-		if (!fs::is_regular_file(settings.buildDir / "CPackConfig.cmake", ec)) {
+		if (settings.makeZip && !fs::is_regular_file(settings.buildDir / "CPackConfig.cmake", ec)) {
 			error = "the build folder " + ToUtf8(settings.buildDir) + " has no CPackConfig.cmake - run run.bat again";
 			return false;
+		}
+		// Checked now, not after a build of several minutes.
+		if (settings.makeInstaller) {
+			std::string const problem = InstallerProblem(settings.installerDir, settings.iscc);
+			if (!problem.empty()) {
+				error = problem;
+				return false;
+			}
 		}
 		if (!fs::is_directory(settings.assets, ec) || !fs::is_directory(settings.resources, ec)) {
 			error = "the Assets or Resources folder is missing";
@@ -236,6 +351,7 @@ namespace Crucible {
 		m_settings = std::move(settings);
 		m_failure.clear();
 		m_zip.clear();
+		m_installer.clear();
 		m_cancelled = false;
 		{
 			std::lock_guard lock{ m_mutex };
@@ -272,7 +388,7 @@ namespace Crucible {
 			if (m_cancelled) { Finish(Stage::Cancelled, "Cancelled."); return; }
 			RunCook();
 			if (m_stage == Stage::Cooking)
-				StartPacking();
+				AfterCook();
 			return;
 		}
 
@@ -298,6 +414,20 @@ namespace Crucible {
 				return;
 			}
 			CollectZip();
+		}
+		else if (m_stage == Stage::Staging) {
+			if (m_exitCode != 0) {
+				Finish(Stage::Failed, "The game could not be copied into GAMEDIRECTORY" + detail);
+				return;
+			}
+			StartCompiling();
+		}
+		else if (m_stage == Stage::Compiling) {
+			if (m_exitCode != 0) {
+				Finish(Stage::Failed, "Inno Setup could not make the installer" + detail);
+				return;
+			}
+			CollectInstaller();
 		}
 	}
 
@@ -387,6 +517,92 @@ namespace Crucible {
 
 		m_zip = target;
 		Append("\nPackaged: " + ToUtf8(target) + "\n");
+		AfterZip();
+	}
+
+	void PackageJob::AfterCook()
+	{
+		if (m_settings.makeZip)            StartPacking();
+		else if (m_settings.makeInstaller) StartStaging();
+		else                               Finish(Stage::Done);
+	}
+
+	void PackageJob::AfterZip()
+	{
+		if (m_settings.makeInstaller) StartStaging();
+		else                          Finish(Stage::Done);
+	}
+
+	void PackageJob::StartStaging()
+	{
+		// GAMEDIRECTORY holds exactly what is installed, so it is emptied first: a file left from an
+		// older build (a removed scene, an old DLL) would otherwise end up in the installer. Only
+		// this one folder, beside InstallScript.iss (Start checked the script is there).
+		fs::path const gameDir = InstallerGameDir(m_settings.installerDir);
+		Append("\n== Copying the game into GAMEDIRECTORY ==\n");
+		std::error_code ec;
+		if (fs::exists(gameDir, ec)) {
+			fs::remove_all(gameDir, ec);
+			if (ec) {
+				Finish(Stage::Failed, "Could not empty " + ToUtf8(gameDir) + ": " + ec.message()
+				       + ". Close anything using it (the game running from there, a File Explorer window), then package again.");
+				return;
+			}
+		}
+		fs::create_directories(gameDir, ec);
+		if (ec) {
+			Finish(Stage::Failed, "Could not make " + ToUtf8(gameDir) + ": " + ec.message());
+			return;
+		}
+
+		// The same files as the zip: the "Game" install component (Game/CMakeLists.txt).
+		m_stage = Stage::Staging;
+		Launch(Quoted(m_settings.cmake) + L" --install " + Quoted(m_settings.buildDir)
+		       + L" --config Release --component Game --prefix " + Quoted(gameDir));
+	}
+
+	void PackageJob::StartCompiling()
+	{
+		// ISCC writes the installer here; CollectInstaller copies it out.
+		fs::path const staging = m_settings.buildDir / "InstallerStaging";
+		std::error_code ec;
+		fs::create_directories(staging, ec);
+		for (fs::directory_entry const& entry : fs::directory_iterator(staging, ec)) {
+			if (entry.path().extension() == ".exe")
+				fs::remove(entry.path(), ec);   // so the only installer left afterwards is the new one
+		}
+
+		// The name and AppId come from GameInfo.iss (written by run.bat); the version typed in the
+		// window wins over the configured one. /Q: only errors and warnings (not every file).
+		m_stage = Stage::Compiling;
+		Append("\n== Making the installer (Inno Setup, version " + m_settings.version + ") ==\n");
+		Launch(Quoted(m_settings.iscc) + L" /Q /DAppVersion=" + Widen(m_settings.version)
+		       + L" " + QuotedArg(L"/DOutputDir=", staging)
+		       + L" " + Quoted(InstallerScript(m_settings.installerDir)));
+	}
+
+	void PackageJob::CollectInstaller()
+	{
+		fs::path const staging = m_settings.buildDir / "InstallerStaging";
+		std::error_code ec;
+		fs::path setup;
+		for (fs::directory_entry const& entry : fs::directory_iterator(staging, ec)) {
+			if (entry.path().extension() == ".exe") { setup = entry.path(); break; }
+		}
+		if (setup.empty()) {
+			Finish(Stage::Failed, "Inno Setup finished but made no installer in " + ToUtf8(staging));
+			return;
+		}
+
+		fs::create_directories(m_settings.outputDir, ec);
+		fs::path const target = m_settings.outputDir / setup.filename();
+		if (!fs::copy_file(setup, target, fs::copy_options::overwrite_existing, ec) || ec) {
+			Finish(Stage::Failed, "Could not copy the installer to " + ToUtf8(target) + ": " + ec.message());
+			return;
+		}
+
+		m_installer = target;
+		Append("Installer: " + ToUtf8(target) + "\n");
 		Finish(Stage::Done);
 	}
 
