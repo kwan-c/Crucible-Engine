@@ -3,7 +3,7 @@
 * \author:       Jean David Vidal Cruzado
 * \par:          Email: jeandavidvidal.c@digipen.edu
 * \date          10 November 2026
-* \version       2.2
+* \version       2.3
 * \brief         Generates a sub-level from a seed: the terrain and, for a
 *                mission level, its chunks. Roads and decor are later port
 *                steps.
@@ -75,6 +75,8 @@
 *                player starts on the spawn chunk; chunks get their route
 *                order from the placement (ChunkPlacement.Order); roads
 *                join the chunks (RoadBuilder)
+*    -v2.3       Scattered trees in Play (DecorScatter; one tree prefab
+*                field per theme)
 **************************************************************************/
 using System.Collections.Generic;
 
@@ -91,6 +93,10 @@ namespace Crucible.@Scripts
         public Prefab spawnChunk;               // chunk prefabs (ChunkDefinition on the root)
         public Prefab extractChunk;
         public Prefab captureChunk;
+        public Prefab broadleafTree;            // scattered trees, one prefab per theme (StaticObstacle trunk collider);
+        public Prefab pineTree;                 // themes are TEMPORARY quadrants (DecorScatter) until level themes are set
+        public Prefab deadTree;
+        public Prefab burntTree;
 
         // --- terrain (Unity's TerrainSettings) ------------------------------- //
         public float mapSize = 500f;            // metres, square (a mission's preset sets its own)
@@ -133,6 +139,7 @@ namespace Crucible.@Scripts
         private MissionPreset preset;                                              // null: terrain only
         private List<ChunkPlacement> placements = new List<ChunkPlacement>();
         private readonly List<Entity> chunks = new List<Entity>();                 // spawned in Play
+        private readonly List<Entity> trees = new List<Entity>();                  // spawned in Play
         private ChunkPlacement spawnPlacement;
         private Entity spawnStart;                                                  // the spawn chunk's PlayerStart, if any
         private const float kPlayerDrop = 2f;                                       // metres above the start the player drops from
@@ -186,6 +193,7 @@ namespace Crucible.@Scripts
             if (Application.IsPlaying)
             {
                 SpawnChunks();
+                SpawnTrees();
                 CheckNavigation();
                 ApplyPlayerSlope();
                 Navigation.Rebake();
@@ -320,6 +328,37 @@ namespace Crucible.@Scripts
                 if (request.Role == MissionPresets.Spawn) spawnStart = chunk.FindChild("PlayerStart");
                 chunks.Add(chunk);
             }
+        }
+
+        // Play only, on a mission level: the scattered trees (DecorScatter, Unity's numbers), under the
+        // Terrain like the chunks, turned and sized per item. Spawned before navigation re-bakes, so their
+        // StaticObstacle trunk colliders block their cells. Replaced on every Generate. One log line.
+        private void SpawnTrees()
+        {
+            foreach (Entity old in trees) if (old.IsAlive) Destroy(old);
+            trees.Clear();
+            if (preset == null) return;
+
+            Prefab[] byTheme = { broadleafTree, pineTree, deadTree, burntTree };
+            string[] names = { "broadleaf", "pine", "dead", "burnt" };
+            int[] counts = new int[byTheme.Length];
+            int skipped = 0;
+            foreach (DecorItem item in DecorScatter.Scatter(map, seed ^ 0x7f4a7c15, preset.Decor, placements, preset.Chunks))
+            {
+                Prefab prefab = item.Theme < byTheme.Length ? byTheme[item.Theme] : null;
+                if (prefab == null) { skipped++; continue; }
+                Entity tree = prefab.Instantiate(terrain);
+                if (tree == null) continue;
+                tree.Transform.Position = new Vector3(item.X, item.Height, item.Z);
+                tree.Transform.Rotation = Quaternion.Euler(0f, item.Yaw, 0f);
+                tree.Transform.Scale = tree.Transform.Scale * item.Scale;
+                trees.Add(tree);
+                counts[item.Theme]++;
+            }
+            string line = "SubLevelGenerator: " + trees.Count + " trees (";
+            for (int t = 0; t < names.Length; t++) line += (t > 0 ? ", " : "") + counts[t] + " " + names[t];
+            Log.Info(line + ")");
+            if (skipped > 0) Log.Warning("SubLevelGenerator: " + skipped + " trees skipped - set the tree prefab fields");
         }
 
         private Prefab PrefabFor(string role)

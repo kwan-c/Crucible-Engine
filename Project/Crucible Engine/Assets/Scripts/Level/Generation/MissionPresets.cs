@@ -3,7 +3,7 @@
 * \author:       Jean David Vidal Cruzado
 * \par:          Email: jeandavidvidal.c@digipen.edu
 * \date          26 November 2026
-* \version       1.3
+* \version       1.4
 * \brief         Each mission's level numbers, from the GDD's side quest
 *                specs (M3): map size, which chunks it places, their sizes
 *                and spacing. Plain data, so it can be tested alone.
@@ -32,6 +32,7 @@
 *    -v1.1       Capture as a journey: spawn first, the 1st area linked to it
 *    -v1.2       back to Unity's layout; spacing range = minimum gap; route order
 *    -v1.3       road settings per mission (Capture: roads along the route)
+*    -v1.4       decor (tree scatter) settings per mission
 *
 **************************************************************************/
 using System.Collections.Generic;
@@ -45,6 +46,7 @@ namespace Crucible.@Scripts
         public List<ChunkRequest> Chunks = new List<ChunkRequest>();   // in placement order
         public ChunkPlacementSettings Placement = new ChunkPlacementSettings();
         public RoadSettings Roads = new RoadSettings();     // Unity's road numbers (SubLevelGen_*.asset)
+        public DecorSettings Decor = new DecorSettings();   // Unity's "Trees" decor numbers; quadrant themes are temporary
     }
 
     public static class MissionPresets
