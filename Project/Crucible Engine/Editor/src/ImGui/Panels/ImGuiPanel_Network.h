@@ -40,6 +40,12 @@ namespace Crucible
 		void Init() override;
 		void Update(float dt) override;
 
+		// Closed by default; opened / closed from View > Network (or its own close button).
+		// Closing it keeps the settings: Play still uses them.
+		void Show()             { m_visible = true; m_makeFocus = true; }
+		bool IsOpen() const     { return m_visible; }
+		void SetOpen(bool open) { m_visible = open; }
+
 	private:
 		void LoadFromSession();   // the session's settings -> the edit fields
 		void Apply();             // the edit fields -> NetworkSession::SetSettings, and validate
@@ -52,5 +58,7 @@ namespace Crucible
 		int                  m_hostPort = 0;
 		int                  m_connectPort = 0;
 		std::string          m_validationError;    // empty = these settings can start a session
+		bool                 m_visible   = false;  // View > Network
+		bool                 m_makeFocus = false;  // bring to front on the next frame (Show)
 	};
 }

@@ -37,8 +37,7 @@ void NetworkPanel::Init()
 {
     m_panelName = "Network";
     m_flags = ImGuiWindowFlags_None;
-    m_docked = true;
-    m_dockArea = DockArea::Right;   // a tab beside the Inspector
+    m_docked = false;   // not part of the default layout: a floating window opened from View > Network
     LoadFromSession();
 }
 
@@ -68,7 +67,15 @@ void NetworkPanel::Apply()
 
 void NetworkPanel::Update(float)
 {
-    if (ImGui::Begin(m_panelName.c_str(), nullptr, m_flags)) {
+    if (!m_visible) { return; }
+
+    // First open (no saved position): a small window in the middle of the editor.
+    ImGui::SetNextWindowSize({ 320.0f, 420.0f }, ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_FirstUseEver, { 0.5f, 0.5f });
+    if (m_makeFocus) { ImGui::SetNextWindowFocus(); m_makeFocus = false; }
+
+    bool open = true;
+    if (ImGui::Begin(m_panelName.c_str(), &open, m_flags)) {
         NetworkSession& network = m_core.GetNetwork();
         // Only in Edit with no session running: a running session is never reconfigured.
         bool const editable = m_core.GetPlayState() == PlayState::Edit && !network.IsActive();
@@ -120,6 +127,7 @@ void NetworkPanel::Update(float)
         DrawStatus();
     }
     ImGui::End();
+    if (!open) { m_visible = false; }
 }
 
 void NetworkPanel::DrawStatus()
