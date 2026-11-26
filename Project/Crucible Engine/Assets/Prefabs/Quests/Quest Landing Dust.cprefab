@@ -1,0 +1,59 @@
+{
+  "version": 3,
+  "name": "Quest Landing Dust",
+  "entities": [
+    {
+      "id": "5144555300010001",
+      "parent": -1,
+      "components": {
+        "Transform": {
+          "positions": { "x": 0.0, "y": 0.0, "z": 0.0 },
+          "rotation": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 },
+          "scale": { "x": 1.0, "y": 1.0, "z": 1.0 }
+        },
+        "ParticleEmitter": {
+          "playing": true,
+          "loop": false,
+          "duration": 0.6,
+          "rate": 0.0,
+          "burstCount": 64,
+          "maxParticles": 128,
+          "shape": "Cone",
+          "shapeRadius": 0.09,
+          "boxExtents": { "x": 0.5, "y": 0.5, "z": 0.5 },
+          "spreadDeg": 0.0,
+          "coneAngleDeg": 75.0,
+          "coneLength": 0.05,
+          "worldSpace": true,
+          "lifetimeMin": 0.3,
+          "lifetimeMax": 0.55,
+          "speedMin": 0.0225,
+          "speedMax": 0.06,
+          "sizeMin": 0.01,
+          "sizeMax": 0.025,
+          "endSizeScale": 1.6,
+          "gravityScale": 0.01,
+          "drag": 0.0,
+          "spinDeg": 0.0,
+          "stretch": 0.0,
+          "colourStart": { "x": 0.69, "y": 0.64, "z": 0.51 },
+          "colourEnd": { "x": 0.69, "y": 0.64, "z": 0.51 },
+          "alphaStart": 0.45,
+          "alphaEnd": 0.0,
+          "brightness": 1.0,
+          "blend": "Alpha",
+          "textureAsset": 17322599640338691763,
+          "flipbookCols": 1,
+          "flipbookRows": 1,
+          "emitLight": false,
+          "lightColour": { "x": 1.0, "y": 0.6, "z": 0.25 },
+          "lightIntensity": 8.0,
+          "lightRange": 6.0,
+          "seed": 1
+        },
+        "EntityName": { "name": "Quest Landing Dust" },
+        "EntityTag": { "tag": "Untagged" }
+      }
+    }
+  ]
+}

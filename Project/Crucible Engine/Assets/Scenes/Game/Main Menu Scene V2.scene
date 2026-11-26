@@ -200,6 +200,50 @@
             }
         },
         {
+            "id": "10F878E4D5190001",
+            "parent": "E4FCB8E406278017",
+            "siblingIndex": 2,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.33000001311302185,
+                        "y": 1.0,
+                        "z": -0.38999998569488525
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 14.285717010498047,
+                        "y": 14.285712242126465,
+                        "z": 14.285717010498047
+                    }
+                },
+                "AudioSource": {
+                    "clip": 0,
+                    "loadType": "DecompressOnLoad",
+                    "output": "SFX",
+                    "playOnAwake": true,
+                    "loop": false,
+                    "volume": 1.0,
+                    "pitch": 1.0,
+                    "spatialBlend": 0.0,
+                    "minDistance": 1.0,
+                    "maxDistance": 500.0,
+                    "rolloffMode": "Logarithmic"
+                },
+                "EntityName": {
+                    "name": "QuestStones"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
             "id": "14FCB8E406278011",
             "parent": "41F6D0E4896B8003",
             "siblingIndex": 1,
@@ -889,14 +933,14 @@
                         "y": 0.5
                     },
                     "position": {
-                        "x": -895.2130737304688,
-                        "y": -49.453155517578125
+                        "x": -884.1617431640625,
+                        "y": -47.242889404296875
                     },
                     "size": {
-                        "x": 320.0,
-                        "y": 120.0
+                        "x": 120.0,
+                        "y": 320.0
                     },
-                    "rotation": -90.0,
+                    "rotation": 0.0,
                     "raycastTarget": true
                 },
                 "UIImage": {
@@ -906,7 +950,7 @@
                         "z": 1.0,
                         "w": 1.0
                     },
-                    "textureAsset": 17076727176571633669
+                    "textureAsset": 12511088708639588355
                 },
                 "UIButton": {
                     "onClick": "Custom",
@@ -2039,6 +2083,20 @@
                                     "entityId": 11237203331566977031,
                                     "assetId": 0,
                                     "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.MainMenuFlow",
+                                    "name": "questVignette",
+                                    "type": "Prefab",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 5825260471778857877,
+                                    "componentType": ""
                                 }
                             ]
                         },
@@ -2130,6 +2188,232 @@
                                     "stringIsNull": false,
                                     "entityId": 0,
                                     "assetId": 9139294163134455095,
+                                    "componentType": ""
+                                }
+                            ]
+                        },
+                        {
+                            "enabled": true,
+                            "assembly": "Managed/Crucible.Scripts.dll",
+                            "namespace": "Crucible.Scripts",
+                            "class": "QuestStoneDrop",
+                            "fields": [
+                                {
+                                    "declaringType": "Crucible.Scripts.QuestStoneDrop",
+                                    "name": "stones",
+                                    "type": "Entity",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 1222860223054151681,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.QuestStoneDrop",
+                                    "name": "hit1",
+                                    "type": "AudioClip",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 8412093832234829417,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.QuestStoneDrop",
+                                    "name": "hit2",
+                                    "type": "AudioClip",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 4748328691954254285,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.QuestStoneDrop",
+                                    "name": "hit3",
+                                    "type": "AudioClip",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 5502984120979511023,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.QuestStoneDrop",
+                                    "name": "questSlab",
+                                    "type": "Prefab",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 3296708742862768907,
+                                    "componentType": ""
+                                }
+                            ]
+                        },
+                        {
+                            "enabled": true,
+                            "assembly": "Managed/Crucible.Scripts.dll",
+                            "namespace": "Crucible.Scripts",
+                            "class": "QuestBoardRocks",
+                            "fields": [
+                                {
+                                    "declaringType": "Crucible.Scripts.QuestBoardRocks",
+                                    "name": "rockPrefab",
+                                    "type": "Prefab",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 15489563111489110001,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.QuestBoardRocks",
+                                    "name": "ridge1",
+                                    "type": "Model",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 4022787090117827109,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.QuestBoardRocks",
+                                    "name": "ridge2",
+                                    "type": "Model",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 11230654294179876057,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.QuestBoardRocks",
+                                    "name": "ridge3",
+                                    "type": "Model",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 11929582075851861523,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.QuestBoardRocks",
+                                    "name": "ridge4",
+                                    "type": "Model",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 14122674368581724967,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.QuestBoardRocks",
+                                    "name": "ridge5",
+                                    "type": "Model",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 12632674529767499097,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.QuestBoardRocks",
+                                    "name": "ridge6",
+                                    "type": "Model",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 777240861302444797,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.QuestBoardRocks",
+                                    "name": "ridge7",
+                                    "type": "Model",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 5136873882769870215,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.QuestBoardRocks",
+                                    "name": "ridge8",
+                                    "type": "Model",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 7360365472990456187,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.QuestBoardRocks",
+                                    "name": "rockCount",
+                                    "type": "Int",
+                                    "boolean": false,
+                                    "integer": 16,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
                                     "componentType": ""
                                 }
                             ]
@@ -2386,14 +2670,14 @@
                         "y": 0.5
                     },
                     "position": {
-                        "x": 894.9195556640625,
+                        "x": 890.4990234375,
                         "y": -49.453155517578125
                     },
                     "size": {
-                        "x": 320.0,
-                        "y": 120.0
+                        "x": 120.0,
+                        "y": 320.0
                     },
-                    "rotation": 90.0,
+                    "rotation": 0.0,
                     "raycastTarget": true
                 },
                 "UIImage": {
@@ -2403,7 +2687,7 @@
                         "z": 1.0,
                         "w": 1.0
                     },
-                    "textureAsset": 17076727176571633669
+                    "textureAsset": 14240470965549858821
                 },
                 "UIButton": {
                     "onClick": "Custom",

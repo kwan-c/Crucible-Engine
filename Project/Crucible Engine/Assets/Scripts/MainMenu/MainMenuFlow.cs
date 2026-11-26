@@ -24,12 +24,17 @@
 *                         golem, then the ground slides home, then the
 *                         camera pans back (Hugo's order).
 *      Tables -> Quests   click the Quests table: the camera pans above it,
-*                         looking down.
-*      Quests -> Tables   Back.
+*                         looking down, its "Quests" label fades out, the
+*                         screen around the table darkens (questVignette),
+*                         Back appears, and the first time the quest stones
+*                         drop onto it (QuestStoneDrop).
+*      Quests -> Tables   Back (a drop still running lands at once); the
+*                         label and the light fade back during the pan.
 *      Tables -> Title    Back: the camera pans up, the logo comes back
 *                         (Return trigger), the title buttons fade in.
-*    The Back button, the torso arrows and Confirm only show in the torso
-*    view; Esc goes back one level from every view. While the camera is
+*    The torso arrows and Confirm only show in the torso view, Back in the
+*    torso and quest views (not at the tables); Esc goes back one level
+*    from every view. While the camera is
 *    moving every click and key is ignored, so a move can't start halfway
 *    through another.
 *
@@ -54,28 +59,38 @@ namespace Crucible.Scripts
         // ---- The tables ----
         public Entity torsoTable;            // table2 ("Torsos")
         public Entity questTable;            // table3 ("Quests")
-        public float questHeight = 1.8f;     // metres above the quests table (3 showed all three tables)
+        // Metres above the tray floor's centre (QuestStones). 0.78 made the table fill ~90% of the
+        // screen (with a 60 degree vertical FOV the 0.77 m side needs 0.77 / 0.9 / (2 tan 30) =
+        // 0.74 m to the rim, 0.034 m above the floor); 0.72 (Hugo: a little closer) fills ~97%.
+        public float questHeight = 0.72f;
         public float questPitch = -90f;      // degrees around X: -90 looks straight down
         public float hoverBrighten = 0.35f;  // how far a hovered label moves toward white (0..1)
+        // Darkens the screen around the quest table while it is open, so the quests stand out (Unity's
+        // board sits on black). "Quest Vignette": its own canvas behind the menu's (sortOrder -1), so
+        // Back stays bright; a full-screen image clear over the table, dark toward the edges.
+        public Prefab questVignette;
+        public float vignetteAlpha = 0.8f;   // how dark the edges get (0..1)
 
         // ---- The ground the tables stand on ----
         public Entity ground;                // "TablesNGroundParent"
         public float groundSlide = 8f;       // metres toward the camera side (+Z), away from the golem
         public float groundSeconds = 1f;
 
-        // ---- UI: the torso view's buttons, shown only there (Hugo: no Back at the tables) ----
+        // ---- UI: Back (torso and quest views) and the torso view's buttons (Hugo: none at the tables) ----
         public Entity backButton;            // Custom, Action Id "Back"
         public Entity leftArrow;             // Custom, Action Id "TorsoPrev" (step 4)
         public Entity rightArrow;            // Custom, Action Id "TorsoNext" (step 4)
         public Entity confirmButton;         // Custom, Action Id "Confirm"   (step 4)
         public float buttonFadeSeconds = 0.3f;
-        public float startDelay = 0.9f;      // after Start, before the pan: lets the logo's explode play
+        public float startDelay = 0.9f;      // after Start, before the pan: the logo's explode (0.83 s) plays out
 
         private enum View { Title, Tables, Torsos, Quests }
         private View view = View.Title;
 
         private MainMenuIntro intro;         // owns the logo and the title buttons
         private TorsoSelector torsos;        // the torso carousel (optional: without it the view is empty)
+        private QuestStoneDrop questStones;  // the quest table's stone drop (optional)
+        private UIImage vignette;            // the spawned questVignette's image (null without one)
         private Camera cameraComponent;      // for the mouse ray
         private Vector3 groundHome;          // where the ground starts (and returns to)
 
@@ -93,6 +108,13 @@ namespace Crucible.Scripts
             intro = Entity.GetComponent<MainMenuIntro>();
             if (intro == null) Log.Warning("MainMenuFlow: no MainMenuIntro on this entity.");
             torsos = Entity.GetComponent<TorsoSelector>();
+            questStones = Entity.GetComponent<QuestStoneDrop>();
+            if (questVignette != null)
+            {
+                Entity overlay = questVignette.Instantiate();   // a root canvas, saved at alpha 0
+                Entity image = overlay != null ? overlay.FindChild("Quest Vignette") : null;
+                vignette = image != null ? image.GetComponent<UIImage>() : null;
+            }
             if (viewCamera == null || camPosition1 == null || camPosition2 == null || camPosition3 == null)
                 Log.Warning("MainMenuFlow: set viewCamera and camPosition1/2/3.");
             if (torsoTable == null || questTable == null) Log.Warning("MainMenuFlow: set torsoTable and questTable.");
@@ -169,12 +191,10 @@ namespace Crucible.Scripts
                 // Off once faded: an invisible button still counts as UI under the mouse, and at
                 // position 2 these sit over the bottom of the Quests table, blocking its clicks.
                 SetTitleButtonsActive(false);
-                Run(PanTo(camPosition2), () =>
-                {
-                    // Hidden once the camera has left it; Return brings it back on the way up.
-                    if (intro != null && intro.logo != null) intro.logo.SetEnabled<MeshRenderer>(false);
-                    view = View.Tables;
-                });
+                // The explode (0.83 s) is over by now and holds its last frame, letters thrown at
+                // the camera: hidden before the pan so none can hang in view. Return brings it back.
+                if (intro != null && intro.logo != null) intro.logo.SetEnabled<MeshRenderer>(false);
+                Run(PanTo(camPosition2), () => view = View.Tables);
             });
         }
 
@@ -197,7 +217,13 @@ namespace Crucible.Scripts
                     break;
 
                 case View.Quests:
-                    Run(PanTo(camPosition2), () => view = View.Tables);
+                    // Leaving mid-drop: every stone lands at once (and the shake stops) before the pan.
+                    if (questStones != null) questStones.Skip();
+                    if (backButton != null) backButton.SetActive(false);
+                    List<MenuTween> outOfQuests = PanTo(camPosition2);
+                    outOfQuests.Add(FadeLabel(questLabel, questLabelColour.A, panSeconds));   // the label comes back
+                    if (vignette != null) outOfQuests.Add(MenuTween.Fade(vignette, 0f, panSeconds));   // and the light
+                    Run(outOfQuests, () => view = View.Tables);
                     break;
 
                 case View.Tables:
@@ -247,13 +273,26 @@ namespace Crucible.Scripts
             }
             else
             {
-                Vector3 above = questTable.Transform.WorldPosition + new Vector3(0f, questHeight, 0f);
+                // Centred over the tray (QuestStones sits at its floor's centre); the table's own
+                // origin is a few centimetres off, enough to cut one edge at this distance.
+                Entity centre = questStones != null && questStones.stones != null ? questStones.stones : questTable;
+                Vector3 above = centre.Transform.WorldPosition + new Vector3(0f, questHeight, 0f);
                 List<MenuTween> tweens = new List<MenuTween>
                 {
                     MenuTween.Move(viewCamera.Transform, above, panSeconds),
-                    MenuTween.Rotate(viewCamera.Transform, Quaternion.Euler(questPitch, 0f, 0f), panSeconds)
+                    MenuTween.Rotate(viewCamera.Transform, Quaternion.Euler(questPitch, 0f, 0f), panSeconds),
+                    // The "Quests" label fades out over the first half of the pan: once chosen it's
+                    // in the way (it floats above the table, between the camera and the stones).
+                    FadeLabel(questLabel, 0f, panSeconds * 0.5f)
                 };
-                Run(tweens, () => view = View.Quests);
+                // The surroundings darken as the camera comes over the table.
+                if (vignette != null) tweens.Add(MenuTween.Fade(vignette, vignetteAlpha, panSeconds));
+                Run(tweens, () =>
+                {
+                    if (backButton != null) backButton.SetActive(true);   // Back (only) in this view too
+                    if (questStones != null) questStones.Play(viewCamera); // the stones drop, first visit only
+                    view = View.Quests;
+                });
             }
         }
 
@@ -305,7 +344,7 @@ namespace Crucible.Scripts
             }
         }
 
-        // Back, the two arrows and Confirm: only the torso view has them.
+        // Back, the two arrows and Confirm: the torso view's buttons (the quest view shows Back alone).
         private void SetTorsoButtonsActive(bool active)
         {
             foreach (Entity button in new[] { backButton, leftArrow, rightArrow, confirmButton })
@@ -339,6 +378,19 @@ namespace Crucible.Scripts
             if (!Physics.Raycast(ray, out hit, 1000f)) return null;
             if (hit.Entity == torsoTable || hit.Entity == questTable) return hit.Entity;
             return null;
+        }
+
+        // Fades a table's label to `alpha`, keeping its colour (null without a label: Run skips it).
+        private MenuTween FadeLabel(WorldText label, float alpha, float seconds)
+        {
+            if (label == null) return null;
+            float from = label.Color.A;
+            return MenuTween.Value(from, alpha, seconds, a =>
+            {
+                Color colour = label.Color;
+                colour.A = a;
+                label.Color = colour;
+            });
         }
 
         private void ClearHover()
