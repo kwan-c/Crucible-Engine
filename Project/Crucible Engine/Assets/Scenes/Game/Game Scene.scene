@@ -11502,7 +11502,7 @@
                     "prefabAsset": 681091234067284337,
                     "fileId": 681091234067284249,
                     "isRoot": true,
-                    "prefabHash": 2742527114365367844,
+                    "prefabHash": 13304583454068341518,
                     "overrides": [
                         "UICanvas/toggleWithEscape",
                         "UICanvas/showsCursor",
@@ -14353,7 +14353,7 @@
                     },
                     "position": {
                         "x": 0.0,
-                        "y": 0.0
+                        "y": -3.7460992336273193
                     },
                     "size": {
                         "x": 1170.0,
