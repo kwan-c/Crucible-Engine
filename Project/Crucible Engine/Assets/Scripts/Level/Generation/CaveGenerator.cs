@@ -3,7 +3,7 @@
 * \author:       Jean David Vidal Cruzado
 * \par:          Email: jeandavidvidal.c@digipen.edu
 * \date          23 November 2026
-* \version       2.0
+* \version       2.1
 * \brief         A cave system as plain data: an optional generator feature
 *                that raises a rocky mountain and carves rooms and tunnels
 *                through it and under it, as a cave volume. No engine calls,
@@ -30,15 +30,21 @@
 *         rest at ground level inside the mountain (with 14 m of mountain
 *         over them). Kept apart unless on different levels.
 *      5. Tunnels: the shortest network joining the rooms (a climb counts
-*         three times its length), plus two loops. Each is a winding worm
-*         tunnelHeight tall with a flat floor; its climb is spread evenly
-*         along it, and it swings out sideways when the climb would be
-*         steeper than kMaxSlope.
-*      6. Mouths: entrances tunnels from the ground-level rooms straight
-*         out through the mountainside, ending on the base outside.
+*         three times its length, and a climb with too little run between
+*         the rooms ten times its shortfall), plus two loops, plus a second
+*         way between the levels. Each is a winding worm tunnelHeight tall
+*         with a flat floor, leaving each room level with its floor at its
+*         edge; its climb is spread evenly between the edges, and it swings
+*         out sideways when the climb would be steeper than kMaxSlope. A
+*         path that would pass within kRockBetween over or under another
+*         cave is redrawn (up to kWormTries) and the clearest is carved.
+*      6. Mouths: entrances tunnels from the ground-level rooms' floors
+*         straight out through the mountainside, ending on the base outside.
 *      7. Walls: 3D noise moves every cave wall by up to wallNoise.
-*      8. Checks: a flood fill through the air from the sky; rooms it
-*         misses are counted (should be none).
+*      8. Checks: the cave is walked the way navigation will (floors with
+*         headroom, steps, slopes, drops). Steps 4-7 are redone, as a new
+*         layout, until every room can be walked to from outside and back,
+*         at most kAttempts times (else the best is kept, its cut-off rooms counted).
 *      9. Heightfield: the cells under the box take the mountain's top, so
 *         until the volume collides (a later step) the mountain is solid
 *         ground you can walk on and enemies path round.
@@ -50,6 +56,10 @@
 *    -v1.1-1.2   rock hill with tunnels at ground level and entrances
 *    -v2.0       a cave volume: mountain, rooms on two levels, worm tunnels,
 *                mouths, noisy walls (replaces the heightfield caves)
+*    -v2.1       walkable caves: the walk check replaces the air flood fill,
+*                with new layouts until it passes; tunnels join rooms at
+*                floor level, climb at most 20 degrees, keep rock between
+*                levels, and a second tunnel joins the levels
 **************************************************************************/
 using System.Collections.Generic;
 
@@ -77,20 +87,29 @@ namespace Crucible.@Scripts
         public float HeightRange;               // the ground's height difference inside the box before levelling
         public int Rooms, DeepRooms, Tunnels, Entrances;
         public float SteepestDegrees;           // the steepest stretch of any tunnel
-        public int UnreachableRooms;            // rooms no air path from outside reaches (should be 0)
+        public int UnreachableRooms;            // rooms you can't walk to from outside and back (should be 0)
+        public int Attempts;                    // layouts tried before one passed (or the best of kAttempts)
         public int Samples;                     // in the volume
     }
 
     public static class CaveGenerator
     {
         private const int kCandidates = 16;         // free spots compared; the flattest wins
-        private const float kMaxSlope = 30f;        // degrees: the steepest a tunnel may climb
+        private const float kMaxSlope = 20f;        // degrees: the steepest a tunnel may climb (well under the 35 walkable: the carve leaves bumps)
         private const float kDeepTop = -12f, kDeepBottom = -22f;   // metres from the base, deep rooms' centres
         private const float kUpperLow = 5f, kUpperHigh = 8f;       // metres from the base, ground-level rooms' centres
         private const float kRockOverRoom = 14f;    // metres of mountain over a ground-level room's centre
         private const float kRoomSpacing = 26f;     // metres apart across, unless on different levels
         private const float kLevelGap = 14f;        // metres apart in height that counts as a different level
         private const float kStep = 1.5f;           // metres between carves along a tunnel
+        private const int kAttempts = 8;            // layouts tried before keeping the best
+        private const float kRoomFloor = 0.35f;     // a room's floor, below its centre, in radii
+        private const float kEdge = 0.8f;           // where a tunnel leaves a room, from its centre, in radii
+        private const float kRockBetween = 4f;      // metres of rock kept between a tunnel and caves above or below it
+        private const int kWormTries = 6;           // paths drawn for a tunnel before carving the clearest
+
+        // The walk check's body: the Nav Surface's defaults (agentHeight, stepHeight, maxDropHeight).
+        private const float kAgentHeight = 1.6f, kStepHeight = 0.3f, kMaxDrop = 3f;
 
         // The box and its fields while one system is generated.
         private sealed class Work
@@ -101,6 +120,7 @@ namespace Crucible.@Scripts
             public float[] Top;                     // per column (x fastest, then z): the rock's top
             public int Col0, Row0, Cells;           // the box's first cell and size in cells
             public float MinX, MinZ, Size, CentreX, CentreZ, Base;
+            public float WalkSlope;                 // degrees: the generator's maxWalkableSlope
         }
 
         private sealed class Room { public float X, Y, Z, Radius; public bool Deep; }
@@ -130,24 +150,29 @@ namespace Crucible.@Scripts
             int countY = (int)System.Math.Ceiling((top - bottom) / s.voxelSize) + 1;
             w.Volume = new TerrainVolume(new Vector3(w.MinX, bottom, w.MinZ), s.voxelSize, countXZ, countY, countXZ);
             w.Air = new float[w.Volume.Density.Length];
-            for (int i = 0; i < w.Air.Length; i++) w.Air[i] = float.MaxValue;
+            w.WalkSlope = terrain.maxWalkableSlope;
 
-            List<Room> rooms = PlaceRooms(w, random, s);
-            result.Rooms = rooms.Count;
-            foreach (Room r in rooms) if (r.Deep) result.DeepRooms++;
-            foreach (Room r in rooms) CarveRoom(w, random, r);
-
-            float radius = TunnelRadius(s);
-            foreach (int[] link in Links(rooms))
+            // Rooms and tunnels until every room can be walked to from outside and back, at most
+            // kAttempts layouts (the random stream carries on, so each try is a new layout and the same
+            // seed always gives the same cave). The best try is kept if none passes.
+            float[] best = null;
+            CaveSystem bestStats = null;
+            for (int attempt = 1; attempt <= kAttempts; attempt++)
             {
-                float steepest = CarveWorm(w, random, Point(rooms[link[0]]), Point(rooms[link[1]]), radius);
-                result.SteepestDegrees = System.Math.Max(result.SteepestDegrees, steepest);
-                result.Tunnels++;
+                CaveSystem tried = Carve(w, random, s, seed);
+                tried.Attempts = attempt;
+                if (bestStats == null || tried.UnreachableRooms < bestStats.UnreachableRooms)
+                {
+                    bestStats = tried;
+                    best = (float[])w.Volume.Density.Clone();
+                }
+                if (tried.UnreachableRooms == 0) break;
             }
-            result.Entrances = CarveMouths(w, random, rooms, s, radius);
-
-            FillDensity(w, s, seed);
-            result.UnreachableRooms = CountUnreachable(w, rooms);
+            System.Array.Copy(best, w.Volume.Density, best.Length);
+            result.Rooms = bestStats.Rooms; result.DeepRooms = bestStats.DeepRooms;
+            result.Tunnels = bestStats.Tunnels; result.Entrances = bestStats.Entrances;
+            result.SteepestDegrees = bestStats.SteepestDegrees;
+            result.UnreachableRooms = bestStats.UnreachableRooms; result.Attempts = bestStats.Attempts;
             result.Samples = w.Volume.Density.Length;
 
             RaiseHeightfield(w, blend, terrain);
@@ -155,10 +180,40 @@ namespace Crucible.@Scripts
             return result;
         }
 
+        // One layout: rooms, tunnels and mouths carved into fresh rock, the density filled in and
+        // walked. Only the counts are set on what it returns.
+        private static CaveSystem Carve(Work w, SeededRandom random, CaveSettings s, int seed)
+        {
+            CaveSystem tried = new CaveSystem();
+            for (int i = 0; i < w.Air.Length; i++) w.Air[i] = float.MaxValue;
+
+            List<Room> rooms = PlaceRooms(w, random, s);
+            tried.Rooms = rooms.Count;
+            foreach (Room r in rooms) if (r.Deep) tried.DeepRooms++;
+            foreach (Room r in rooms) CarveRoom(w, random, r);
+
+            float radius = TunnelRadius(s);
+            foreach (int[] link in Links(rooms))
+            {
+                float steepest = CarveTunnel(w, random, rooms[link[0]], rooms[link[1]], radius);
+                tried.SteepestDegrees = System.Math.Max(tried.SteepestDegrees, steepest);
+                tried.Tunnels++;
+            }
+            tried.Entrances = CarveMouths(w, random, rooms, s, radius);
+
+            FillDensity(w, s, seed);
+            tried.UnreachableRooms = CountUnwalkable(w, rooms);
+            return tried;
+        }
+
         // A tunnel's carve radius: its floor sits 0.6 of the radius below the centre, so the height is 1.6 radii.
         private static float TunnelRadius(CaveSettings s) { return System.Math.Max(1f, s.tunnelHeight / 1.6f); }
 
         private static float[] Point(Room r) { return new float[] { r.X, r.Y, r.Z }; }
+
+        // A room's flat floor (CarveRoom), and the run a climb of `rise` metres needs at kMaxSlope.
+        private static float Floor(Room r) { return r.Y - r.Radius * kRoomFloor; }
+        private static float ClimbRun(float rise) { return rise / (float)System.Math.Tan(kMaxSlope * System.Math.PI / 180.0); }
 
         // ---------------------------------------------------------------- 1. place
 
@@ -309,7 +364,7 @@ namespace Crucible.@Scripts
             {
                 float ox = random.Range(-r.Radius * 0.6f, r.Radius * 0.6f), oz = random.Range(-r.Radius * 0.6f, r.Radius * 0.6f);
                 float across = r.Radius * random.Range(0.7f, 1f);
-                CarveEllipsoid(w, r.X + ox, r.Y, r.Z + oz, across, r.Radius * 0.55f, r.Radius * 0.35f);
+                CarveEllipsoid(w, r.X + ox, r.Y, r.Z + oz, across, r.Radius * 0.55f, r.Radius * kRoomFloor);
             }
         }
 
@@ -351,7 +406,9 @@ namespace Crucible.@Scripts
             System.Func<int, int, float> cost = (a, b) =>
             {
                 float dx = rooms[a].X - rooms[b].X, dz = rooms[a].Z - rooms[b].Z;
-                return (float)System.Math.Sqrt(dx * dx + dz * dz) + 3f * System.Math.Abs(rooms[a].Y - rooms[b].Y);
+                float flat = (float)System.Math.Sqrt(dx * dx + dz * dz), rise = System.Math.Abs(Floor(rooms[a]) - Floor(rooms[b]));
+                float shortBy = ClimbRun(rise) - (flat - kEdge * (rooms[a].Radius + rooms[b].Radius));
+                return flat + 3f * rise + 10f * System.Math.Max(0f, shortBy);
             };
             bool[] joined = new bool[n];
             joined[0] = true;
@@ -377,45 +434,116 @@ namespace Crucible.@Scripts
                     }
                 if (bestA >= 0) links.Add(new int[] { bestA, bestB });
             }
+
+            // A second way between the levels: the network often has only one tunnel between the
+            // upper and the deep rooms, and if it can't be walked the deep rooms are cut off.
+            System.Func<int[], bool> crosses = l => rooms[l[0]].Deep != rooms[l[1]].Deep;
+            int levelLinks = 0;
+            foreach (int[] l in links) if (crosses(l)) levelLinks++;
+            if (levelLinks == 1)
+            {
+                int bestA = -1, bestB = -1; float best = float.MaxValue;
+                for (int a = 0; a < n; a++)
+                    for (int b = a + 1; b < n; b++)
+                    {
+                        if (rooms[a].Deep == rooms[b].Deep) continue;
+                        bool taken = false;
+                        foreach (int[] l in links) if ((l[0] == a && l[1] == b) || (l[0] == b && l[1] == a) || (crosses(l) && (l[0] == a || l[1] == a || l[0] == b || l[1] == b))) { taken = true; break; }
+                        if (!taken && cost(a, b) < best) { best = cost(a, b); bestA = a; bestB = b; }
+                    }
+                if (bestA >= 0) links.Add(new int[] { bestA, bestB });
+            }
             return links;
+        }
+
+        // A tunnel between two rooms that walks: it leaves each room level with that room's floor, at
+        // its edge (towards the other room), and climbs only between the two edges - never inside a
+        // room, where it would end as a ledge above the floor.
+        private static float CarveTunnel(Work w, SeededRandom random, Room a, Room b, float radius)
+        {
+            float dx = b.X - a.X, dz = b.Z - a.Z, flat = (float)System.Math.Sqrt(dx * dx + dz * dz);
+            float ux = flat > 1e-3f ? dx / flat : 1f, uz = flat > 1e-3f ? dz / flat : 0f;
+            float ya = Floor(a) + radius * 0.6f, yb = Floor(b) + radius * 0.6f;   // centre heights: the floor 0.6 radii down
+            float ra = System.Math.Min(kEdge * a.Radius, flat * 0.5f), rb = System.Math.Min(kEdge * b.Radius, flat * 0.5f);
+            float[] edgeA = { a.X + ux * ra, ya, a.Z + uz * ra }, edgeB = { b.X - ux * rb, yb, b.Z - uz * rb };
+            CarveWorm(w, random, new float[] { a.X, ya, a.Z }, edgeA, radius);
+            CarveWorm(w, random, new float[] { b.X, yb, b.Z }, edgeB, radius);
+            return CarveWorm(w, random, edgeA, edgeB, radius, kWormTries, 6f);
         }
 
         // A winding tunnel from a to b: a sideways wave (and, when the climb is too steep for the
         // distance, a wide swing out) across the straight line; the climb spread evenly along the path's
-        // run. Carves every kStep metres. Returns the steepest stretch, in degrees.
-        private static float CarveWorm(Work w, SeededRandom random, float[] a, float[] b, float radius)
+        // run. Carves every kStep metres. With tries > 1, a path that would pass within kRockBetween of
+        // a cave already carved above or below it (it would break through that cave's floor or its own)
+        // is drawn again with a new wave, swinging the other way, up to tries times; the clearest is
+        // carved. The first and last `ends` metres are not checked (the rooms it joins). Returns the
+        // steepest stretch, in degrees.
+        private static float CarveWorm(Work w, SeededRandom random, float[] a, float[] b, float radius, int tries = 1, float ends = 0f)
         {
             float dx = b[0] - a[0], dz = b[2] - a[2];
             float flat = (float)System.Math.Sqrt(dx * dx + dz * dz), rise = System.Math.Abs(b[1] - a[1]);
             float sideX = flat > 1e-3f ? -dz / flat : 1f, sideZ = flat > 1e-3f ? dx / flat : 0f;
-            float need = rise / (float)System.Math.Tan(kMaxSlope * System.Math.PI / 180.0);   // run a walkable climb needs
-            float swing = flat >= need ? 0f : (float)System.Math.Sqrt(System.Math.Max(0f, need * need / 4f - flat * flat / 4f)) * 1.15f;
-            float phase = random.Range(0f, 6.28f), wave = random.Range(5f, 10f);
+            float swing = flat >= ClimbRun(rise) ? 0f : (float)System.Math.Sqrt(System.Math.Max(0f, ClimbRun(rise) * ClimbRun(rise) / 4f - flat * flat / 4f)) * 1.15f;
 
-            const int points = 200;
-            float[] px = new float[points], pz = new float[points], run = new float[points];
-            for (int i = 0; i < points; i++)
+            List<float[]> best = null;
+            int bestClash = int.MaxValue;
+            float steepest = 0f;
+            for (int attempt = 0; attempt < System.Math.Max(1, tries) && bestClash > 0; attempt++)
             {
-                float t = (float)i / (points - 1);
-                float off = ((float)System.Math.Sin(t * System.Math.PI * 2 + phase) * wave + swing * 2f) * (float)System.Math.Sin(t * System.Math.PI);
-                px[i] = a[0] + dx * t + sideX * off;
-                pz[i] = a[2] + dz * t + sideZ * off;
-                if (i > 0) run[i] = run[i - 1] + (float)System.Math.Sqrt((px[i] - px[i - 1]) * (px[i] - px[i - 1]) + (pz[i] - pz[i - 1]) * (pz[i] - pz[i - 1]));
-            }
-            float total = System.Math.Max(1e-3f, run[points - 1]);
-            float steepest = (float)(System.Math.Atan(rise / total) * 180.0 / System.Math.PI);   // even climb: the same everywhere
+                float phase = random.Range(0f, 6.28f), wave = random.Range(5f, 10f), side = attempt % 2 == 0 ? 1f : -1f;
+                const int points = 200;
+                float[] px = new float[points], pz = new float[points], run = new float[points];
+                for (int i = 0; i < points; i++)
+                {
+                    float t = (float)i / (points - 1);
+                    float off = ((float)System.Math.Sin(t * System.Math.PI * 2 + phase) * wave + swing * 2f * side) * (float)System.Math.Sin(t * System.Math.PI);
+                    px[i] = a[0] + dx * t + sideX * off;
+                    pz[i] = a[2] + dz * t + sideZ * off;
+                    if (i > 0) run[i] = run[i - 1] + (float)System.Math.Sqrt((px[i] - px[i - 1]) * (px[i] - px[i - 1]) + (pz[i] - pz[i - 1]) * (pz[i] - pz[i - 1]));
+                }
+                float total = System.Math.Max(1e-3f, run[points - 1]);
 
-            int seg = 0;
-            for (float d = 0f; d <= total; d += kStep)
-            {
-                while (seg < points - 2 && run[seg + 1] < d) seg++;
-                float span = System.Math.Max(1e-4f, run[seg + 1] - run[seg]);
-                float f = System.Math.Max(0f, System.Math.Min(1f, (d - run[seg]) / span));
-                float cx = px[seg] + (px[seg + 1] - px[seg]) * f, cz = pz[seg] + (pz[seg + 1] - pz[seg]) * f;
-                float cy = a[1] + (b[1] - a[1]) * (d / total);
-                CarveEllipsoid(w, cx, cy, cz, radius, radius, radius * 0.6f);
+                List<float[]> path = new List<float[]>();
+                int seg = 0, clash = 0;
+                for (float d = 0f; d <= total; d += kStep)
+                {
+                    while (seg < points - 2 && run[seg + 1] < d) seg++;
+                    float span = System.Math.Max(1e-4f, run[seg + 1] - run[seg]);
+                    float f = System.Math.Max(0f, System.Math.Min(1f, (d - run[seg]) / span));
+                    float cx = px[seg] + (px[seg + 1] - px[seg]) * f, cz = pz[seg] + (pz[seg + 1] - pz[seg]) * f;
+                    float cy = a[1] + (b[1] - a[1]) * (d / total);
+                    path.Add(new float[] { cx, cy, cz });
+                    if (tries > 1 && d >= ends && d <= total - ends && Clashes(w, cx, cy, cz, radius)) clash++;
+                }
+                if (clash < bestClash)
+                {
+                    bestClash = clash; best = path;
+                    steepest = (float)(System.Math.Atan(rise / total) * 180.0 / System.Math.PI);   // even climb: the same everywhere
+                }
             }
+            foreach (float[] c in best) CarveEllipsoid(w, c[0], c[1], c[2], radius, radius, radius * 0.6f);
             return steepest;
+        }
+
+        // Is there carved air within kRockBetween under this carve's floor or over its ceiling, across
+        // its width? (Its own earlier carves are level with it, so they don't count.)
+        private static bool Clashes(Work w, float cx, float cy, float cz, float radius)
+        {
+            TerrainVolume v = w.Volume;
+            float floor = cy - radius * 0.6f, ceiling = cy + radius;
+            for (int k = 0; k < 5; k++)
+            {
+                float qx = cx + (k == 1 ? radius : k == 2 ? -radius : 0f) * 0.7f, qz = cz + (k == 3 ? radius : k == 4 ? -radius : 0f) * 0.7f;
+                int x = (int)System.Math.Round((qx - v.Origin.X) / v.VoxelSize), z = (int)System.Math.Round((qz - v.Origin.Z) / v.VoxelSize);
+                if (x < 0 || z < 0 || x >= v.CountX || z >= v.CountZ) continue;
+                for (int y = 0; y < v.CountY; y++)
+                {
+                    float py = v.Origin.Y + y * v.VoxelSize;
+                    bool below = py < floor - 0.5f && py >= floor - kRockBetween, above = py > ceiling + 0.5f && py <= ceiling + kRockBetween;
+                    if ((below || above) && w.Air[v.Index(x, y, z)] < 0f) return true;
+                }
+            }
+            return false;
         }
 
         // ---------------------------------------------------------------- 6. mouths
@@ -449,7 +577,7 @@ namespace Crucible.@Scripts
                         break;
                     }
                 }
-                CarveWorm(w, random, Point(r), new float[] { ex, w.Base + radius * 0.6f, ez }, radius);
+                CarveWorm(w, random, new float[] { r.X, Floor(r) + radius * 0.6f, r.Z }, new float[] { ex, w.Base + radius * 0.6f, ez }, radius, kWormTries, r.Radius);
                 made++;
             }
             return made;
@@ -492,45 +620,114 @@ namespace Crucible.@Scripts
 
         // ---------------------------------------------------------------- 8. checks
 
-        // A flood fill through the air (six neighbours) from the top layer: a room is cut off when it
-        // reaches no sample within half the room's radius of its centre.
-        private static int CountUnreachable(Work w, List<Room> rooms)
+        // Walks the cave the way navigation will. Navigation's 2 m cells are centred between the
+        // samples, so the check looks there too: each column is the blend of the 4 sample columns
+        // around it. A floor is where a column goes from rock to air going up, with kAgentHeight of air
+        // over it, and no steeper than the walkable slope (the density's gradient there). From a floor,
+        // the next column's floor is walkable if it is within a step plus the walkable slope over the
+        // distance; lower by up to kMaxDrop is a drop, one way. Walking starts on the box's outer ring
+        // (the levelled ground the map joins). A room passes when a floor near its middle, at its
+        // floor's height, is reached from outside and can get back out.
+        private static int CountUnwalkable(Work w, List<Room> rooms)
         {
             TerrainVolume v = w.Volume;
-            bool[] seen = new bool[v.Density.Length];
-            Stack<int> open = new Stack<int>();
-            for (int z = 0; z < v.CountZ; z++)
-                for (int x = 0; x < v.CountX; x++)
+            int nx = v.CountX - 1, nz = v.CountZ - 1, ny = v.CountY;   // columns between the samples
+            float size = v.VoxelSize;
+            float minUp = (float)System.Math.Cos(w.WalkSlope * System.Math.PI / 180.0);
+            float slope = (float)System.Math.Tan(w.WalkSlope * System.Math.PI / 180.0);
+
+            // Floors, column by column.
+            int[] start = new int[nx * nz + 1];
+            List<float> height = new List<float>();
+            List<bool> open = new List<bool>();
+            float[] column = new float[ny], alongX = new float[ny], alongZ = new float[ny];
+            for (int z = 0; z < nz; z++)
+                for (int x = 0; x < nx; x++)
                 {
-                    int i = v.Index(x, v.CountY - 1, z);
-                    if (v.Density[i] < 0f) { seen[i] = true; open.Push(i); }
+                    start[z * nx + x] = height.Count;
+                    for (int y = 0; y < ny; y++)
+                    {
+                        float d00 = v.Density[v.Index(x, y, z)], d10 = v.Density[v.Index(x + 1, y, z)];
+                        float d01 = v.Density[v.Index(x, y, z + 1)], d11 = v.Density[v.Index(x + 1, y, z + 1)];
+                        column[y] = (d00 + d10 + d01 + d11) * 0.25f;
+                        alongX[y] = (d10 - d00 + d11 - d01) * 0.5f;
+                        alongZ[y] = (d01 - d00 + d11 - d10) * 0.5f;
+                    }
+                    for (int y = 0; y + 1 < ny; y++)
+                    {
+                        float a = column[y], b = column[y + 1];
+                        if (!(a > 0f && b <= 0f)) continue;
+                        float t = a / (a - b), floor = v.Origin.Y + (y + t) * size, ceiling = float.MaxValue;
+                        for (int up = y + 1; up + 1 < ny; up++)
+                        {
+                            float c = column[up], e = column[up + 1];
+                            if (c <= 0f && e > 0f) { ceiling = v.Origin.Y + (up + c / (c - e)) * size; break; }
+                        }
+                        if (ceiling - floor < kAgentHeight) continue;
+                        float gx = alongX[y] + (alongX[y + 1] - alongX[y]) * t, gz = alongZ[y] + (alongZ[y + 1] - alongZ[y]) * t, gy = b - a;
+                        float len = (float)System.Math.Sqrt(gx * gx + gy * gy + gz * gz);
+                        height.Add(floor);
+                        open.Add(len < 1e-6f || -gy / len >= minUp);
+                    }
                 }
-            int layer = v.CountX * v.CountZ;
-            while (open.Count > 0)
+            start[nx * nz] = height.Count;
+
+            // Links: each floor to the nearest floor in each neighbouring column it can step or drop to.
+            int nodes = height.Count;
+            int[] at = new int[nodes];   // each floor's column
+            for (int c = 0; c < nx * nz; c++) for (int i = start[c]; i < start[c + 1]; i++) at[i] = c;
+            List<int>[] next = new List<int>[nodes], back = new List<int>[nodes];
+            for (int i = 0; i < nodes; i++) { next[i] = new List<int>(); back[i] = new List<int>(); }
+            for (int i = 0; i < nodes; i++)
             {
-                int i = open.Pop();
-                int x = i % v.CountX, z = (i / v.CountX) % v.CountZ, y = i / layer;
-                for (int n = 0; n < 6; n++)
-                {
-                    int nx = x + (n == 0 ? -1 : n == 1 ? 1 : 0), ny = y + (n == 2 ? -1 : n == 3 ? 1 : 0), nz = z + (n == 4 ? -1 : n == 5 ? 1 : 0);
-                    if (nx < 0 || ny < 0 || nz < 0 || nx >= v.CountX || ny >= v.CountY || nz >= v.CountZ) continue;
-                    int j = v.Index(nx, ny, nz);
-                    if (seen[j] || v.Density[j] >= 0f) continue;
-                    seen[j] = true; open.Push(j);
-                }
+                if (!open[i]) continue;
+                int x = at[i] % nx, z = at[i] / nx;
+                for (int dz = -1; dz <= 1; dz++)
+                    for (int dx = -1; dx <= 1; dx++)
+                    {
+                        if ((dx == 0 && dz == 0) || x + dx < 0 || z + dz < 0 || x + dx >= nx || z + dz >= nz) continue;
+                        float reach = kStepHeight + slope * size * (dx != 0 && dz != 0 ? 1.4142f : 1f);
+                        int c = (z + dz) * nx + x + dx, best = -1;
+                        float bestGap = float.MaxValue;
+                        for (int j = start[c]; j < start[c + 1]; j++)
+                        {
+                            if (!open[j]) continue;
+                            float rise = height[j] - height[i];
+                            bool ok = System.Math.Abs(rise) <= reach || (rise < 0f && -rise <= kMaxDrop);
+                            if (ok && System.Math.Abs(rise) < bestGap) { bestGap = System.Math.Abs(rise); best = j; }
+                        }
+                        if (best >= 0) { next[i].Add(best); back[best].Add(i); }
+                    }
             }
+
+            // From the outer ring in, and from the outer ring backwards (who can get out).
+            System.Func<List<int>[], bool[]> flood = links =>
+            {
+                bool[] seen = new bool[nodes];
+                Stack<int> todo = new Stack<int>();
+                for (int z = 0; z < nz; z++)
+                    for (int x = 0; x < nx; x++)
+                    {
+                        if (x != 0 && z != 0 && x != nx - 1 && z != nz - 1) continue;
+                        for (int i = start[z * nx + x]; i < start[z * nx + x + 1]; i++) if (open[i]) { seen[i] = true; todo.Push(i); }
+                    }
+                while (todo.Count > 0)
+                    foreach (int j in links[todo.Pop()]) if (!seen[j]) { seen[j] = true; todo.Push(j); }
+                return seen;
+            };
+            bool[] inside = flood(next), outside = flood(back);
+
             int cut = 0;
             foreach (Room r in rooms)
             {
-                int cx = (int)System.Math.Round((r.X - v.Origin.X) / v.VoxelSize);
-                int cy = (int)System.Math.Round((r.Y - v.Origin.Y) / v.VoxelSize);
-                int cz = (int)System.Math.Round((r.Z - v.Origin.Z) / v.VoxelSize);
-                int reach = System.Math.Max(1, (int)(r.Radius * 0.5f / v.VoxelSize));
+                float floor = r.Y - r.Radius * 0.35f, near = r.Radius * 0.5f;
                 bool reached = false;
-                for (int y = System.Math.Max(0, cy - reach); y <= System.Math.Min(v.CountY - 1, cy + reach) && !reached; y++)
-                    for (int z = System.Math.Max(0, cz - reach); z <= System.Math.Min(v.CountZ - 1, cz + reach) && !reached; z++)
-                        for (int x = System.Math.Max(0, cx - reach); x <= System.Math.Min(v.CountX - 1, cx + reach) && !reached; x++)
-                            reached = seen[v.Index(x, y, z)];
+                for (int i = 0; i < nodes && !reached; i++)
+                {
+                    if (!inside[i] || !outside[i] || System.Math.Abs(height[i] - floor) > 2.5f) continue;
+                    float px = v.Origin.X + (at[i] % nx + 0.5f) * size - r.X, pz = v.Origin.Z + (at[i] / nx + 0.5f) * size - r.Z;
+                    reached = px * px + pz * pz <= near * near;
+                }
                 if (!reached) cut++;
             }
             return cut;
