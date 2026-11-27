@@ -124,6 +124,12 @@ namespace Crucible.Scripts
         public Entity leftArrow;             // Custom, Action Id "TorsoPrev" (step 4)
         public Entity rightArrow;            // Custom, Action Id "TorsoNext" (step 4)
         public Entity confirmButton;         // Custom, Action Id "Confirm"   (step 4)
+
+        // ---- Options ----
+        // The options menu's own canvas. Hidden at start; the Options button (Custom, Action Id
+        // "OpenOptions") shows it, its Done button (Custom, Action Id "CloseOptions") saves the
+        // settings and hides it again.
+        public Entity optionsCanvas;         // "OptionsCanvas" (found by name if left empty)
         public float buttonFadeSeconds = 0.3f;
         public float startDelay = 0.9f;      // after Start, before the pan: the logo's explode (0.83 s) plays out
         // Over the quest table Back moves to the top-left (Hugo: at its usual spot it covers the quest
@@ -167,6 +173,11 @@ namespace Crucible.Scripts
 
         public override void OnCreate()
         {
+            // The options menu starts hidden, whatever the scene saved.
+            if (optionsCanvas == null) optionsCanvas = Entity.Find("OptionsCanvas");
+            if (optionsCanvas == null) Log.Warning("MainMenuFlow: optionsCanvas is not set (no \"OptionsCanvas\" found).");
+            SetOptionsOpen(false);
+
             intro = Entity.GetComponent<MainMenuIntro>();
             if (intro == null) Log.Warning("MainMenuFlow: no MainMenuIntro on this entity.");
             torsos = Entity.GetComponent<TorsoSelector>();
@@ -243,6 +254,22 @@ namespace Crucible.Scripts
             if (view == View.Tables) UpdateTables();
         }
 
+        /*********************************************************************
+         \brief  Shows (true) or hides (false) the options menu: OptionsCanvas'
+                 UICanvas on or off. A hidden canvas is not drawn and ignores
+                 the mouse.
+         *********************************************************************/
+        public void SetOptionsOpen(bool open)
+        {
+            UICanvas canvas = optionsCanvas != null ? optionsCanvas.GetComponent<UICanvas>() : null;
+            if (canvas == null)
+            {
+                if (optionsCanvas != null) Log.Warning("MainMenuFlow: '" + optionsCanvas.Name + "' has no UICanvas.");
+                return;
+            }
+            canvas.Enabled = open;
+        }
+
         // Every UIButton click reaches every script (EntityScript): this one sounds them all, once.
         public override void OnButtonClicked(Entity button)
         {
@@ -251,6 +278,15 @@ namespace Crucible.Scripts
 
         public override void OnUIAction(string actionId)
         {
+            // The options menu opens and closes whatever the camera is doing.
+            if (actionId == "OpenOptions") { SetOptionsOpen(true); return; }
+            if (actionId == "CloseOptions")
+            {
+                if (!InputSettings.Save()) Log.Warning("MainMenuFlow: could not save settings.");
+                SetOptionsOpen(false);
+                return;
+            }
+
             if (running.Count > 0) return;   // mid-move: ignore
             if (actionId == "Start" && view == View.Title && (intro == null || intro.IsFinished)) StartToTables();
             else if (actionId == "Back") Back();
