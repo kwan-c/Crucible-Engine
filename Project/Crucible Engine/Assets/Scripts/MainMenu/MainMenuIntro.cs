@@ -12,7 +12,10 @@
 *    Goes on the scene's "manager" entity. In order:
 *      1. Waking    the torso straightens (torsoSeconds); the head starts
 *                   headDelay later and lifts (headSeconds), so the body
-*                   wakes first and then looks up.
+*                   wakes first and then looks up. As the head starts to
+*                   lift, the head light (MainMenuHeadLight's Sprite and
+*                   Sparks) fades its alphaStart from 0 up to the
+*                   Inspector value (headLightFadeSeconds).
 *      2. Beat      a short pause once the golem is looking at the camera.
 *      3. Slam      the logo is switched on and its Animator gets PlayStart
 *                   (Logo_StartIdle -> Logo_Start -> Logo_Idle, see
@@ -56,6 +59,10 @@ namespace Crucible.Scripts
         public Entity quitButton;
         public float buttonFadeSeconds = 0.6f;
 
+        // ---- The head light (the glow on the golem's head) ----
+        public Entity headLight;                 // the "MainMenuHeadLight" entity (found by name if left empty)
+        public float headLightFadeSeconds = 2.5f;  // 0% -> 100% of each emitter's Inspector alphaStart
+
         /// <summary>True once the buttons are in and clickable (also after a skip, one frame later).</summary>
         public bool IsFinished { get; private set; }
 
@@ -80,6 +87,15 @@ namespace Crucible.Scripts
         }
         private readonly List<ButtonParts> buttons = new List<ButtonParts>();
 
+        // One head light emitter (Sprite, Sparks), with the alphaStart the Inspector gave it.
+        private struct GlowParts
+        {
+            public ParticleEmitter emitter;
+            public float alphaStart;
+        }
+        private readonly List<GlowParts> headLightGlows = new List<GlowParts>();
+        private MenuTween headLightFade;     // null until the head starts to lift
+
         public override void OnCreate()
         {
             if (torso == null) Log.Warning("MainMenuIntro: torso is not set.");
@@ -98,6 +114,12 @@ namespace Crucible.Scripts
             AddButton(startButton);
             AddButton(optionsButton);
             AddButton(quitButton);
+
+            // The head light starts dark and powers up with the head (see StartHeadLightFade).
+            if (headLight == null) headLight = Entity.Find("MainMenuHeadLight");
+            if (headLight == null) Log.Warning("MainMenuIntro: headLight is not set (no \"MainMenuHeadLight\" found).");
+            AddHeadLightGlow("Sprite");
+            AddHeadLightGlow("Sparks");
 
             if (torso != null) torsoTween = MenuTween.RotateLocal(torso.Transform, Quaternion.Euler(torsoUpright, 0f, 0f), torsoSeconds);
             Enter(Phase.Waking);
@@ -122,12 +144,19 @@ namespace Crucible.Scripts
             }
 
             phaseTime += deltaTime;
+
+            // The head light fade runs on its own clock, so it may outlast the Waking phase.
+            if (headLightFade != null) headLightFade.Update(deltaTime);
+
             switch (phase)
             {
                 case Phase.Waking:
                     if (torsoTween != null) torsoTween.Update(deltaTime);
                     if (headTween == null && head != null && phaseTime >= headDelay)
                         headTween = MenuTween.RotateLocal(head.Transform, Quaternion.Euler(headUpright, 0f, 0f), headSeconds);
+                    // The head light powers up as the head starts to lift (or at once with no head).
+                    if (headLightFade == null && (head == null || phaseTime >= headDelay))
+                        StartHeadLightFade();
                     if (headTween != null) headTween.Update(deltaTime);
                     // Done when both have arrived (a missing torso or head counts as arrived).
                     bool torsoDone = torsoTween == null || torsoTween.Done;
@@ -180,6 +209,10 @@ namespace Crucible.Scripts
             // The head may not have started yet (still in headDelay): put it there directly.
             if (head != null) head.Transform.Rotation = Quaternion.Euler(headUpright, 0f, 0f);
 
+            // Head light straight to full (it may not have started fading yet).
+            if (headLightFade == null) StartHeadLightFade();
+            headLightFade.Finish();
+
             if (logo != null)
             {
                 logo.SetEnabled<MeshRenderer>(true);
@@ -207,6 +240,37 @@ namespace Crucible.Scripts
             if (parts.image != null) { parts.imageAlpha = parts.image.Color.A; SetAlpha(parts.image, 0f); }
             if (parts.text != null)  { parts.textAlpha = parts.text.Color.A;  SetAlpha(parts.text, 0f); }
             buttons.Add(parts);
+        }
+
+        // Remembers one head light emitter's Inspector alphaStart and sets it to 0 (dark).
+        private void AddHeadLightGlow(string childName)
+        {
+            if (headLight == null) return;
+            Entity child = headLight.FindChild(childName);
+            ParticleEmitter emitter = child != null ? child.GetComponent<ParticleEmitter>() : null;
+            if (emitter == null) { Log.Warning("MainMenuIntro: no \"" + childName + "\" ParticleEmitter under the head light."); return; }
+            GlowParts glow = new GlowParts();
+            glow.emitter = emitter;
+            glow.alphaStart = emitter.StartColor.A;   // the alphaStart typed in the Inspector
+            SetAlphaStart(emitter, 0f);
+            headLightGlows.Add(glow);
+        }
+
+        /*********************************************************************
+         \brief  Fades the head light's Sprite and Sparks alphaStart from 0%
+                 to 100% of the value each had in the Inspector, over
+                 headLightFadeSeconds.
+         *********************************************************************/
+        private void StartHeadLightFade()
+        {
+            headLightFade = MenuTween.Value(0f, 1f, headLightFadeSeconds, SetHeadLightLevel);
+        }
+
+        // Sets every head light emitter to `level` (0..1) of its Inspector alphaStart.
+        private void SetHeadLightLevel(float level)
+        {
+            foreach (GlowParts glow in headLightGlows)
+                SetAlphaStart(glow.emitter, glow.alphaStart * level);
         }
 
         // Switches the logo on and starts its slam.
@@ -252,6 +316,7 @@ namespace Crucible.Scripts
 
         private static void SetAlpha(UIImage image, float alpha) { Color c = image.Color; c.A = alpha; image.Color = c; }
         private static void SetAlpha(UIText text, float alpha)   { Color c = text.Color;  c.A = alpha; text.Color = c; }
+        private static void SetAlphaStart(ParticleEmitter emitter, float alpha) { Color c = emitter.StartColor; c.A = alpha; emitter.StartColor = c; }
 
     }   // MAINMENUINTRO CLASS
 

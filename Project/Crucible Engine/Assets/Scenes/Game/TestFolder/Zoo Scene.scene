@@ -90,13 +90,107 @@
             }
         },
         {
-            "id": "2978D8DEF49C0001",
+            "id": "20E938E528CF4009",
+            "parent": "8B6EC8E4D2DD4007",
+            "siblingIndex": 0,
             "components": {
                 "Transform": {
                     "positions": {
                         "x": 0.0,
                         "y": 0.0,
                         "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "ParticleEmitter": {
+                    "playing": true,
+                    "loop": true,
+                    "duration": 2.0,
+                    "rate": 20.0,
+                    "burstCount": 0,
+                    "maxParticles": 500,
+                    "shape": "Point",
+                    "shapeRadius": 0.25,
+                    "boxExtents": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5
+                    },
+                    "spreadDeg": 25.0,
+                    "coneAngleDeg": 25.0,
+                    "coneLength": 1.0,
+                    "worldSpace": true,
+                    "lifetimeMin": 1.0,
+                    "lifetimeMax": 5.0,
+                    "speedMin": 0.0,
+                    "speedMax": 0.05000000074505806,
+                    "sizeMin": 2.0,
+                    "sizeMax": 3.0,
+                    "endSizeScale": 1.0,
+                    "gravityScale": 0.0,
+                    "drag": 0.0,
+                    "spinDeg": 0.0,
+                    "stretch": 0.0,
+                    "colourStart": {
+                        "x": 0.0,
+                        "y": 1.0,
+                        "z": 0.9607843160629272
+                    },
+                    "colourEnd": {
+                        "x": 0.0,
+                        "y": 1.0,
+                        "z": 0.9607843160629272
+                    },
+                    "alphaStart": 0.10000000149011612,
+                    "alphaEnd": 0.0,
+                    "brightness": 1.0,
+                    "blend": "Additive",
+                    "textureAsset": 0,
+                    "flipbookCols": 1,
+                    "flipbookRows": 1,
+                    "emitLight": true,
+                    "lightColour": {
+                        "x": 0.25,
+                        "y": 1.0,
+                        "z": 0.9700000286102295
+                    },
+                    "lightIntensity": 8.0,
+                    "lightRange": 6.0,
+                    "seed": 1
+                },
+                "EntityName": {
+                    "name": "Sprite"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 65646226465505295,
+                    "fileId": 3524410740286046221,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
+            "id": "2978D8DEF49C0001",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": -0.029748789966106415,
+                        "y": -2.3283064365386963e-10,
+                        "z": 0.015353675931692123
                     },
                     "rotation": {
                         "x": 0.0,
@@ -225,51 +319,6 @@
                 },
                 "EntityName": {
                     "name": "Cannon_muzzleFrontFlash"
-                },
-                "EntityTag": {
-                    "tag": "Untagged"
-                }
-            }
-        },
-        {
-            "id": "4B6EC8E4D2DD4009",
-            "parent": "8B6EC8E4D2DD4007",
-            "siblingIndex": 0,
-            "components": {
-                "Transform": {
-                    "positions": {
-                        "x": 0.0,
-                        "y": 0.0004189014434814453,
-                        "z": 0.0
-                    },
-                    "rotation": {
-                        "x": 0.0,
-                        "y": 0.0,
-                        "z": 0.0,
-                        "w": 1.0
-                    },
-                    "scale": {
-                        "x": 1.0,
-                        "y": 1.0,
-                        "z": 1.0
-                    }
-                },
-                "Light": {
-                    "type": "Point",
-                    "colour": {
-                        "x": 0.0,
-                        "y": 0.7733333110809326,
-                        "z": 1.0
-                    },
-                    "intensity": 100.0,
-                    "range": 10.0,
-                    "innerConeDeg": 20.0,
-                    "outerConeDeg": 30.0,
-                    "enabled": true,
-                    "castShadows": true
-                },
-                "EntityName": {
-                    "name": "Spot Light"
                 },
                 "EntityTag": {
                     "tag": "Untagged"
@@ -14382,7 +14431,7 @@
                 "Transform": {
                     "positions": {
                         "x": 0.0,
-                        "y": 1.1666722297668457,
+                        "y": 0.9068299531936646,
                         "z": -3.4980149269104004
                     },
                     "rotation": {
@@ -14399,6 +14448,107 @@
                 },
                 "EntityName": {
                     "name": "MainMenuHeadLight"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 65646226465505295,
+                    "fileId": 16783008043264786443,
+                    "isRoot": true,
+                    "prefabHash": 16593046862722263973,
+                    "overrides": []
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
+            "id": "B8E938E52BDE0011",
+            "parent": "8B6EC8E4D2DD4007",
+            "siblingIndex": 1,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": -1.493144807795943e-8,
+                        "y": -0.3415922224521637,
+                        "z": -0.9398482441902161,
+                        "w": 4.108205686748079e-8
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "ParticleEmitter": {
+                    "playing": true,
+                    "loop": true,
+                    "duration": 2.0,
+                    "rate": 10.0,
+                    "burstCount": 0,
+                    "maxParticles": 500,
+                    "shape": "Cone",
+                    "shapeRadius": 0.44999998807907104,
+                    "boxExtents": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5
+                    },
+                    "spreadDeg": 25.0,
+                    "coneAngleDeg": 25.0,
+                    "coneLength": 1.0,
+                    "worldSpace": true,
+                    "lifetimeMin": 1.5,
+                    "lifetimeMax": 2.0,
+                    "speedMin": 0.4000000059604645,
+                    "speedMax": 0.5,
+                    "sizeMin": 0.10000000149011612,
+                    "sizeMax": 0.20000000298023224,
+                    "endSizeScale": 1.0,
+                    "gravityScale": 0.0,
+                    "drag": 0.0,
+                    "spinDeg": 0.0,
+                    "stretch": 0.0,
+                    "colourStart": {
+                        "x": 0.5288888812065125,
+                        "y": 0.9685927629470825,
+                        "z": 1.0
+                    },
+                    "colourEnd": {
+                        "x": 0.529411792755127,
+                        "y": 0.9686274528503418,
+                        "z": 1.0
+                    },
+                    "alphaStart": 1.0,
+                    "alphaEnd": 0.0,
+                    "brightness": 1.0,
+                    "blend": "Additive",
+                    "textureAsset": 0,
+                    "flipbookCols": 1,
+                    "flipbookRows": 1,
+                    "emitLight": false,
+                    "lightColour": {
+                        "x": 1.0,
+                        "y": 0.6000000238418579,
+                        "z": 0.25
+                    },
+                    "lightIntensity": 8.0,
+                    "lightRange": 6.0,
+                    "seed": 1
+                },
+                "EntityName": {
+                    "name": "Sparks"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 65646226465505295,
+                    "fileId": 6152612966620528641,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
                 },
                 "EntityTag": {
                     "tag": "Untagged"
@@ -14438,7 +14588,7 @@
                     "boxExtents": {
                         "x": 10.0,
                         "y": 0.5,
-                        "z": 10.699999809265137
+                        "z": 3.549999952316284
                     },
                     "spreadDeg": 25.0,
                     "coneAngleDeg": 1.24399995803833,
@@ -14457,8 +14607,8 @@
                     "stretch": 0.10000000149011612,
                     "colourStart": {
                         "x": 1.0,
-                        "y": 0.34672588109970093,
-                        "z": 0.07555556297302246
+                        "y": 0.6105481386184692,
+                        "z": 0.448888897895813
                     },
                     "colourEnd": {
                         "x": 1.0,
@@ -14489,7 +14639,7 @@
                     "prefabAsset": 6011963437689602053,
                     "fileId": 823816666958774275,
                     "isRoot": true,
-                    "prefabHash": 2003027627773013574,
+                    "prefabHash": 1223084815582001687,
                     "overrides": []
                 },
                 "EntityTag": {
