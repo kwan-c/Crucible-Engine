@@ -3,6 +3,120 @@
     "name": "Capture",
     "entities": [
         {
+            "id": "27E468E52F2CC00B",
+            "parent": "3FE468E52F2CC003",
+            "siblingIndex": 1,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Detail"
+                },
+                "UIRect": {
+                    "anchorMin": {
+                        "x": 0.5,
+                        "y": 0.0
+                    },
+                    "anchorMax": {
+                        "x": 0.5,
+                        "y": 0.0
+                    },
+                    "pivot": {
+                        "x": 0.5,
+                        "y": 0.0
+                    },
+                    "position": {
+                        "x": 0.0,
+                        "y": 58.0
+                    },
+                    "size": {
+                        "x": 610.0,
+                        "y": 32.0
+                    },
+                    "rotation": 0.0,
+                    "raycastTarget": false
+                },
+                "UIText": {
+                    "text": "Get inside the area",
+                    "colour": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0,
+                        "w": 1.0
+                    },
+                    "fontAsset": 0,
+                    "fontSize": 24.0,
+                    "horizontalAlign": "Center",
+                    "verticalAlign": "Middle",
+                    "wrap": false,
+                    "overflow": "Overflow",
+                    "lineSpacing": 1.0,
+                    "characterSpacing": 0.0,
+                    "richText": false,
+                    "bold": false,
+                    "underline": false,
+                    "bestFit": false,
+                    "minFontSize": 10.0,
+                    "maxFontSize": 40.0,
+                    "outline": false,
+                    "outlineColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "outlineWidth": 2.0,
+                    "glow": false,
+                    "glowColour": {
+                        "x": 1.0,
+                        "y": 0.8500000238418579,
+                        "z": 0.4000000059604645,
+                        "w": 0.800000011920929
+                    },
+                    "glowWidth": 3.0,
+                    "glowSoftness": 0.5,
+                    "shadow": true,
+                    "shadowColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.6000000238418579
+                    },
+                    "shadowOffset": {
+                        "x": 2.0,
+                        "y": 2.0
+                    },
+                    "shadowSoftness": 0.0
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 13899294224571155983,
+                    "fileId": 6288714585502274029,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
             "id": "3E8540DC9CCE8007",
             "parent": "E68540DC9CCE8005",
             "siblingIndex": 0,
@@ -35,6 +149,77 @@
                 },
                 "EntityName": {
                     "name": "Camera Pivot"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
+            "id": "3FE468E52F2CC003",
+            "parent": "87E468E52F2CC001",
+            "siblingIndex": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Quest Box"
+                },
+                "UIRect": {
+                    "anchorMin": {
+                        "x": 0.5,
+                        "y": 0.0
+                    },
+                    "anchorMax": {
+                        "x": 0.5,
+                        "y": 0.0
+                    },
+                    "pivot": {
+                        "x": 0.5,
+                        "y": 0.0
+                    },
+                    "position": {
+                        "x": 0.0,
+                        "y": 24.0
+                    },
+                    "size": {
+                        "x": 640.0,
+                        "y": 124.0
+                    },
+                    "rotation": 0.0,
+                    "raycastTarget": false
+                },
+                "UIImage": {
+                    "colour": {
+                        "x": 0.05000000074505806,
+                        "y": 0.05000000074505806,
+                        "z": 0.07000000029802322,
+                        "w": 0.550000011920929
+                    },
+                    "textureAsset": 0
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 13899294224571155983,
+                    "fileId": 10680058475102795109,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
                 },
                 "EntityTag": {
                     "tag": "Untagged"
@@ -228,8 +413,164 @@
                                     "componentType": ""
                                 }
                             ]
+                        },
+                        {
+                            "enabled": true,
+                            "assembly": "Managed/Crucible.Scripts.dll",
+                            "namespace": "Crucible.Scripts",
+                            "class": "MissionController",
+                            "fields": []
+                        },
+                        {
+                            "enabled": true,
+                            "assembly": "Managed/Crucible.Scripts.dll",
+                            "namespace": "Crucible.Scripts",
+                            "class": "MissionZoneVisuals",
+                            "fields": [
+                                {
+                                    "declaringType": "Crucible.Scripts.MissionZoneVisuals",
+                                    "name": "outlineSegment",
+                                    "type": "Prefab",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 4020784613891040805,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.MissionZoneVisuals",
+                                    "name": "waitingMaterial",
+                                    "type": "Material",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 2959536780768958419,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.MissionZoneVisuals",
+                                    "name": "holdingMaterial",
+                                    "type": "Material",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 12773079387368678415,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.MissionZoneVisuals",
+                                    "name": "failedMaterial",
+                                    "type": "Material",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 987701032083778763,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.MissionZoneVisuals",
+                                    "name": "completeMaterial",
+                                    "type": "Material",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 18201966989712866309,
+                                    "componentType": ""
+                                }
+                            ]
                         }
                     ]
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
+            "id": "7FE468E52F2CC007",
+            "parent": "EFE468E52F2CC005",
+            "siblingIndex": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Bar Fill"
+                },
+                "UIRect": {
+                    "anchorMin": {
+                        "x": 0.0,
+                        "y": 0.5
+                    },
+                    "anchorMax": {
+                        "x": 0.0,
+                        "y": 0.5
+                    },
+                    "pivot": {
+                        "x": 0.0,
+                        "y": 0.5
+                    },
+                    "position": {
+                        "x": 0.0,
+                        "y": 0.0
+                    },
+                    "size": {
+                        "x": 0.0,
+                        "y": 10.0
+                    },
+                    "rotation": 0.0,
+                    "raycastTarget": false
+                },
+                "UIImage": {
+                    "colour": {
+                        "x": 1.0,
+                        "y": 0.8500000238418579,
+                        "z": 0.20000000298023224,
+                        "w": 1.0
+                    },
+                    "textureAsset": 0
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 13899294224571155983,
+                    "fileId": 12167838699299008959,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
                 },
                 "EntityTag": {
                     "tag": "Untagged"
@@ -268,6 +609,92 @@
                 },
                 "EntityName": {
                     "name": "Player Camera"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
+            "id": "87E468E52F2CC001",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Mission HUD"
+                },
+                "UICanvas": {
+                    "enabled": true,
+                    "renderMode": "ScreenSpace",
+                    "referenceResolution": {
+                        "x": 1920.0,
+                        "y": 1080.0
+                    },
+                    "toggleWithEscape": false,
+                    "showsCursor": false,
+                    "scaleWithScreenSize": true,
+                    "sortOrder": 5,
+                    "pixelsPerUnit": 100.0,
+                    "pivot": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "billboard": "Off",
+                    "alwaysOnTop": false,
+                    "doubleSided": true,
+                    "intensity": 1.0,
+                    "fade": false,
+                    "fadeStart": 20.0,
+                    "fadeEnd": 30.0
+                },
+                "ScriptComponent": {
+                    "scripts": [
+                        {
+                            "enabled": true,
+                            "assembly": "Managed/Crucible.Scripts.dll",
+                            "namespace": "Crucible.Scripts",
+                            "class": "MissionHud",
+                            "fields": [
+                                {
+                                    "declaringType": "Crucible.Scripts.MissionHud",
+                                    "name": "controllerName",
+                                    "type": "String",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "Sub Level Generator",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                }
+                            ]
+                        }
+                    ]
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 13899294224571155983,
+                    "fileId": 8212707074700077019,
+                    "isRoot": true,
+                    "prefabHash": 444887650615227403,
+                    "overrides": []
                 },
                 "EntityTag": {
                     "tag": "Untagged"
@@ -357,6 +784,120 @@
                         "y": 0.27000001072883606,
                         "z": 0.18000000715255737
                     }
+                }
+            }
+        },
+        {
+            "id": "B7E468E52F2CC009",
+            "parent": "3FE468E52F2CC003",
+            "siblingIndex": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Title"
+                },
+                "UIRect": {
+                    "anchorMin": {
+                        "x": 0.5,
+                        "y": 0.0
+                    },
+                    "anchorMax": {
+                        "x": 0.5,
+                        "y": 0.0
+                    },
+                    "pivot": {
+                        "x": 0.5,
+                        "y": 0.0
+                    },
+                    "position": {
+                        "x": 0.0,
+                        "y": 12.0
+                    },
+                    "size": {
+                        "x": 610.0,
+                        "y": 42.0
+                    },
+                    "rotation": 0.0,
+                    "raycastTarget": false
+                },
+                "UIText": {
+                    "text": "Capture the 1st area  (0/3)",
+                    "colour": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0,
+                        "w": 1.0
+                    },
+                    "fontAsset": 4682803387673313293,
+                    "fontSize": 32.0,
+                    "horizontalAlign": "Center",
+                    "verticalAlign": "Middle",
+                    "wrap": false,
+                    "overflow": "Overflow",
+                    "lineSpacing": 1.0,
+                    "characterSpacing": 0.0,
+                    "richText": false,
+                    "bold": true,
+                    "underline": false,
+                    "bestFit": false,
+                    "minFontSize": 10.0,
+                    "maxFontSize": 40.0,
+                    "outline": false,
+                    "outlineColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "outlineWidth": 2.0,
+                    "glow": false,
+                    "glowColour": {
+                        "x": 1.0,
+                        "y": 0.8500000238418579,
+                        "z": 0.4000000059604645,
+                        "w": 0.800000011920929
+                    },
+                    "glowWidth": 3.0,
+                    "glowSoftness": 0.5,
+                    "shadow": true,
+                    "shadowColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.6000000238418579
+                    },
+                    "shadowOffset": {
+                        "x": 2.0,
+                        "y": 2.0
+                    },
+                    "shadowSoftness": 0.0
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 13899294224571155983,
+                    "fileId": 1728936259252007197,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -556,6 +1097,77 @@
                 },
                 "EntityName": {
                     "name": "Player"
+                },
+                "EntityTag": {
+                    "tag": "Player"
+                }
+            }
+        },
+        {
+            "id": "EFE468E52F2CC005",
+            "parent": "3FE468E52F2CC003",
+            "siblingIndex": 2,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Bar Back"
+                },
+                "UIRect": {
+                    "anchorMin": {
+                        "x": 0.5,
+                        "y": 0.0
+                    },
+                    "anchorMax": {
+                        "x": 0.5,
+                        "y": 0.0
+                    },
+                    "pivot": {
+                        "x": 0.5,
+                        "y": 0.0
+                    },
+                    "position": {
+                        "x": 0.0,
+                        "y": 100.0
+                    },
+                    "size": {
+                        "x": 560.0,
+                        "y": 10.0
+                    },
+                    "rotation": 0.0,
+                    "raycastTarget": false
+                },
+                "UIImage": {
+                    "colour": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0,
+                        "w": 0.18000000715255737
+                    },
+                    "textureAsset": 0
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 13899294224571155983,
+                    "fileId": 2927938733113849975,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
                 },
                 "EntityTag": {
                     "tag": "Untagged"

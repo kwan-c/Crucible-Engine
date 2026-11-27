@@ -3,7 +3,7 @@
 * \author:       Jean David Vidal Cruzado
 * \par:          Email: jeandavidvidal.c@digipen.edu
 * \date          10 November 2026
-* \version       2.4
+* \version       2.5
 * \brief         Generates a sub-level from a seed: the terrain and, for a
 *                mission level, its chunks. Roads and decor are later port
 *                steps.
@@ -80,6 +80,8 @@
 *    -v2.4       Chunk interiors (ChunkInterior) after the roads; chunk
 *                Setup and outposts (ChunkOutpost + OutpostPlanner) once
 *                the chunk's scripts are attached, then the nav re-bake
+*    -v2.5       Preset, SpawnedChunks, Generation and ChunksReady for the
+*                MissionController
 **************************************************************************/
 using System.Collections.Generic;
 
@@ -146,6 +148,16 @@ namespace Crucible.@Scripts
         private List<Road> roads = new List<Road>();                               // this map's roads (entrances for interiors)
         private readonly List<PendingChunk> pending = new List<PendingChunk>();    // spawned chunks waiting for their scripts
         private int outpostPieces;
+        private bool chunksSpawned;
+
+        /// <summary>The mission preset in use (null: terrain only).</summary>
+        public MissionPreset Preset { get { return preset; } }
+        /// <summary>The chunk entities spawned in Play (ChunkDefinition on each root).</summary>
+        public IList<Entity> SpawnedChunks { get { return chunks; } }
+        /// <summary>Goes up every time the chunks are spawned again (Play start, Generate in Play).</summary>
+        public int Generation { get; private set; }
+        /// <summary>Play: the chunks are spawned and set up (Setup and outposts done).</summary>
+        public bool ChunksReady { get { return chunksSpawned && pending.Count == 0; } }
         private const int kScriptWaitFrames = 30;                                  // frames to wait for a chunk's scripts
 
         // A chunk just spawned: its prefab's scripts are attached a frame later, so Setup and the outpost wait.
@@ -340,6 +352,8 @@ namespace Crucible.@Scripts
             chunks.Clear();
             pending.Clear();
             outpostPieces = 0;
+            chunksSpawned = true;
+            Generation++;
             spawnPlacement = null;
             spawnStart = null;
             playerPlaced = false;
