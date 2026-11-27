@@ -126,9 +126,11 @@ function Script([string]$class, $fields = @()) {
 function FieldBase($name, $type) {
     [ordered]@{ declaringType = ''; name = $name; type = $type; boolean = $false; integer = 0; single = 0.0; real = 0.0; text = ''; stringIsNull = $false; entityId = [uint64]0; assetId = [uint64]0 }
 }
-function FBool($name, $v) { $f = FieldBase $name 'Boolean'; $f.boolean = [bool]$v; $f }
-function FFloat($name, $v) { $f = FieldBase $name 'Single'; $f.single = [double]$v; $f }
-function FInt($name, $v) { $f = FieldBase $name 'Int32'; $f.integer = [int]$v; $f }
+# Type names must be the engine's (ScriptComponentReflection.cpp): Bool, Int, Float. A saved field is
+# only applied when its type matches the C# field, so 'Boolean' / 'Int32' / 'Single' were ignored.
+function FBool($name, $v) { $f = FieldBase $name 'Bool'; $f.boolean = [bool]$v; $f }
+function FFloat($name, $v) { $f = FieldBase $name 'Float'; $f.single = [double]$v; $f }
+function FInt($name, $v) { $f = FieldBase $name 'Int'; $f.integer = [int]$v; $f }
 function FString($name, $v) { $f = FieldBase $name 'String'; $f.text = [string]$v; $f }
 function FEntity($name, [string]$entityHexId) { $f = FieldBase $name 'Entity'; $f.entityId = IdToDecimal $entityHexId; $f }
 function FAsset($name, $type, $guid) { $f = FieldBase $name $type; $f.assetId = [uint64]$guid; $f }

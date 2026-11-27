@@ -4236,7 +4236,7 @@
                         {
                             "declaringType": "Crucible.Scripts.MechPart",
                             "name": "groundScale",
-                            "type": "Bool",
+                            "type": "Float",
                             "boolean": false,
                             "integer": 0,
                             "single": 0.550000011920929,
@@ -4249,7 +4249,7 @@
                         {
                             "declaringType": "Crucible.Scripts.MechPart",
                             "name": "mountedScale",
-                            "type": "Bool",
+                            "type": "Float",
                             "boolean": false,
                             "integer": 0,
                             "single": 1.0,
@@ -4262,7 +4262,7 @@
                         {
                             "declaringType": "Crucible.Scripts.MechPart",
                             "name": "groundLift",
-                            "type": "Bool",
+                            "type": "Float",
                             "boolean": false,
                             "integer": 0,
                             "single": -0.6000000238418579,
@@ -4301,7 +4301,7 @@
                         {
                             "declaringType": "Crucible.Scripts.MechPart",
                             "name": "firingShake",
-                            "type": "Bool",
+                            "type": "Float",
                             "boolean": false,
                             "integer": 0,
                             "single": 0.03999999910593033,
@@ -4314,7 +4314,7 @@
                         {
                             "declaringType": "Crucible.Scripts.MechPart",
                             "name": "firingShakeDuration",
-                            "type": "Bool",
+                            "type": "Float",
                             "boolean": false,
                             "integer": 0,
                             "single": 0.18000000715255737,
@@ -4623,7 +4623,7 @@
                         {
                             "declaringType": "Crucible.Scripts.MechPart",
                             "name": "groundScale",
-                            "type": "Bool",
+                            "type": "Float",
                             "boolean": false,
                             "integer": 0,
                             "single": 0.550000011920929,
@@ -4636,7 +4636,7 @@
                         {
                             "declaringType": "Crucible.Scripts.MechPart",
                             "name": "mountedScale",
-                            "type": "Bool",
+                            "type": "Float",
                             "boolean": false,
                             "integer": 0,
                             "single": 1.0,
@@ -4649,7 +4649,7 @@
                         {
                             "declaringType": "Crucible.Scripts.MechPart",
                             "name": "groundLift",
-                            "type": "Bool",
+                            "type": "Float",
                             "boolean": false,
                             "integer": 0,
                             "single": 0.15000000596046448,
@@ -4688,7 +4688,7 @@
                         {
                             "declaringType": "Crucible.Scripts.MechPart",
                             "name": "firingShake",
-                            "type": "Bool",
+                            "type": "Float",
                             "boolean": false,
                             "integer": 0,
                             "single": 0.07500000298023224,
@@ -4701,7 +4701,7 @@
                         {
                             "declaringType": "Crucible.Scripts.MechPart",
                             "name": "firingShakeDuration",
-                            "type": "Bool",
+                            "type": "Float",
                             "boolean": false,
                             "integer": 0,
                             "single": 0.25999999046325684,
@@ -4985,7 +4985,7 @@
                         {
                             "declaringType": "Crucible.Scripts.MechPart",
                             "name": "groundScale",
-                            "type": "Bool",
+                            "type": "Float",
                             "boolean": false,
                             "integer": 0,
                             "single": 0.550000011920929,
@@ -4998,7 +4998,7 @@
                         {
                             "declaringType": "Crucible.Scripts.MechPart",
                             "name": "mountedScale",
-                            "type": "Bool",
+                            "type": "Float",
                             "boolean": false,
                             "integer": 0,
                             "single": 1.0,
@@ -5011,7 +5011,7 @@
                         {
                             "declaringType": "Crucible.Scripts.MechPart",
                             "name": "groundLift",
-                            "type": "Bool",
+                            "type": "Float",
                             "boolean": false,
                             "integer": 0,
                             "single": 0.15000000596046448,
@@ -5050,7 +5050,7 @@
                         {
                             "declaringType": "Crucible.Scripts.MechPart",
                             "name": "firingShake",
-                            "type": "Bool",
+                            "type": "Float",
                             "boolean": false,
                             "integer": 0,
                             "single": 0.07500000298023224,
@@ -5063,7 +5063,7 @@
                         {
                             "declaringType": "Crucible.Scripts.MechPart",
                             "name": "firingShakeDuration",
-                            "type": "Bool",
+                            "type": "Float",
                             "boolean": false,
                             "integer": 0,
                             "single": 0.25999999046325684,
@@ -5334,7 +5334,7 @@
                         {
                             "declaringType": "Crucible.Scripts.MechPart",
                             "name": "groundScale",
-                            "type": "Bool",
+                            "type": "Float",
                             "boolean": false,
                             "integer": 0,
                             "single": 0.550000011920929,
@@ -5347,7 +5347,7 @@
                         {
                             "declaringType": "Crucible.Scripts.MechPart",
                             "name": "mountedScale",
-                            "type": "Bool",
+                            "type": "Float",
                             "boolean": false,
                             "integer": 0,
                             "single": 1.0,
@@ -5360,7 +5360,7 @@
                         {
                             "declaringType": "Crucible.Scripts.MechPart",
                             "name": "groundLift",
-                            "type": "Bool",
+                            "type": "Float",
                             "boolean": false,
                             "integer": 0,
                             "single": 0.0,
@@ -5589,7 +5589,7 @@
                         {
                             "declaringType": "Crucible.Scripts.MechPart",
                             "name": "groundScale",
-                            "type": "Bool",
+                            "type": "Float",
                             "boolean": false,
                             "integer": 0,
                             "single": 0.550000011920929,
@@ -5602,7 +5602,7 @@
                         {
                             "declaringType": "Crucible.Scripts.MechPart",
                             "name": "mountedScale",
-                            "type": "Bool",
+                            "type": "Float",
                             "boolean": false,
                             "integer": 0,
                             "single": 1.0,
@@ -5615,7 +5615,7 @@
                         {
                             "declaringType": "Crucible.Scripts.MechPart",
                             "name": "groundLift",
-                            "type": "Bool",
+                            "type": "Float",
                             "boolean": false,
                             "integer": 0,
                             "single": 0.0,
@@ -5857,7 +5857,7 @@
                         {
                             "declaringType": "Crucible.Scripts.MechPart",
                             "name": "groundScale",
-                            "type": "Bool",
+                            "type": "Float",
                             "boolean": false,
                             "integer": 0,
                             "single": 0.550000011920929,
@@ -5870,7 +5870,7 @@
                         {
                             "declaringType": "Crucible.Scripts.MechPart",
                             "name": "mountedScale",
-                            "type": "Bool",
+                            "type": "Float",
                             "boolean": false,
                             "integer": 0,
                             "single": 1.0,
@@ -5883,7 +5883,7 @@
                         {
                             "declaringType": "Crucible.Scripts.MechPart",
                             "name": "groundLift",
-                            "type": "Bool",
+                            "type": "Float",
                             "boolean": false,
                             "integer": 0,
                             "single": 0.7599999904632568,
@@ -6158,7 +6158,7 @@
                         {
                             "declaringType": "Crucible.Scripts.MechPart",
                             "name": "groundScale",
-                            "type": "Bool",
+                            "type": "Float",
                             "boolean": false,
                             "integer": 0,
                             "single": 0.550000011920929,
@@ -6171,7 +6171,7 @@
                         {
                             "declaringType": "Crucible.Scripts.MechPart",
                             "name": "mountedScale",
-                            "type": "Bool",
+                            "type": "Float",
                             "boolean": false,
                             "integer": 0,
                             "single": 1.0,
@@ -6184,7 +6184,7 @@
                         {
                             "declaringType": "Crucible.Scripts.MechPart",
                             "name": "groundLift",
-                            "type": "Bool",
+                            "type": "Float",
                             "boolean": false,
                             "integer": 0,
                             "single": 2.1600000858306885,
@@ -6506,7 +6506,7 @@
                         {
                             "declaringType": "Crucible.Scripts.MechPart",
                             "name": "groundScale",
-                            "type": "Bool",
+                            "type": "Float",
                             "boolean": false,
                             "integer": 0,
                             "single": 0.550000011920929,
@@ -6519,7 +6519,7 @@
                         {
                             "declaringType": "Crucible.Scripts.MechPart",
                             "name": "mountedScale",
-                            "type": "Bool",
+                            "type": "Float",
                             "boolean": false,
                             "integer": 0,
                             "single": 1.0,
@@ -6532,7 +6532,7 @@
                         {
                             "declaringType": "Crucible.Scripts.MechPart",
                             "name": "groundLift",
-                            "type": "Bool",
+                            "type": "Float",
                             "boolean": false,
                             "integer": 0,
                             "single": 1.2599999904632568,
@@ -6867,7 +6867,7 @@
                         {
                             "declaringType": "Crucible.Scripts.MechPart",
                             "name": "groundScale",
-                            "type": "Bool",
+                            "type": "Float",
                             "boolean": false,
                             "integer": 0,
                             "single": 0.550000011920929,
@@ -6880,7 +6880,7 @@
                         {
                             "declaringType": "Crucible.Scripts.MechPart",
                             "name": "mountedScale",
-                            "type": "Bool",
+                            "type": "Float",
                             "boolean": false,
                             "integer": 0,
                             "single": 1.0,
@@ -6893,7 +6893,7 @@
                         {
                             "declaringType": "Crucible.Scripts.MechPart",
                             "name": "groundLift",
-                            "type": "Bool",
+                            "type": "Float",
                             "boolean": false,
                             "integer": 0,
                             "single": 1.8200000524520874,
@@ -7155,7 +7155,7 @@
                         {
                             "declaringType": "Crucible.Scripts.MechPart",
                             "name": "groundScale",
-                            "type": "Bool",
+                            "type": "Float",
                             "boolean": false,
                             "integer": 0,
                             "single": 0.550000011920929,
@@ -7168,7 +7168,7 @@
                         {
                             "declaringType": "Crucible.Scripts.MechPart",
                             "name": "mountedScale",
-                            "type": "Bool",
+                            "type": "Float",
                             "boolean": false,
                             "integer": 0,
                             "single": 1.0,
@@ -7181,7 +7181,7 @@
                         {
                             "declaringType": "Crucible.Scripts.MechPart",
                             "name": "groundLift",
-                            "type": "Bool",
+                            "type": "Float",
                             "boolean": false,
                             "integer": 0,
                             "single": 0.25,
@@ -7387,20 +7387,34 @@
                     "pushStrength": 100.0,
                     "layer": "Player"
                 },
-                "EntityName": {
-                    "name": "Player"
-                },
-                "ScriptComponent": {
-                    "enabled": true,
-                    "assembly": "Managed/Crucible.Scripts.dll",
-                    "namespace": "Crucible.Scripts",
-                    "class": "MechPlayer",
-                    "fields": []
-                },
                 "PlayerController": {
                     "moveSpeed": 6,
                     "jumpHeight": 1.5,
                     "faceCamera": true
+                },
+                "EntityName": {
+                    "name": "Player"
+                },
+                "ScriptComponent": {
+                    "scripts": [
+                        {
+                            "enabled": true,
+                            "assembly": "Managed/Crucible.Scripts.dll",
+                            "namespace": "Crucible.Scripts",
+                            "class": "MechPlayer",
+                            "fields": []
+                        }
+                    ]
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 16408217611189506125,
+                    "fileId": 16046677203094256929,
+                    "isRoot": true,
+                    "prefabHash": 2919806227429480178,
+                    "overrides": []
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -7437,6 +7451,16 @@
                 },
                 "EntityName": {
                     "name": "Camera Pivot"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 16408217611189506125,
+                    "fileId": 3504928380980592075,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -7473,6 +7497,16 @@
                 },
                 "EntityName": {
                     "name": "Player Camera"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 16408217611189506125,
+                    "fileId": 15108720573731307883,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -7501,6 +7535,16 @@
                 },
                 "EntityName": {
                     "name": "Mech Visual"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 16408217611189506125,
+                    "fileId": 15266602826625965349,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -7564,6 +7608,16 @@
                     "loop": true,
                     "previewInEditor": false,
                     "playOnStart": true
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 16408217611189506125,
+                    "fileId": 12203531905419890895,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -7620,6 +7674,16 @@
                     "socketName": "Hip",
                     "modelAsset": 8250815376162455563,
                     "node": 2
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 16408217611189506125,
+                    "fileId": 2183807441157560321,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -7654,6 +7718,16 @@
                     "socketName": "Head",
                     "modelAsset": 12862501394589843471,
                     "node": 2
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 16408217611189506125,
+                    "fileId": 18414336099679399645,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -7688,6 +7762,16 @@
                     "socketName": "ShoulderL",
                     "modelAsset": 12862501394589843471,
                     "node": 16
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 16408217611189506125,
+                    "fileId": 317342989834090561,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -7722,6 +7806,16 @@
                     "socketName": "ShoulderR",
                     "modelAsset": 12862501394589843471,
                     "node": 27
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 16408217611189506125,
+                    "fileId": 9862405652064253161,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -7756,6 +7850,16 @@
                     "socketName": "ArmL",
                     "modelAsset": 12862501394589843471,
                     "node": 9
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 16408217611189506125,
+                    "fileId": 4089757753168062121,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -7790,6 +7894,16 @@
                     "socketName": "ArmR",
                     "modelAsset": 12862501394589843471,
                     "node": 20
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 16408217611189506125,
+                    "fileId": 17746235959141092815,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -7839,77 +7953,96 @@
                     "name": "Part Head"
                 },
                 "ScriptComponent": {
-                    "enabled": true,
-                    "assembly": "Managed/Crucible.Scripts.dll",
-                    "namespace": "Crucible.Scripts",
-                    "class": "MechPart",
-                    "fields": [
+                    "scripts": [
                         {
-                            "declaringType": "Crucible.Scripts.MechPart",
-                            "name": "partId",
-                            "type": "String",
-                            "boolean": false,
-                            "integer": 0,
-                            "single": 0.0,
-                            "real": 0.0,
-                            "text": "golem_head",
-                            "stringIsNull": false,
-                            "entityId": 0,
-                            "assetId": 0
-                        },
-                        {
-                            "declaringType": "Crucible.Scripts.MechPart",
-                            "name": "groundScale",
-                            "type": "Bool",
-                            "boolean": false,
-                            "integer": 0,
-                            "single": 0.550000011920929,
-                            "real": 0.0,
-                            "text": "",
-                            "stringIsNull": false,
-                            "entityId": 0,
-                            "assetId": 0
-                        },
-                        {
-                            "declaringType": "Crucible.Scripts.MechPart",
-                            "name": "mountedScale",
-                            "type": "Bool",
-                            "boolean": false,
-                            "integer": 0,
-                            "single": 1.0,
-                            "real": 0.0,
-                            "text": "",
-                            "stringIsNull": false,
-                            "entityId": 0,
-                            "assetId": 0
-                        },
-                        {
-                            "declaringType": "Crucible.Scripts.MechPart",
-                            "name": "groundLift",
-                            "type": "Bool",
-                            "boolean": false,
-                            "integer": 0,
-                            "single": 0.25,
-                            "real": 0.0,
-                            "text": "",
-                            "stringIsNull": false,
-                            "entityId": 0,
-                            "assetId": 0
-                        },
-                        {
-                            "declaringType": "Crucible.Scripts.MechPart",
-                            "name": "mountFrame",
-                            "type": "Bool",
-                            "boolean": true,
-                            "integer": 0,
-                            "single": 0.0,
-                            "real": 0.0,
-                            "text": "",
-                            "stringIsNull": false,
-                            "entityId": 0,
-                            "assetId": 0
+                            "enabled": true,
+                            "assembly": "Managed/Crucible.Scripts.dll",
+                            "namespace": "Crucible.Scripts",
+                            "class": "MechPart",
+                            "fields": [
+                                {
+                                    "declaringType": "Crucible.Scripts.MechPart",
+                                    "name": "partId",
+                                    "type": "String",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "golem_head",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.MechPart",
+                                    "name": "groundScale",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.550000011920929,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.MechPart",
+                                    "name": "mountedScale",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 1.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.MechPart",
+                                    "name": "groundLift",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.25,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.MechPart",
+                                    "name": "mountFrame",
+                                    "type": "Bool",
+                                    "boolean": true,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                }
+                            ]
                         }
                     ]
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 16408217611189506125,
+                    "fileId": 5470205451183236701,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -7960,6 +8093,16 @@
                     "loop": true,
                     "previewInEditor": false,
                     "playOnStart": true
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 16408217611189506125,
+                    "fileId": 6655336532875184291,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -7988,6 +8131,13 @@
                 },
                 "EntityName": {
                     "name": "Label"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 16408217611189506125,
+                    "fileId": 6587664452496414133,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
                 },
                 "WorldText": {
                     "text": "",
@@ -8055,6 +8205,9 @@
                         "y": 0.019999999552965164
                     },
                     "shadowSoftness": 0.0
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -8117,90 +8270,110 @@
                     "name": "Part Sword"
                 },
                 "ScriptComponent": {
-                    "enabled": true,
-                    "assembly": "Managed/Crucible.Scripts.dll",
-                    "namespace": "Crucible.Scripts",
-                    "class": "MechPart",
-                    "fields": [
+                    "scripts": [
                         {
-                            "declaringType": "Crucible.Scripts.MechPart",
-                            "name": "partId",
-                            "type": "String",
-                            "boolean": false,
-                            "integer": 0,
-                            "single": 0.0,
-                            "real": 0.0,
-                            "text": "sword",
-                            "stringIsNull": false,
-                            "entityId": 0,
-                            "assetId": 0
-                        },
-                        {
-                            "declaringType": "Crucible.Scripts.MechPart",
-                            "name": "groundScale",
-                            "type": "Bool",
-                            "boolean": false,
-                            "integer": 0,
-                            "single": 0.550000011920929,
-                            "real": 0.0,
-                            "text": "",
-                            "stringIsNull": false,
-                            "entityId": 0,
-                            "assetId": 0
-                        },
-                        {
-                            "declaringType": "Crucible.Scripts.MechPart",
-                            "name": "mountedScale",
-                            "type": "Bool",
-                            "boolean": false,
-                            "integer": 0,
-                            "single": 1.0,
-                            "real": 0.0,
-                            "text": "",
-                            "stringIsNull": false,
-                            "entityId": 0,
-                            "assetId": 0
-                        },
-                        {
-                            "declaringType": "Crucible.Scripts.MechPart",
-                            "name": "groundLift",
-                            "type": "Bool",
-                            "boolean": false,
-                            "integer": 0,
-                            "single": 0.7599999904632568,
-                            "real": 0.0,
-                            "text": "",
-                            "stringIsNull": false,
-                            "entityId": 0,
-                            "assetId": 0
-                        },
-                        {
-                            "declaringType": "Crucible.Scripts.MechPart",
-                            "name": "mountFrame",
-                            "type": "Bool",
-                            "boolean": true,
-                            "integer": 0,
-                            "single": 0.0,
-                            "real": 0.0,
-                            "text": "",
-                            "stringIsNull": false,
-                            "entityId": 0,
-                            "assetId": 0
-                        },
-                        {
-                            "declaringType": "Crucible.Scripts.MechPart",
-                            "name": "attackSound",
-                            "type": "AudioClip",
-                            "boolean": false,
-                            "integer": 0,
-                            "single": 0.0,
-                            "real": 0.0,
-                            "text": "",
-                            "stringIsNull": false,
-                            "entityId": 0,
-                            "assetId": 5612796659169525771
+                            "enabled": true,
+                            "assembly": "Managed/Crucible.Scripts.dll",
+                            "namespace": "Crucible.Scripts",
+                            "class": "MechPart",
+                            "fields": [
+                                {
+                                    "declaringType": "Crucible.Scripts.MechPart",
+                                    "name": "partId",
+                                    "type": "String",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "sword",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.MechPart",
+                                    "name": "groundScale",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.550000011920929,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.MechPart",
+                                    "name": "mountedScale",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 1.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.MechPart",
+                                    "name": "groundLift",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.7599999904632568,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.MechPart",
+                                    "name": "mountFrame",
+                                    "type": "Bool",
+                                    "boolean": true,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.MechPart",
+                                    "name": "attackSound",
+                                    "type": "AudioClip",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 5612796659169525771,
+                                    "componentType": ""
+                                }
+                            ]
                         }
                     ]
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 16408217611189506125,
+                    "fileId": 15674668234867780375,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -8263,6 +8436,16 @@
                     "loop": true,
                     "previewInEditor": false,
                     "playOnStart": true
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 16408217611189506125,
+                    "fileId": 13384031397114478061,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -8291,6 +8474,13 @@
                 },
                 "EntityName": {
                     "name": "Label"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 16408217611189506125,
+                    "fileId": 13612587412066649321,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
                 },
                 "WorldText": {
                     "text": "",
@@ -8358,6 +8548,9 @@
                         "y": 0.019999999552965164
                     },
                     "shadowSoftness": 0.0
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
