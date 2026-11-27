@@ -3,7 +3,7 @@
 * \author:       Jean David Vidal Cruzado
 * \par:          Email: jeandavidvidal.c@digipen.edu
 * \date          27 November 2026
-* \version       1.0
+* \version       1.1
 * \brief         What each enemy costs from a wave's resource: the one place
 *                spawn costs are set.
 *
@@ -20,6 +20,7 @@
 *
 * \history
 *    -v1.0       Unity's costs for the six engine golems
+*    -v1.1       the spinner (Spinner Wind-up Test), cost 2 as in Unity
 *
 **************************************************************************/
 using System;
@@ -35,13 +36,14 @@ namespace Crucible.@Scripts
             public Entry(string prefabName, int cost) { PrefabName = prefabName; Cost = cost; }
         }
 
-        // Small 1-2, elite 10 (Unity: sword/mace/throwing axe 1, crossbow 2, elite cannon/crossbow 10).
+        // Small 1-2, elite 10 (Unity: sword/mace/throwing axe 1, crossbow/spinner 2, elite cannon/crossbow 10).
         public static readonly Entry[] Entries =
         {
             new Entry("Golem Sword", 1),
             new Entry("Golem Mace", 1),
             new Entry("Golem Throwing Axe", 1),
             new Entry("Golem Crossbow", 2),
+            new Entry("Spinner Wind-up Test", 2),   // the spinner (Prefabs/Zoo; Unity's spinner cost 2) - rename here if the prefab is renamed
             new Entry("Golem Cannon", 10),
             new Entry("Golem Heavy Crossbow", 10),
         };

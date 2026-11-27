@@ -3,7 +3,7 @@
 * \author:       Jean David Vidal Cruzado
 * \par:          Email: jeandavidvidal.c@digipen.edu
 * \date          10 November 2026
-* \version       2.6
+* \version       2.7
 * \brief         Generates a sub-level from a seed: the terrain and, for a
 *                mission level, its chunks. Roads and decor are later port
 *                steps.
@@ -85,6 +85,8 @@
 *    -v2.6       players found by the "Player" tag (the player field is an
 *                optional override); every player placed at the start,
 *                3 m apart; slope limit on every player
+*    -v2.7       in Play, registers the terrain's heights for spawn spots
+*                (SpawnGround: spawns see through trees and pieces)
 **************************************************************************/
 using System.Collections.Generic;
 
@@ -225,6 +227,8 @@ namespace Crucible.@Scripts
 
             if (Application.IsPlaying)
             {
+                TerrainMap built = map;
+                SpawnGround.Register(Entity, (x, z) => DecorScatter.HeightAt(built, x, z));
                 SpawnChunks();
                 SpawnTrees();
                 CheckNavigation();

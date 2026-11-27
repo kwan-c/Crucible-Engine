@@ -3,7 +3,7 @@
 * \author:       Jean David Vidal Cruzado
 * \par:          Email: jeandavidvidal.c@digipen.edu
 * \date          27 November 2026
-* \version       1.2
+* \version       1.3
 * \brief         Runs a mission level's objectives: the Capture areas in
 *                order, then the extract. Put it on the same entity as the
 *                SubLevelGenerator.
@@ -39,6 +39,8 @@
 *    -v1.1       Zones / Active / Title / Detail for the visuals and HUD;
 *                beacons moved to MissionZoneVisuals
 *    -v1.2       players from SubLevelGenerator.Players (one rule for both)
+*    -v1.3       capture areas pause roaming spawns while a player is inside
+*                (RoamingBlockers, as Unity's chunks did); never the extract
 *
 **************************************************************************/
 using System;
@@ -190,6 +192,7 @@ namespace Crucible.@Scripts
         private void Build()
         {
             builtGeneration = generator.Generation;
+            foreach (Zone a in areas) RoamingBlockers.Unregister(a.Chunk);
             areas.Clear();
             zones.Clear();
             extract = null;
@@ -209,6 +212,11 @@ namespace Crucible.@Scripts
                 else if (definition.Role == MissionPresets.Extract) { zone.IsExtract = true; zone.Order = 0; extract = zone; }
             }
             areas.Sort(delegate (Zone a, Zone b) { return a.Order.CompareTo(b.Order); });
+            foreach (Zone a in areas)
+            {
+                ChunkDefinition area = a.Definition;
+                RoamingBlockers.Register(a.Chunk, p => area.Contains(p));   // roaming pauses while a player is inside
+            }
             zones.AddRange(areas);
             if (extract != null) zones.Add(extract);
             mission = new MissionRules();

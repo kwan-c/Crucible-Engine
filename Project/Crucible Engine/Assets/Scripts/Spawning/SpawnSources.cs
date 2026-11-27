@@ -3,7 +3,7 @@
 * \author:       Jean David Vidal Cruzado
 * \par:          Email: jeandavidvidal.c@digipen.edu
 * \date          27 November 2026
-* \version       1.0
+* \version       1.1
 * \brief         Where a wave's enemies appear: the spawn-source interface
 *                and the ring around a moving or fixed centre.
 *
@@ -25,6 +25,7 @@
 *
 * \history
 *    -v1.0       ported from Unity (SpawnRing, RoamingSpawner, ChunkRingSpawner)
+*    -v1.1       RingSource.LastCentre (for the director's ground ray)
 *
 **************************************************************************/
 using System;
@@ -73,6 +74,7 @@ namespace Crucible.@Scripts
         public float Lift = 0.5f;                   // above the ground, so a spawn never starts inside it
         public Func<Vector3, bool> IsOpen;          // null = everywhere
         public Func<float, float, float> GroundHeight;
+        public Vector3 LastCentre { get; private set; }   // the centre of the latest spawn (a ground ray starts above it)
 
         public RingSource(Func<Vector3?> centre, float radius) { Centre = centre; Radius = Math.Max(1f, radius); }
 
@@ -80,6 +82,7 @@ namespace Crucible.@Scripts
         {
             Vector3? c = Centre != null ? Centre() : null;
             if (!c.HasValue) { position = Vector3.Zero; rotation = Quaternion.Identity; return false; }
+            LastCentre = c.Value;
             return SpawnRing.TryPick(c.Value, Radius, Attempts, random, IsOpen, GroundHeight, Lift, out position, out rotation);
         }
     }
