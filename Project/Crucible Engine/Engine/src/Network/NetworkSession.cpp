@@ -411,6 +411,7 @@ namespace Crucible
 		m_sceneAsset = 0;
 		m_sceneHash = 0;
 		m_playerSpawnPoints.clear();
+		m_scenePlayerPrefab = Net::kInvalidNetPrefab;
 		m_worldMessages.clear();
 		m_nextId = 1;
 		m_clientWorld = ClientWorld::AwaitingWorld;

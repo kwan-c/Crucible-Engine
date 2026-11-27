@@ -1,0 +1,460 @@
+{
+    "version": 3,
+    "name": "NetMechPlayer",
+    "entities": [
+        {
+            "id": "4E4D506C61000001",
+            "parent": -1,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "CharacterController": {
+                    "height": 3.4000000953674316,
+                    "radius": 0.8999999761581421,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "slopeLimit": 45.0,
+                    "stepOffset": 0.4000000059604645,
+                    "pushStrength": 100.0,
+                    "layer": "Player"
+                },
+                "EntityName": {
+                    "name": "Net Mech Player"
+                },
+                "ScriptComponent": {
+                    "enabled": true,
+                    "assembly": "Managed/Crucible.Scripts.dll",
+                    "namespace": "Crucible.Scripts.NetGameplay",
+                    "class": "NetMechPlayer",
+                    "fields": []
+                },
+                "PlayerController": {
+                    "moveSpeed": 6.0,
+                    "jumpHeight": 1.5,
+                    "faceCamera": true
+                },
+                "NetworkObjectAuthoring": {
+                    "replicated": [
+                        "Transform/Full",
+                        "Animator",
+                        "NetVariables",
+                        "NetData"
+                    ],
+                    "serverOnly": [
+                        "CharacterController"
+                    ],
+                    "ownerLocalOnly": [
+                        "Camera",
+                        "CameraOrbit",
+                        "AudioListener"
+                    ],
+                    "enabledReplicated": [],
+                    "syncedChildren": [],
+                    "childEnabledReplicated": [],
+                    "sendPriority": 1.0,
+                    "critical": false,
+                    "allowScenePlacement": true,
+                    "spawnPerPlayer": true
+                }
+            }
+        },
+        {
+            "id": "4E4D506C61000002",
+            "parent": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 1.7999999523162842,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "CameraOrbit": {
+                    "sensitivity": 0.10000000149011612,
+                    "stickSpeed": 180.0,
+                    "minPitch": -18.0,
+                    "maxPitch": 30.0,
+                    "yaw": 0.0,
+                    "pitch": 12.0
+                },
+                "EntityName": {
+                    "name": "Camera Pivot"
+                }
+            }
+        },
+        {
+            "id": "4E4D506C61000003",
+            "parent": 1,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 1.399999976158142,
+                        "y": 0.6000000238418579,
+                        "z": 9.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "AudioListener": {},
+                "Camera": {
+                    "enabled": true,
+                    "fovY": 60.0,
+                    "nearZ": 0.10000000149011612,
+                    "farZ": 1000.0,
+                    "priority": 1
+                },
+                "EntityName": {
+                    "name": "Player Camera"
+                }
+            }
+        },
+        {
+            "id": "4E4D506C61000004",
+            "parent": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": -1.7000000476837158,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 1.0,
+                        "z": 0.0,
+                        "w": 6.123234262925839e-17
+                    },
+                    "scale": {
+                        "x": 0.550000011920929,
+                        "y": 0.550000011920929,
+                        "z": 0.550000011920929
+                    }
+                },
+                "EntityName": {
+                    "name": "Mech Visual"
+                }
+            }
+        },
+        {
+            "id": "4E4D506C61000005",
+            "parent": 3,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 8250815376162455563,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 0,
+                    "materialAsset": 6507507179800756225
+                },
+                "AudioSource": {
+                    "clip": 5612796659169525767,
+                    "loadType": "DecompressOnLoad",
+                    "output": "SFX",
+                    "playOnAwake": false,
+                    "loop": true,
+                    "volume": 0.30000001192092896,
+                    "pitch": 1.0,
+                    "spatialBlend": 0.3499999940395355,
+                    "minDistance": 4.0,
+                    "maxDistance": 30.0,
+                    "rolloffMode": "Linear"
+                },
+                "EntityName": {
+                    "name": "Legs"
+                },
+                "AnimatedModel": {
+                    "controllerAsset": 5349696062991956255,
+                    "clip": 1,
+                    "speed": 1.0,
+                    "loop": true,
+                    "previewInEditor": false,
+                    "playOnStart": true
+                }
+            }
+        },
+        {
+            "id": "4E4D506C61000006",
+            "parent": 4,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 12862501394589843471,
+                    "modelRoot": 31,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 0,
+                    "materialAsset": 6507507179800756227
+                },
+                "EntityName": {
+                    "name": "Torso"
+                },
+                "AnimatedModel": {
+                    "controllerAsset": 0,
+                    "clip": 2,
+                    "speed": 1.0,
+                    "loop": true,
+                    "previewInEditor": false,
+                    "playOnStart": true
+                },
+                "SocketAttachment": {
+                    "enabled": true,
+                    "socketName": "Hip",
+                    "modelAsset": 8250815376162455563,
+                    "node": 2
+                }
+            }
+        },
+        {
+            "id": "4E4D506C61000007",
+            "parent": 5,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Mount Head"
+                },
+                "SocketAttachment": {
+                    "enabled": true,
+                    "socketName": "Head",
+                    "modelAsset": 12862501394589843471,
+                    "node": 2
+                }
+            }
+        },
+        {
+            "id": "4E4D506C61000008",
+            "parent": 5,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Mount ShoulderL"
+                },
+                "SocketAttachment": {
+                    "enabled": true,
+                    "socketName": "ShoulderL",
+                    "modelAsset": 12862501394589843471,
+                    "node": 16
+                }
+            }
+        },
+        {
+            "id": "4E4D506C61000009",
+            "parent": 5,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Mount ShoulderR"
+                },
+                "SocketAttachment": {
+                    "enabled": true,
+                    "socketName": "ShoulderR",
+                    "modelAsset": 12862501394589843471,
+                    "node": 27
+                }
+            }
+        },
+        {
+            "id": "4E4D506C6100000A",
+            "parent": 5,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Mount ArmL"
+                },
+                "SocketAttachment": {
+                    "enabled": true,
+                    "socketName": "ArmL",
+                    "modelAsset": 12862501394589843471,
+                    "node": 9
+                }
+            }
+        },
+        {
+            "id": "4E4D506C6100000B",
+            "parent": 5,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Mount ArmR"
+                },
+                "SocketAttachment": {
+                    "enabled": true,
+                    "socketName": "ArmR",
+                    "modelAsset": 12862501394589843471,
+                    "node": 20
+                }
+            }
+        }
+    ]
+}
