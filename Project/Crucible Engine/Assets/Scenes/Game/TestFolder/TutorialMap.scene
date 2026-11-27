@@ -6048,6 +6048,72 @@
             }
         },
         {
+            "id": "18E280E530168005",
+            "parent": "4EA048DEEB8D401F",
+            "siblingIndex": 1,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": -2.859999895095825,
+                        "y": -0.6756539940834045,
+                        "z": 1.116515040397644
+                    },
+                    "rotation": {
+                        "x": -0.977787971496582,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.20959636569023132
+                    },
+                    "scale": {
+                        "x": 0.7088742256164551,
+                        "y": 0.7088742256164551,
+                        "z": 0.7088742256164551
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 11181561406948196535,
+                    "modelRoot": 27,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 0,
+                    "materialAsset": 0
+                },
+                "EntityName": {
+                    "name": "Weapon Model"
+                },
+                "AnimatedModel": {
+                    "controllerAsset": 8389400805626647199,
+                    "clip": 0,
+                    "speed": 1.0,
+                    "loop": true,
+                    "previewInEditor": false,
+                    "playOnStart": true
+                },
+                "SocketAttachment": {
+                    "enabled": true,
+                    "socketName": "Shoulder",
+                    "modelAsset": 4175691030365061123,
+                    "node": 17
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 12564058752782925993,
+                    "fileId": 10828437040351253479,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
             "id": "18EC82D4900C5285",
             "parent": "5A0E0F6461F5DBE5",
             "siblingIndex": 1,
@@ -10324,7 +10390,7 @@
                 },
                 "SocketAttachment": {
                     "enabled": true,
-                    "socketName": "Shoulder",
+                    "socketName": "Head",
                     "modelAsset": 4175691030365061123,
                     "node": 17
                 },
@@ -12133,6 +12199,48 @@
                                     "entityId": 0,
                                     "assetId": 0,
                                     "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Enemy",
+                                    "name": "spawnCost",
+                                    "type": "Int",
+                                    "boolean": false,
+                                    "integer": 1,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Enemy",
+                                    "name": "equippedWeaponId",
+                                    "type": "String",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "mace",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Enemy",
+                                    "name": "weaponDamageMultiplier",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.1785714328289032,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
                                 }
                             ]
                         }
@@ -12142,7 +12250,7 @@
                     "prefabAsset": 12564058752782925993,
                     "fileId": 16599284018906890403,
                     "isRoot": true,
-                    "prefabHash": 4831314441599175503,
+                    "prefabHash": 4609088517781076105,
                     "overrides": [
                         "ScriptComponent/scripts"
                     ]
@@ -13833,7 +13941,7 @@
                 },
                 "SocketAttachment": {
                     "enabled": true,
-                    "socketName": "Shoulder",
+                    "socketName": "Head",
                     "modelAsset": 4175691030365061123,
                     "node": 17
                 },
@@ -16828,7 +16936,7 @@
                 },
                 "SocketAttachment": {
                     "enabled": true,
-                    "socketName": "Shoulder",
+                    "socketName": "Head",
                     "modelAsset": 4175691030365061123,
                     "node": 17
                 },
@@ -25607,6 +25715,72 @@
                 },
                 "EntityName": {
                     "name": "Tower_Plinth"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
+            "id": "58E280E530168001",
+            "parent": "6EA048DEEB8D401D",
+            "siblingIndex": 1,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": -2.859999895095825,
+                        "y": -0.6756539940834045,
+                        "z": 1.116515040397644
+                    },
+                    "rotation": {
+                        "x": -0.977787971496582,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.20959636569023132
+                    },
+                    "scale": {
+                        "x": 0.7088742256164551,
+                        "y": 0.7088742256164551,
+                        "z": 0.7088742256164551
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 11181561406948196535,
+                    "modelRoot": 27,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 0,
+                    "materialAsset": 0
+                },
+                "EntityName": {
+                    "name": "Weapon Model"
+                },
+                "AnimatedModel": {
+                    "controllerAsset": 8389400805626647199,
+                    "clip": 0,
+                    "speed": 1.0,
+                    "loop": true,
+                    "previewInEditor": false,
+                    "playOnStart": true
+                },
+                "SocketAttachment": {
+                    "enabled": true,
+                    "socketName": "Shoulder",
+                    "modelAsset": 4175691030365061123,
+                    "node": 17
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 12564058752782925993,
+                    "fileId": 10828437040351253479,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
                 },
                 "EntityTag": {
                     "tag": "Untagged"
@@ -41528,6 +41702,48 @@
                                     "entityId": 0,
                                     "assetId": 0,
                                     "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Enemy",
+                                    "name": "spawnCost",
+                                    "type": "Int",
+                                    "boolean": false,
+                                    "integer": 1,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Enemy",
+                                    "name": "equippedWeaponId",
+                                    "type": "String",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "mace",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Enemy",
+                                    "name": "weaponDamageMultiplier",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.1785714328289032,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
                                 }
                             ]
                         }
@@ -41537,7 +41753,7 @@
                     "prefabAsset": 12564058752782925993,
                     "fileId": 16599284018906890403,
                     "isRoot": true,
-                    "prefabHash": 4831314441599175503,
+                    "prefabHash": 4609088517781076105,
                     "overrides": []
                 },
                 "FlowFieldAgent": {
@@ -43050,6 +43266,72 @@
                         "y": 0.019999999552965164
                     },
                     "shadowSoftness": 0.0
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
+            "id": "88E280E530168009",
+            "parent": "66A048DEEB8D4019",
+            "siblingIndex": 1,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": -2.859999895095825,
+                        "y": -0.6756539940834045,
+                        "z": 1.116515040397644
+                    },
+                    "rotation": {
+                        "x": -0.977787971496582,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.20959636569023132
+                    },
+                    "scale": {
+                        "x": 0.7088742256164551,
+                        "y": 0.7088742256164551,
+                        "z": 0.7088742256164551
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 11181561406948196535,
+                    "modelRoot": 27,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 0,
+                    "materialAsset": 0
+                },
+                "EntityName": {
+                    "name": "Weapon Model"
+                },
+                "AnimatedModel": {
+                    "controllerAsset": 8389400805626647199,
+                    "clip": 0,
+                    "speed": 1.0,
+                    "loop": true,
+                    "previewInEditor": false,
+                    "playOnStart": true
+                },
+                "SocketAttachment": {
+                    "enabled": true,
+                    "socketName": "Shoulder",
+                    "modelAsset": 4175691030365061123,
+                    "node": 17
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 12564058752782925993,
+                    "fileId": 10828437040351253479,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
                 },
                 "EntityTag": {
                     "tag": "Untagged"
@@ -47917,6 +48199,72 @@
                 },
                 "EntityName": {
                     "name": "Gate_Fallen_Chunk"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
+            "id": "A0E280E530168007",
+            "parent": "C6A048DEEB8D401B",
+            "siblingIndex": 1,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": -2.859999895095825,
+                        "y": -0.6756539940834045,
+                        "z": 1.116515040397644
+                    },
+                    "rotation": {
+                        "x": -0.977787971496582,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.20959636569023132
+                    },
+                    "scale": {
+                        "x": 0.7088742256164551,
+                        "y": 0.7088742256164551,
+                        "z": 0.7088742256164551
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 11181561406948196535,
+                    "modelRoot": 27,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 0,
+                    "materialAsset": 0
+                },
+                "EntityName": {
+                    "name": "Weapon Model"
+                },
+                "AnimatedModel": {
+                    "controllerAsset": 8389400805626647199,
+                    "clip": 0,
+                    "speed": 1.0,
+                    "loop": true,
+                    "previewInEditor": false,
+                    "playOnStart": true
+                },
+                "SocketAttachment": {
+                    "enabled": true,
+                    "socketName": "Shoulder",
+                    "modelAsset": 4175691030365061123,
+                    "node": 17
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 12564058752782925993,
+                    "fileId": 10828437040351253479,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
                 },
                 "EntityTag": {
                     "tag": "Untagged"
@@ -57020,6 +57368,48 @@
                                     "entityId": 0,
                                     "assetId": 0,
                                     "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Enemy",
+                                    "name": "spawnCost",
+                                    "type": "Int",
+                                    "boolean": false,
+                                    "integer": 1,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Enemy",
+                                    "name": "equippedWeaponId",
+                                    "type": "String",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "mace",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Enemy",
+                                    "name": "weaponDamageMultiplier",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.1785714328289032,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
                                 }
                             ]
                         }
@@ -57029,7 +57419,7 @@
                     "prefabAsset": 12564058752782925993,
                     "fileId": 16599284018906890403,
                     "isRoot": true,
-                    "prefabHash": 4831314441599175503,
+                    "prefabHash": 4609088517781076105,
                     "overrides": [
                         "ScriptComponent/scripts"
                     ]
@@ -60151,6 +60541,48 @@
                                     "entityId": 0,
                                     "assetId": 0,
                                     "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Enemy",
+                                    "name": "spawnCost",
+                                    "type": "Int",
+                                    "boolean": false,
+                                    "integer": 1,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Enemy",
+                                    "name": "equippedWeaponId",
+                                    "type": "String",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "mace",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Enemy",
+                                    "name": "weaponDamageMultiplier",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.1785714328289032,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
                                 }
                             ]
                         }
@@ -60160,7 +60592,7 @@
                     "prefabAsset": 12564058752782925993,
                     "fileId": 16599284018906890403,
                     "isRoot": true,
-                    "prefabHash": 4831314441599175503,
+                    "prefabHash": 4609088517781076105,
                     "overrides": [
                         "ScriptComponent/scripts"
                     ]
@@ -62040,6 +62472,48 @@
                                     "entityId": 0,
                                     "assetId": 0,
                                     "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Enemy",
+                                    "name": "spawnCost",
+                                    "type": "Int",
+                                    "boolean": false,
+                                    "integer": 1,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Enemy",
+                                    "name": "equippedWeaponId",
+                                    "type": "String",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "mace",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Enemy",
+                                    "name": "weaponDamageMultiplier",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.1785714328289032,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
                                 }
                             ]
                         }
@@ -62049,7 +62523,7 @@
                     "prefabAsset": 12564058752782925993,
                     "fileId": 16599284018906890403,
                     "isRoot": true,
-                    "prefabHash": 4831314441599175503,
+                    "prefabHash": 4609088517781076105,
                     "overrides": [
                         "ScriptComponent/scripts"
                     ]
@@ -64106,6 +64580,72 @@
                 },
                 "EntityName": {
                     "name": "Wall_Block"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
+            "id": "E8E280E530168003",
+            "parent": "484E60DEE5BD8007",
+            "siblingIndex": 1,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": -2.859999895095825,
+                        "y": -0.6756539940834045,
+                        "z": 1.116515040397644
+                    },
+                    "rotation": {
+                        "x": -0.977787971496582,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.20959636569023132
+                    },
+                    "scale": {
+                        "x": 0.7088742256164551,
+                        "y": 0.7088742256164551,
+                        "z": 0.7088742256164551
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 11181561406948196535,
+                    "modelRoot": 27,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 0,
+                    "materialAsset": 0
+                },
+                "EntityName": {
+                    "name": "Weapon Model"
+                },
+                "AnimatedModel": {
+                    "controllerAsset": 8389400805626647199,
+                    "clip": 0,
+                    "speed": 1.0,
+                    "loop": true,
+                    "previewInEditor": false,
+                    "playOnStart": true
+                },
+                "SocketAttachment": {
+                    "enabled": true,
+                    "socketName": "Shoulder",
+                    "modelAsset": 4175691030365061123,
+                    "node": 17
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 12564058752782925993,
+                    "fileId": 10828437040351253479,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
                 },
                 "EntityTag": {
                     "tag": "Untagged"
@@ -67097,7 +67637,7 @@
                 },
                 "SocketAttachment": {
                     "enabled": true,
-                    "socketName": "Shoulder",
+                    "socketName": "Head",
                     "modelAsset": 4175691030365061123,
                     "node": 17
                 },
@@ -68692,7 +69232,7 @@
                 },
                 "SocketAttachment": {
                     "enabled": true,
-                    "socketName": "Shoulder",
+                    "socketName": "Head",
                     "modelAsset": 4175691030365061123,
                     "node": 17
                 },
