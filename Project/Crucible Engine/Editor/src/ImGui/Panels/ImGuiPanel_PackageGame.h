@@ -45,6 +45,7 @@ namespace Crucible {
 		void RefreshInstallerCheck();   // looks for ISCC.exe and the installer's files again
 		void DrawSettings(bool playing);
 		void DrawInstallerDetails();    // the "Installer details" section
+		void DrawProcess();             //   its first line: Build > Cook > ... with the current step
 		void DrawGameDetails();         //   its editable part: Assets/Config/GameInfo.json
 
 		// Assets/Config/GameInfo.json: the game's name, version, publisher, install folder, AppId.

@@ -90,6 +90,7 @@ namespace Crucible {
 
 		const std::filesystem::path& ZipPath() const { return m_zip; }      ///< set when Done (if makeZip)
 		const std::filesystem::path& InstallerPath() const { return m_installer; }  ///< set when Done (if makeInstaller)
+		const Settings&              GetSettings() const { return m_settings; }     ///< the last job's (zip / installer / ...)
 		const std::string&           Failure() const { return m_failure; }  ///< set when Failed
 		double                       Seconds() const;                       ///< since Start (stops when finished)
 
