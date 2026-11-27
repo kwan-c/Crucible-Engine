@@ -64,10 +64,13 @@ namespace Crucible.Scripts
         public float headLightFadeSeconds = 2.5f;  // 0% -> 100% of each emitter's Inspector alphaStart
 
         // ---- Sounds (played at the camera on the SFX bus; empty = silent) ----
-        public AudioClip headLightSound;     // the head light powering on (as its fade starts)
+        public AudioClip headLightSound;     // the head light powering on (plays as the scene starts)
         public float headLightVolume = 1f;
+        public AudioClip headLightStartLoop; // starts with headLightSound and keeps looping (2D) until the scene ends
+        public float headLightStartLoopVolume = 1f;
         public AudioClip logoStartSound;     // the logo's Logo_Start slam
         public float logoStartVolume = 1f;
+        public float logoStartSoundDelay = 0f;   // seconds after Logo_Start begins before logoStartSound plays
 
         /// <summary>True once the buttons are in and clickable (also after a skip, one frame later).</summary>
         public bool IsFinished { get; private set; }
@@ -102,6 +105,12 @@ namespace Crucible.Scripts
         private readonly List<GlowParts> headLightGlows = new List<GlowParts>();
         private MenuTween headLightFade;     // null until the head starts to lift
 
+        // Seconds left before logoStartSound plays (see PlayLogoStartSound); < 0 = none waiting.
+        private float logoStartSoundTimer = -1f;
+
+        // headLightStartLoop's temporary sound entity (see PlayHeadLightStartLoop), or null.
+        private Entity headLightLoopVoice;
+
         public override void OnCreate()
         {
             if (torso == null) Log.Warning("MainMenuIntro: torso is not set.");
@@ -127,12 +136,18 @@ namespace Crucible.Scripts
             AddHeadLightGlow("Sprite");
             AddHeadLightGlow("Sparks");
 
+            // The head light's sound (and its loop) start with the scene, before the light fades in.
+            PlayHeadLightSound();
+
             if (torso != null) torsoTween = MenuTween.RotateLocal(torso.Transform, Quaternion.Euler(torsoUpright, 0f, 0f), torsoSeconds);
             Enter(Phase.Waking);
         }
 
         public override void OnUpdate(float deltaTime)
         {
+            // First: a delayed logo sound keeps counting down even once the intro has finished.
+            UpdateLogoStartSoundDelay(deltaTime);
+
             if (phase == Phase.Finished)
             {
                 // The buttons go live one frame AFTER the intro ends. A button only counts a press
@@ -278,24 +293,68 @@ namespace Crucible.Scripts
                 glow.emitter.Entity.SetEnabled<ParticleEmitter>(true);
                 glow.emitter.Play();
             }
-            PlayHeadLightSound();
         }
 
-        /// <summary>The head light's power-on sound (headLightSound), as its alphaStart starts to rise.</summary>
-        private void PlayHeadLightSound() { PlaySfx(headLightSound, headLightVolume); }
+        /*********************************************************************
+         \brief  The head light's sound (headLightSound), played once as the
+                 scene starts, with headLightStartLoop starting alongside it.
+         *********************************************************************/
+        private void PlayHeadLightSound()
+        {
+            PlaySfx(headLightSound, headLightVolume);
+            PlayHeadLightStartLoop();
+        }
 
         /// <summary>The logo's slam sound (logoStartSound), as Logo_Start begins.</summary>
-        private void PlayLogoStartSound() { PlaySfx(logoStartSound, logoStartVolume); }
+        private void PlayLogoStartSound()
+        {
+            if (logoStartSoundDelay > 0f) logoStartSoundTimer = logoStartSoundDelay;   // UpdateLogoStartSoundDelay plays it
+            else PlaySfx(logoStartSound, logoStartVolume);
+        }
+
+        // Counts down logoStartSoundDelay and plays logoStartSound when it runs out. Skipping the
+        // intro does not cancel or hurry it: the sound still comes at its time.
+        private void UpdateLogoStartSoundDelay(float deltaTime)
+        {
+            if (logoStartSoundTimer < 0f) return;
+            logoStartSoundTimer -= deltaTime;
+            if (logoStartSoundTimer > 0f) return;
+            logoStartSoundTimer = -1f;
+            PlaySfx(logoStartSound, logoStartVolume);
+        }
+
+        /*********************************************************************
+         \brief  Starts headLightStartLoop looping, until StopHeadLightStartLoop
+                 or the scene ends. It is a PlayClipAtPoint sound with Loop
+                 switched on before the audio system starts it (later this
+                 frame), and 2D (SpatialBlend 0) so it stays the same volume
+                 when the camera pans away from where it started.
+         *********************************************************************/
+        private void PlayHeadLightStartLoop()
+        {
+            StopHeadLightStartLoop();   // never two at once
+            headLightLoopVoice = PlaySfx(headLightStartLoop, headLightStartLoopVolume);
+            if (headLightLoopVoice == null) return;
+            headLightLoopVoice.AudioSource.Loop = true;
+            headLightLoopVoice.AudioSource.SpatialBlend = 0f;
+        }
+
+        /// <summary>Stops headLightStartLoop if it is playing (nothing calls this yet: the loop runs until the scene ends).</summary>
+        public void StopHeadLightStartLoop()
+        {
+            if (headLightLoopVoice != null && headLightLoopVoice.IsAlive) headLightLoopVoice.AudioSource.Stop();
+            headLightLoopVoice = null;
+        }
 
         // Plays a clip once at the menu camera (MainMenuFlow's viewCamera, else this entity) on the
         // SFX bus. Audio.PlayClipAtPoint needs no AudioSource, so the manager's own AudioSource is
-        // left to the music (MainMenuBGM).
-        private void PlaySfx(AudioClip clip, float volume)
+        // left to the music (MainMenuBGM). Returns the temporary entity playing it, or null.
+        private Entity PlaySfx(AudioClip clip, float volume)
         {
-            if (clip == null) return;
+            if (clip == null) return null;
             MainMenuFlow flow = Entity.GetComponent<MainMenuFlow>();
             Entity ear = flow != null && flow.viewCamera != null ? flow.viewCamera : Entity;
-            Audio.PlayClipAtPoint(clip, ear.Transform.WorldPosition, volume, AudioBus.SFX);
+            return Audio.PlayClipAtPoint(clip, ear.Transform.WorldPosition, volume, AudioBus.SFX);
         }
 
         // Sets every head light emitter to `level` (0..1) of its Inspector alphaStart.

@@ -27,9 +27,9 @@
 *      Fall     starts dropHeight above its spot (+-heightVariation) and
 *               falls over ~fallSeconds, speeding up (t*t), tilting from a
 *               start angle to its contact angle;
-*      Impact   the slab's landing effect (QuestSlab.landingVfx), a random
-*               StoneHit thud (volume hitVolume, pitch +- pitchVariation)
-*               and a small camera shake;
+*      Impact   the slab's landing effect (QuestSlab.landingVfx), the
+*               hitSound thud (volume hitVolume, a random pitch between
+*               hitPitchMin and hitPitchMax) and a small camera shake;
 *      Settle   over ~settleSeconds a decaying bounce, squash and wobble;
 *      Gap      gapSeconds, then the next stone.
 *    Each stone gets one of Unity's three arrival styles (light drop, tumble,
@@ -59,9 +59,7 @@ namespace Crucible.Scripts
         public Entity stones;                // "QuestStones": the slabs are spawned (or placed) as its children
         public Prefab questSlab;             // "Quest Slab": spawned slabCount times; empty = use stones' children
         public int slabCount = 6;            // Unity's board shows about six quests
-        public AudioClip hit1;               // StoneHit1-3 (Unity's small impacts), one at random per landing;
-        public AudioClip hit2;               // played on the AudioSource on `stones` (or on this entity)
-        public AudioClip hit3;
+        public AudioClip hitSound;           // the thud each landing (played at the camera on the SFX bus)
 
         // ---- The layout, new every drop (metres in QuestStones' space: x across the table, z along it) ----
         // Each stone's size. The script sets it on every slab, so the prefab root's own scale is ignored.
@@ -101,7 +99,8 @@ namespace Crucible.Scripts
         public float tilt = 7f;              // degrees
         public float gapSeconds = 0.08f;     // before the next stone starts
         public float hitVolume = 0.22f;
-        public float pitchVariation = 0.055f;
+        public float hitPitchMin = 0.945f;   // each landing picks a pitch between these
+        public float hitPitchMax = 1.055f;   // (1 = as recorded, 2 = an octave up)
         public float shakeStrength = 0.012f; // metres the camera jitters (Unity's 0.018, a little weaker: Hugo)
         public float shakeSeconds = 0.16f;
 
@@ -127,7 +126,6 @@ namespace Crucible.Scripts
         private readonly List<Stone> list = new List<Stone>();
         private QuestBoardRocks rocks;      // optional: the ridge rocks that rise before the drop
         private bool waitingForRocks;       // laid out, the rocks still rising: no stone has fallen yet
-        private AudioSource audio;
         private Entity cameraEntity;
         private readonly Random random = new Random(3401);   // sound pick, pitch and shake (not the motion)
 
@@ -170,7 +168,6 @@ namespace Crucible.Scripts
                 foreach (Entity child in placed) list.Add(new Stone { entity = child });
             }
             if (list.Count == 0) Log.Warning("QuestStoneDrop: no stones (set questSlab, or give QuestStones children).");
-            audio = stones.GetComponent<AudioSource>() ?? Entity.GetComponent<AudioSource>();
             rocks = Entity.GetComponent<QuestBoardRocks>();
         }
 
@@ -417,20 +414,29 @@ namespace Crucible.Scripts
             QuestSlab slab = stone.entity.GetComponent<QuestSlab>();
             if (slab != null) slab.Landed();
 
-            if (audio != null)
-            {
-                AudioClip[] clips = { hit1, hit2, hit3 };
-                AudioClip clip = clips[random.Next(clips.Length)] ?? hit1 ?? hit2 ?? hit3;
-                if (clip != null)
-                {
-                    audio.Pitch = 1f + ((float)random.NextDouble() * 2f - 1f) * pitchVariation;
-                    audio.PlayOneShot(clip, hitVolume);
-                }
-            }
+            PlayHitSound(stone);
             if (cameraEntity == null || shakeStrength <= 0f) return;
             if (!shaking) shakeBase = cameraEntity.Transform.WorldPosition;   // a new shake: remember the spot
             shaking = true;
             shakeAge = 0f;   // a landing during a shake restarts it from full strength
+        }
+
+        /*********************************************************************
+         \brief  The landing thud (hitSound) at a random pitch between
+                 hitPitchMin and hitPitchMax. Each thud is its own
+                 PlayClipAtPoint sound, so its pitch is its own: a thud still
+                 ringing keeps its pitch when the next stone lands.
+         *********************************************************************/
+        private void PlayHitSound(Stone stone)
+        {
+            if (hitSound == null) return;
+            Entity ear = cameraEntity != null ? cameraEntity : stone.entity;
+            Entity voice = Audio.PlayClipAtPoint(hitSound, ear.Transform.WorldPosition, hitVolume, AudioBus.SFX);
+            if (voice == null) return;
+            float low  = System.Math.Min(hitPitchMin, hitPitchMax);   // either way round works
+            float high = System.Math.Max(hitPitchMin, hitPitchMax);
+            float pitch = low + (float)random.NextDouble() * (high - low);
+            voice.AudioSource.Pitch = System.Math.Max(pitch, 0.01f);   // Pitch also changes a sound already playing
         }
 
         // A small random jitter around the camera's spot, fading out over shakeSeconds.

@@ -90,6 +90,18 @@ namespace Crucible.Scripts
         // mouse leaves.
         public AudioClip tableHoverSound;    // once each time the mouse moves onto a table (or BackSlab)
         public float tableHoverVolume = 1f;
+        public float tableHoverPitchMin = 0.9f;  // each hover picks a pitch between these
+        public float tableHoverPitchMax = 1.1f;  // (1 = as recorded, 2 = an octave up)
+        public AudioClip tableClickSound;    // once when a table (or BackSlab) is clicked; not table1, which does nothing
+        public float tableClickVolume = 1f;
+
+        // ---- UI button click ----
+        // Plays for every UIButton click in the scene (Start, Options, Quit, Back, the torso arrows,
+        // Confirm), whichever script acts on it. Other scripts can call PlayButtonClickSound too.
+        public AudioClip buttonClickSound;
+        public float buttonClickVolume = 1f;
+        public float buttonClickPitchMin = 0.9f;  // each click picks a pitch between these
+        public float buttonClickPitchMax = 1.1f;  // (1 = as recorded, 2 = an octave up)
 
         // ---- BackSlab: the stone at the tables that goes back to the title ----
         // Its collider is on a child (BackSlabColliderModel), its label is its "World Text" child.
@@ -100,6 +112,7 @@ namespace Crucible.Scripts
         // ---- Sounds (played at the camera on the SFX bus; empty = silent) ----
         public AudioClip logoExplodeSound;   // the logo's Logo_Explode, when Start is pressed
         public float logoExplodeVolume = 1f;
+        public float logoExplodeSoundDelay = 0f;   // seconds after Logo_Explode begins before logoExplodeSound plays
 
         // ---- The ground the tables stand on ----
         public Entity ground;                // "TablesNGroundParent"
@@ -142,6 +155,11 @@ namespace Crucible.Scripts
         private Color torsoLabelColour, questLabelColour, backSlabLabelColour;
         private WorldText hovered;           // the label lit right now, or null
         private Entity hoveredTable;         // the table under the mouse right now (any of the three), or null
+
+        // Seconds left before logoExplodeSound plays (see PlayLogoExplodeSound); < 0 = none waiting.
+        private float logoExplodeSoundTimer = -1f;
+
+        private readonly System.Random random = new System.Random();   // the hover sound's pitch
 
         // Each table's (and BackSlab's) hover light emitters, found at start (FindHoverLights).
         private const string HoverLightName = "TableHoverLight";
@@ -198,6 +216,9 @@ namespace Crucible.Scripts
 
         public override void OnUpdate(float deltaTime)
         {
+            // First: a delayed explode sound keeps counting down whatever the view is doing.
+            UpdateLogoExplodeSoundDelay(deltaTime);
+
             // The intro owns the screen until its buttons are in.
             if (intro != null && !intro.IsFinished) return;
 
@@ -220,6 +241,12 @@ namespace Crucible.Scripts
 
             if (Input.IsPressed(KeyCode.Escape)) { Back(); return; }
             if (view == View.Tables) UpdateTables();
+        }
+
+        // Every UIButton click reaches every script (EntityScript): this one sounds them all, once.
+        public override void OnButtonClicked(Entity button)
+        {
+            PlayButtonClickSound();
         }
 
         public override void OnUIAction(string actionId)
@@ -335,6 +362,7 @@ namespace Crucible.Scripts
             if (table == null || table == sideTable || !Input.IsPressed(KeyCode.MouseLeft)) return;
 
             ClearHover();
+            PlayTableClickSound();
             if (table == backSlab) { Back(); return; }   // the quick return to the title
             if (table == torsoTable)
             {
@@ -549,7 +577,7 @@ namespace Crucible.Scripts
         /// <summary>The mouse moved onto a table: its hover sound plays once and its VFX starts.</summary>
         private void OnTableHoverStart(Entity table)
         {
-            PlaySfx(tableHoverSound, tableHoverVolume);
+            PlayTableHoverSound();
             SetHoverLights(table, true);
         }
 
@@ -560,7 +588,22 @@ namespace Crucible.Scripts
         }
 
         /// <summary>The logo's explode sound (logoExplodeSound), as Logo_Explode begins.</summary>
-        private void PlayLogoExplodeSound() { PlaySfx(logoExplodeSound, logoExplodeVolume); }
+        private void PlayLogoExplodeSound()
+        {
+            if (logoExplodeSoundDelay > 0f) logoExplodeSoundTimer = logoExplodeSoundDelay;   // UpdateLogoExplodeSoundDelay plays it
+            else PlaySfx(logoExplodeSound, logoExplodeVolume);
+        }
+
+        // Counts down logoExplodeSoundDelay and plays logoExplodeSound when it runs out. The pan to
+        // the tables (or a Back meanwhile) does not cancel it: the sound still comes at its time.
+        private void UpdateLogoExplodeSoundDelay(float deltaTime)
+        {
+            if (logoExplodeSoundTimer < 0f) return;
+            logoExplodeSoundTimer -= deltaTime;
+            if (logoExplodeSoundTimer > 0f) return;
+            logoExplodeSoundTimer = -1f;
+            PlaySfx(logoExplodeSound, logoExplodeVolume);
+        }
 
         /*********************************************************************
          \brief  Finds a table's "TableHoverLight" and remembers every
@@ -626,11 +669,44 @@ namespace Crucible.Scripts
 
         // Plays a clip once at the menu camera on the SFX bus (no AudioSource needed, so the
         // manager's own AudioSource is left to the music, MainMenuBGM).
-        private void PlaySfx(AudioClip clip, float volume)
+        /// <summary>The table click sound (tableClickSound), as a table's (or BackSlab's) click is acted on.</summary>
+        private void PlayTableClickSound() { PlaySfx(tableClickSound, tableClickVolume); }
+
+        /// <summary>The table hover sound, at a random pitch between tableHoverPitchMin and tableHoverPitchMax.</summary>
+        private void PlayTableHoverSound()
         {
-            if (clip == null) return;
+            PlaySfxRandomPitch(tableHoverSound, tableHoverVolume, tableHoverPitchMin, tableHoverPitchMax);
+        }
+
+        /*********************************************************************
+         \brief  The UI button click (buttonClickSound), at a random pitch
+                 between buttonClickPitchMin and buttonClickPitchMax. Played
+                 for every button by OnButtonClicked; public so other scripts
+                 can use it for clicks of their own.
+         *********************************************************************/
+        public void PlayButtonClickSound()
+        {
+            PlaySfxRandomPitch(buttonClickSound, buttonClickVolume, buttonClickPitchMin, buttonClickPitchMax);
+        }
+
+        // Plays a clip once (PlaySfx) at a random pitch between min and max (either way round).
+        // Each sound is its own voice, so its pitch is its own.
+        private void PlaySfxRandomPitch(AudioClip clip, float volume, float min, float max)
+        {
+            Entity voice = PlaySfx(clip, volume);
+            if (voice == null) return;
+            float low  = System.Math.Min(min, max);
+            float high = System.Math.Max(min, max);
+            float pitch = low + (float)random.NextDouble() * (high - low);
+            voice.AudioSource.Pitch = System.Math.Max(pitch, 0.01f);   // Pitch also changes a sound already playing
+        }
+
+        // Returns the temporary entity playing the clip (null if none), so its AudioSource can be tweaked.
+        private Entity PlaySfx(AudioClip clip, float volume)
+        {
+            if (clip == null) return null;
             Entity ear = viewCamera != null ? viewCamera : Entity;
-            Audio.PlayClipAtPoint(clip, ear.Transform.WorldPosition, volume, AudioBus.SFX);
+            return Audio.PlayClipAtPoint(clip, ear.Transform.WorldPosition, volume, AudioBus.SFX);
         }
 
         // A table's "World Text" child (its label), or null.
