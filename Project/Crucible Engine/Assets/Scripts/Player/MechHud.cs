@@ -5,7 +5,7 @@
 * \date          7 November 2026
 * \version       1.0
 * \brief         The player's combat HUD. Port of the Unity HUD scripts:
-*                MechHealthHud (health bar, lost-health white bar, low tint),
+*                MechHealthHud (health bar, white track, low tint),
 *                MechWeaponsHud + WeaponsHudPod (ammo, key, cooldown sweep,
 *                dimming), MechAbilitiesHud + AbilitiesHudPod (cooldown
 *                counter and sweep), PlayerDamageVignette (low-health edges)
@@ -40,8 +40,6 @@ namespace Crucible.Scripts
         public string playerName = "Player";
 
         // Health meter (MechHealthHud)
-        public float whiteBarDelay = 1f;            // seconds without new damage before the white bar drains
-        public float whiteBarDrainDuration = 0.65f;
         public float lowHealthThreshold = 0.25f;
         public Color healthyColor = new Color(0.3f, 0.95f, 0.5f);
         public Color lowHealthColor = new Color(1f, 0.3f, 0.25f);
@@ -168,7 +166,8 @@ namespace Crucible.Scripts
         MechPlayer player;
         float nextPlayerSearch;
         Entity healthGroup;
-        Bar barFront, barWhite, barGlow;
+        UIImage barFront;
+        Bar barGlow;
         UIText healthLabel;
         UIText debugText;
         readonly List<Pod> pods = new List<Pod>();
@@ -176,18 +175,12 @@ namespace Crucible.Scripts
         int boundLoadout = -1;
         readonly List<UIImage> vignette = new List<UIImage>();
 
-        // Lost-health state (ratios, so both bars work whatever their size).
-        float frontFill = 1f, lostFill = 1f;
-        float lastDamageTime = float.NegativeInfinity, drainFrom, drainAge;
-        float boundMaximum;
-        bool healthSnapshot;
         bool healthVisible = true;
 
         public override void OnCreate()
         {
             healthGroup = Entity.FindChild("Health HUD");
-            barFront = Bar.Find(healthGroup, "Bar Front");
-            barWhite = Bar.Find(healthGroup, "Bar White");
+            barFront = healthGroup?.FindChild("Bar Front")?.GetComponent<UIImage>();
             barGlow = Bar.Find(healthGroup, "Glow");
             healthLabel = TextOf(healthGroup, "Health Label");
             foreach (var side in new[] { "Top", "Bottom", "Left", "Right" })
@@ -216,7 +209,7 @@ namespace Crucible.Scripts
             }
             float now = Time.ElapsedTime;
             if (player.LoadoutVersion != boundLoadout) BindPods();
-            RefreshHealth(now, deltaTime);
+            RefreshHealth();
             foreach (var pod in pods) RefreshPod(pod, now);
             RefreshVignette();
             RefreshCursor();
@@ -229,42 +222,24 @@ namespace Crucible.Scripts
             player = found != null ? found.GetComponent<MechPlayer>() : null;
             if (player == null || player.Health == null) { player = null; return; }   // not created yet
             boundLoadout = -1;   // bound on the next update, once the player has equipped its parts
-            healthSnapshot = false;
         }
 
         // ---------------------------------------------------------------------------- //
-        // Health: MechHealthHud.Refresh / TickLostHealth
+        // Health: crop the green sprite to reveal the full-width white sprite beneath it.
         // ---------------------------------------------------------------------------- //
 
-        void RefreshHealth(float now, float deltaTime)
+        void RefreshHealth()
         {
             MechHealth health = player.Health;
             SetHealthVisible(!health.IsDead);
             float ratio = health.Normalized;
 
-            // Damage: the white bar keeps the ratio the front had before the hit. Healing snaps both up.
-            bool reset = !healthSnapshot || Math.Abs(boundMaximum - health.Maximum) > 0.001f || health.IsDead;
-            if (reset) lostFill = ratio;
-            else if (ratio < frontFill - 1e-5f) { lastDamageTime = now; drainFrom = lostFill; drainAge = 0f; }
-            else if (ratio > frontFill + 1e-5f) lostFill = ratio;
-            boundMaximum = health.Maximum; healthSnapshot = true;
-            frontFill = ratio;
-            if (lostFill < frontFill) lostFill = frontFill;
-
-            // After a moment without damage the white bar drains into the front over a set time.
-            if (lostFill > frontFill && now - lastDamageTime >= whiteBarDelay)
-            {
-                drainAge += deltaTime;
-                lostFill = MechMath.Lerp(drainFrom, frontFill, drainAge / Math.Max(0.01f, whiteBarDrainDuration));
-            }
-
             if (barFront != null)
             {
-                barFront.SetFill(frontFill);
-                if (barFront.Image != null) barFront.Image.Color = frontFill <= lowHealthThreshold ? lowHealthColor : healthyColor;
+                barFront.HorizontalFill = ratio;
+                barFront.Color = ratio <= lowHealthThreshold ? lowHealthColor : healthyColor;
             }
-            if (barWhite != null) barWhite.SetFill(lostFill);
-            if (barGlow != null) barGlow.SetFill(frontFill);   // Unity stretches the glow with health
+            if (barGlow != null) barGlow.SetFill(ratio);
             if (healthLabel != null)
                 healthLabel.Text = "HEALTH  " + (int)Math.Ceiling(health.Current) + " / " + (int)Math.Ceiling(health.Maximum);
         }

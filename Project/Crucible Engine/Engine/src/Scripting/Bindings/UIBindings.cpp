@@ -162,6 +162,14 @@ namespace Crucible::ScriptBindings
 			}
 		}
 
+		int32_t SetImageHorizontalFill(int32_t index, int32_t generation, const float* value) noexcept
+		{
+			if (!value || !std::isfinite(*value))
+				return 0;
+			const float fill = std::clamp(*value, 0.0f, 1.0f);
+			return SetFloat<UIImage, &UIImage::horizontalFill, false>(index, generation, &fill);
+		}
+
 		template <typename C, bool C::*Member>
 		int32_t GetFlag(int32_t index, int32_t generation, int32_t* out) noexcept
 		{
@@ -689,6 +697,8 @@ namespace Crucible::ScriptBindings
 		Add("Crucible.UIImage::GetTextureInternal", &GetAsset<UIImage, &UIImage::textureAsset>);
 		Add("Crucible.UIImage::SetTextureInternal",
 		    &SetAsset<UIImage, &UIImage::textureAsset, &EntityContext::IsTextureAsset>);
+		Add("Crucible.UIImage::GetHorizontalFillInternal", &GetFloat<UIImage, &UIImage::horizontalFill>);
+		Add("Crucible.UIImage::SetHorizontalFillInternal", &SetImageHorizontalFill);
 
 		// Texture / Font assets
 		Add("Crucible.Texture::GetNameInternal", &ManagedAssetGetName);

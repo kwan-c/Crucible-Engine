@@ -72,6 +72,19 @@
                                     "stringIsNull": false,
                                     "entityId": 0,
                                     "assetId": 0
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.EnemySpawner",
+                                    "name": "alternatePrefab",
+                                    "type": "Prefab",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0,
+                                    "real": 0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 17058197998951610773
                                 }
                             ]
                         }
@@ -81,7 +94,7 @@
                     "prefabAsset": 4729220388229677059,
                     "fileId": 2423377379015966721,
                     "isRoot": true,
-                    "prefabHash": 12164519158737015921,
+                    "prefabHash": 7597080245595756833,
                     "overrides": []
                 },
                 "EntityTag": {
@@ -600,6 +613,45 @@
                                     "stringIsNull": false,
                                     "entityId": 0,
                                     "assetId": 0
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.EnemySpawner",
+                                    "name": "alternatePrefab",
+                                    "type": "Prefab",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0,
+                                    "real": 0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 2065691607722340663
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.EnemySpawner",
+                                    "name": "thirdPrefab",
+                                    "type": "Prefab",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0,
+                                    "real": 0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 8324290116436774721
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.EnemySpawner",
+                                    "name": "fourthPrefab",
+                                    "type": "Prefab",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0,
+                                    "real": 0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 5646529725118021769
                                 }
                             ]
                         }
@@ -609,7 +661,7 @@
                     "prefabAsset": 1846916626712592391,
                     "fileId": 7035063397443403781,
                     "isRoot": true,
-                    "prefabHash": 8575032996791168211,
+                    "prefabHash": 7394183950615641703,
                     "overrides": []
                 },
                 "EntityTag": {
@@ -1276,6 +1328,50 @@
                 },
                 "EntityTag": {
                     "tag": "Walkable"
+                }
+            }
+        },
+        {
+            "id": "48C24F64B035A0C7",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0,
+                        "y": 0,
+                        "z": 0
+                    },
+                    "rotation": {
+                        "x": 0,
+                        "y": 0,
+                        "z": 0,
+                        "w": 1
+                    },
+                    "scale": {
+                        "x": 1,
+                        "y": 1,
+                        "z": 1
+                    }
+                },
+                "EntityName": {
+                    "name": "Enemy Coordination"
+                },
+                "ScriptComponent": {
+                    "scripts": [
+                        {
+                            "enabled": true,
+                            "assembly": "Managed/Crucible.Scripts.dll",
+                            "namespace": "Crucible.Scripts",
+                            "class": "EnemyHordeCoordinator",
+                            "fields": []
+                        },
+                        {
+                            "enabled": true,
+                            "assembly": "Managed/Crucible.Scripts.dll",
+                            "namespace": "Crucible.Scripts",
+                            "class": "EnemySpecialCoordinator",
+                            "fields": []
+                        }
+                    ]
                 }
             }
         }

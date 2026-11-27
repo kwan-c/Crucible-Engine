@@ -387,7 +387,11 @@ namespace Crucible {
 						if (UIImage* writable = world.Write<UIImage>(item.entity)) { writable->texture = texture; }
 					}
 				}
-				quad(item, item.rect, colour, texture);
+				const float fill = image->horizontalFill;
+				Math::vec4 visible = item.rect;
+				visible.z = std::lerp(visible.x, visible.z, fill);
+				// Crop the texture by the same fraction as its quad to keep the artwork at its authored scale.
+				quad(item, visible, colour, texture, { 0.0f, 0.0f, fill, 1.0f });
 			}
 
 			// A slider draws its own parts on top: track, the filled part, then the handle.

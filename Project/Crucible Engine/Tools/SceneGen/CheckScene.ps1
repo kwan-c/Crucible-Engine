@@ -31,7 +31,8 @@ foreach ($e in $doc.entities) {
                 $hex = '{0:X16}' -f [uint64]$f.entityId
                 if (-not $ids.ContainsKey($hex)) { Fail "$name.$($f.name) -> entity $hex not in this file" }
             }
-            if ($f.type -notin 'Entity', 'Boolean', 'Int32', 'Single', 'Double', 'String') { CheckAsset "$name.$($f.name)" $f.assetId }
+            if ($f.type -in 'Boolean', 'Int32', 'Single') { Fail "$name.$($f.name) : type '$($f.type)' is not an engine type name (use Bool / Int / Float) - the value is ignored" }
+            if ($f.type -notin 'Entity', 'Bool', 'Int', 'Float', 'Double', 'String') { CheckAsset "$name.$($f.name)" $f.assetId }
         }
         $cs = Get-ChildItem (Join-Path $assets 'Scripts') -Recurse -Filter "$($sc.class).cs"
         if (-not $cs) { Write-Host "warn  $name : no Assets/Scripts/**/$($sc.class).cs (class may live in another file)" -ForegroundColor Yellow }

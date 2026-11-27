@@ -113,7 +113,7 @@ namespace Crucible.Scripts
         {
             SetIdle(false);   // MechWeaponAnimator.PlayAttack resets the weapon idle
             Entity model = Entity.FindChild("Model");
-            if (model != null && !model.Animator.SetTrigger("Fire") && !fireWarned)
+            if (model != null && model.HasComponent<Animator>() && !model.Animator.SetTrigger("Fire") && !fireWarned)
             {
                 // False before the controller's first update, or without a "Fire" Trigger parameter.
                 fireWarned = true;
@@ -198,7 +198,14 @@ namespace Crucible.Scripts
         bool idlePlaying, fireWarned;
 
         /// <summary>Does this part have an animated model (a weapon controller)?</summary>
-        public bool CanAnimate { get { return Entity.FindChild("Model") != null && Def != null && Def.IsWeapon; } }
+        public bool CanAnimate
+        {
+            get
+            {
+                Entity model = Entity.FindChild("Model");
+                return model != null && model.HasComponent<Animator>() && Def != null && Def.IsWeapon;
+            }
+        }
 
         /// <summary>Out of the mech: a root again, upright on the ground at this point, facing yawDegrees.</summary>
         public void Drop(Vector3 groundPoint, float yawDegrees)

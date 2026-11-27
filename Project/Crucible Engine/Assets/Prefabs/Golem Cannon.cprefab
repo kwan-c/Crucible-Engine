@@ -78,7 +78,7 @@
                             "type": "Float",
                             "boolean": false,
                             "integer": 0,
-                            "single": 80.0,
+                            "single": 320,
                             "real": 0.0,
                             "text": "",
                             "stringIsNull": false,
@@ -239,7 +239,7 @@
                             "text": "",
                             "stringIsNull": false,
                             "entityId": 0,
-                            "assetId": 8796023608539152642
+                            "assetId": 514308568908831173
                         },
                         {
                             "declaringType": "Crucible.Scripts.Enemy",
@@ -288,6 +288,58 @@
                             "integer": 0,
                             "single": 85.0,
                             "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.Enemy",
+                            "name": "spawnCost",
+                            "type": "Int",
+                            "boolean": false,
+                            "integer": 10,
+                            "single": 0,
+                            "real": 0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.Enemy",
+                            "name": "equippedWeaponId",
+                            "type": "String",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 0,
+                            "real": 0,
+                            "text": "cannon",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.Enemy",
+                            "name": "weaponDamageMultiplier",
+                            "type": "Float",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 0.225,
+                            "real": 0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.Enemy",
+                            "name": "projectileSpeedMultiplier",
+                            "type": "Float",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 0.8,
+                            "real": 0,
                             "text": "",
                             "stringIsNull": false,
                             "entityId": 0,
@@ -443,15 +495,15 @@
             "components": {
                 "Transform": {
                     "positions": { "x": 0.0, "y": 0.0, "z": 0.0 },
-                    "rotation": { "x": 0.70710677, "y": 0.0, "z": 0.0, "w": 0.70710677 },
+                    "rotation": { "x": 0, "y": 0.0, "z": 0.0, "w": 1 },
                     "scale": { "x": 1.0, "y": 1.0, "z": 1.0 }
                 },
                 "MeshRenderer": {
                     "visible": true,
-                    "modelAsset": 9363837801095872521,
-                    "modelRoot": 4294967295,
+                    "modelAsset": 2654220400306328953,
+                    "modelRoot": 9,
                     "materialOverrides": [],
-                    "colour": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 0.0 },
+                    "colour": { "x": 0.5, "y": 0.5, "z": 0.5, "w": 0.5 },
                     "meshAsset": 0,
                     "materialAsset": 0
                 },
@@ -470,7 +522,40 @@
                     "node": 17
                 },
                 "EntityName": {
-                    "name": "Cannon"
+                    "name": "Weapon Model"
+                }
+            }
+        },
+        {
+            "id": "A7A08926686D51D1",
+            "parent": 4,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0,
+                        "y": 0,
+                        "z": 0
+                    },
+                    "rotation": {
+                        "x": 0,
+                        "y": 0,
+                        "z": 0,
+                        "w": 1
+                    },
+                    "scale": {
+                        "x": 1,
+                        "y": 1,
+                        "z": 1
+                    }
+                },
+                "SocketAttachment": {
+                    "enabled": true,
+                    "socketName": "Muzzle",
+                    "modelAsset": 2654220400306328953,
+                    "node": 3
+                },
+                "EntityName": {
+                    "name": "Weapon Muzzle"
                 }
             }
         }
