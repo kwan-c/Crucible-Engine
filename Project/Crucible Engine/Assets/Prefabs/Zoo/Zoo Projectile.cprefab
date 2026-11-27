@@ -1,0 +1,95 @@
+{
+    "version": 3,
+    "name": "Zoo Projectile",
+    "entities": [
+        {
+            "id": "51E64A68A6F6BF53",
+            "parent": -1,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0,
+                        "y": 0,
+                        "z": 0
+                    },
+                    "rotation": {
+                        "x": 0,
+                        "y": 0,
+                        "z": 0,
+                        "w": 1
+                    },
+                    "scale": {
+                        "x": 1,
+                        "y": 1,
+                        "z": 1
+                    }
+                },
+                "ScriptComponent": {
+                    "enabled": true,
+                    "assembly": "Managed/Crucible.Scripts.dll",
+                    "namespace": "Crucible.Scripts",
+                    "class": "MechProjectile",
+                    "fields": [
+                        {
+                            "declaringType": "Crucible.Scripts.MechProjectile",
+                            "name": "spinDegreesPerSecond",
+                            "type": "Float",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 0,
+                            "real": 0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        }
+                    ]
+                },
+                "EntityName": {
+                    "name": "Zoo Projectile"
+                }
+            }
+        },
+        {
+            "id": "4B3F90778A1619C7",
+            "parent": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0,
+                        "y": 0,
+                        "z": 0
+                    },
+                    "rotation": {
+                        "x": 0,
+                        "y": 0,
+                        "z": 0,
+                        "w": 1
+                    },
+                    "scale": {
+                        "x": 0.18,
+                        "y": 0.18,
+                        "z": 0.18
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 1,
+                        "y": 0.5,
+                        "z": 0.15,
+                        "w": 1
+                    },
+                    "meshAsset": 8362592118289502741,
+                    "materialAsset": 0
+                },
+                "EntityName": {
+                    "name": "Visual"
+                }
+            }
+        }
+    ]
+}

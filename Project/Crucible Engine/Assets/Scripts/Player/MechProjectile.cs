@@ -6,11 +6,9 @@
 * \par:          Email: low.h@digipen.edu
 * \date          8 November 2026
 * \version       1.2
-* \brief         A straight shot from a ranged weapon. Port of Unity's
-*                MechProjectile + RangedAttack: the direction is captured at
-*                launch and never tracks a target; it flies at the part's
-*                Projectile Speed, stops on the first solid thing, and does
-*                full damage; at the weapon's Range it disappears.
+* \brief         Shared projectile flight for player and enemy weapons.
+*                Weapon definitions supply damage, range and flight data.
+*                Each launch captures its actor's modifiers and target.
 *
 * \details
 *    Prefab setup (Assets/Prefabs/Player/Projectile *.cprefab, written by
@@ -39,39 +37,58 @@ namespace Crucible.Scripts
         public float spinDegreesPerSecond = 0f;   // Unity's angularVelocity.x on the visual (the axe: 720)
         public float targetRadius = 0.9f;         // how close to a target's centre counts as a hit
 
-        MechWeapon weapon;
+        MechPartDef definition;
         Entity owner;
-        Vector3 direction;
-        float speed, radius, remaining, travelled;
-        float damageScale = 1f;   // the shooter's Damage Amp at the moment it fired
+        CombatHealth enemyTarget;
+        Action<Entity, Vector3> onContact;
+        Vector3 direction, arcVelocity;
+        float speed, radius, remaining, arcTime, damageScale;
+        const float ArcGravity = 25f;
+        List<ulong> pierced;
+        RaycastHit[] piercingHits;
         bool live;
         Transform visual;
 
-        // A spawned prefab's script is created later in the frame ("OnCreate deferred"), so right after
-        // Prefab.Instantiate GetComponent<MechProjectile>() is still null. Fire() queues the launch here
-        // and the projectile picks it up in its own OnCreate.
-        sealed class PendingLaunch { public MechWeapon Weapon; public Entity Owner; public Vector3 Direction; public float DamageScale; }
+        // Prefab scripts may run OnCreate after the firing script returns.
+        sealed class PendingLaunch
+        {
+            public MechPartDef Definition;
+            public Entity Owner;
+            public Vector3 Direction;
+            public float DamageScale, SpeedMultiplier;
+            public CombatHealth EnemyTarget;
+            public Action<Entity, Vector3> OnContact;
+            public Vector3? ArcTarget;
+        }
+
         static readonly Dictionary<ulong, PendingLaunch> pending = new Dictionary<ulong, PendingLaunch>();
         static ulong Key(Entity e) { return ((ulong)e.Generation << 32) | e.Index; }
 
-        /// <summary>
-        /// Launches the spawned shot now if its script exists, else as soon as it is created.
-        /// damageScale multiplies its damage and splash (Damage Amp; 1 = normal).
-        /// </summary>
         public static void Fire(Entity shot, MechWeapon source, Entity shooter, Vector3 shotDirection, float damageScale)
         {
+            Fire(shot, source.Def, shooter, shotDirection, damageScale);
+        }
+
+        public static void Fire(Entity shot, MechPartDef definition, Entity shooter, Vector3 shotDirection, float damageScale,
+                                float speedMultiplier = 1f, CombatHealth enemyTarget = null,
+                                Action<Entity, Vector3> onContact = null, Vector3? arcTarget = null)
+        {
             if (shot == null) return;
+            var launch = new PendingLaunch
+            {
+                Definition = definition, Owner = shooter, Direction = shotDirection, DamageScale = damageScale,
+                SpeedMultiplier = speedMultiplier, EnemyTarget = enemyTarget, OnContact = onContact, ArcTarget = arcTarget
+            };
             MechProjectile ready = shot.GetComponent<MechProjectile>();
-            if (ready != null) { ready.Launch(source, shooter, shotDirection, damageScale); return; }
-            pending[Key(shot)] = new PendingLaunch { Weapon = source, Owner = shooter, Direction = shotDirection, DamageScale = damageScale };
+            if (ready != null) ready.Launch(launch);
+            else pending[Key(shot)] = launch;
         }
 
         public override void OnCreate()
         {
-            PendingLaunch launch;
-            if (!pending.TryGetValue(Key(Entity), out launch)) return;
+            if (!pending.TryGetValue(Key(Entity), out PendingLaunch launch)) return;
             pending.Remove(Key(Entity));
-            Launch(launch.Weapon, launch.Owner, launch.Direction, launch.DamageScale);
+            Launch(launch);
         }
 
         public override void OnDestroy()
@@ -79,21 +96,36 @@ namespace Crucible.Scripts
             pending.Remove(Key(Entity));
         }
 
-        /// <summary>Starts the flight. The weapon supplies damage, range, speed and splash.</summary>
         public void Launch(MechWeapon source, Entity shooter, Vector3 shotDirection, float shotDamageScale)
         {
-            weapon = source;
-            owner = shooter;
-            damageScale = Math.Max(0f, shotDamageScale);
-            direction = shotDirection.Normalized;
-            speed = Math.Max(0.01f, source.Def.ProjectileSpeed);
-            radius = Math.Max(0.01f, source.Def.ProjectileSize);
-            remaining = source.Def.Range;
-            travelled = 0f;
+            Launch(new PendingLaunch { Definition = source.Def, Owner = shooter, Direction = shotDirection,
+                DamageScale = shotDamageScale, SpeedMultiplier = 1f });
+        }
+
+        void Launch(PendingLaunch launch)
+        {
+            definition = launch.Definition;
+            owner = launch.Owner;
+            enemyTarget = launch.EnemyTarget;
+            onContact = launch.OnContact;
+            damageScale = Math.Max(0f, launch.DamageScale);
+            direction = launch.Direction.Normalized;
+            speed = Math.Max(0.01f, definition.ProjectileSpeed * launch.SpeedMultiplier);
+            radius = Math.Max(0.01f, definition.ProjectileSize);
+            remaining = definition.Range;
+            arcTime = 0f;
+            pierced = definition.Piercing ? new List<ulong>() : null;
+            piercingHits = definition.Piercing ? new RaycastHit[64] : null;
+            if (launch.ArcTarget.HasValue)
+            {
+                Vector3 offset = launch.ArcTarget.Value - Transform.WorldPosition;
+                arcTime = Math.Max(0.55f, MechMath.Flat(offset).Length / speed);
+                arcVelocity = offset * (1f / arcTime) + Vector3.Up * (0.5f * ArcGravity * arcTime);
+            }
             live = MechMath.SqrLength(direction) > 0f;
             if (live) Transform.WorldRotation = Quaternion.LookRotation(direction, Vector3.Up);
-            Entity v = Entity.FindChild("Visual");
-            visual = v != null ? v.Transform : null;
+            Entity child = Entity.FindChild("Visual");
+            visual = child != null ? child.Transform : null;
             if (!live) Destroy(Entity);
         }
 
@@ -103,80 +135,170 @@ namespace Crucible.Scripts
             if (visual != null && spinDegreesPerSecond != 0f)
                 visual.Rotation = visual.Rotation * Quaternion.AngleAxis(spinDegreesPerSecond * deltaTime, new Vector3(1f, 0f, 0f));
 
-            float step = Math.Min(speed * deltaTime, remaining);
-            Vector3 from = Transform.WorldPosition;
+            if (arcTime > 0f)
+            {
+                float time = Math.Min(deltaTime, arcTime);
+                Vector3 displacement = arcVelocity * time - Vector3.Up * (0.5f * ArcGravity * time * time);
+                arcVelocity -= Vector3.Up * (ArcGravity * time);
+                arcTime -= time;
+                float length = displacement.Length;
+                if (length > 0.0001f)
+                {
+                    direction = displacement * (1f / length);
+                    Transform.WorldRotation = Quaternion.LookRotation(direction, Vector3.Up);
+                    Advance(length);
+                }
+                if (live && arcTime <= 0f)
+                {
+                    Impact(null, Transform.WorldPosition);
+                    Finish();
+                }
+                return;
+            }
 
-            // A target the shot passes within reach of this step.
-            MechCombatTargets.Target target;
-            float along;
-            if (TargetOnSegment(from, step, out target, out along))
-            {
-                Transform.WorldPosition = from + direction * along;
-                travelled += along;
-                Impact(target.Entity, Transform.WorldPosition);
-                return;
-            }
-            // Anything solid (the ground, walls, enemies' colliders).
-            RaycastHit hit;
-            if (Physics.Raycast(from, direction, out hit, step + radius, owner))
-            {
-                float distance = Math.Max(0f, hit.Distance - radius);
-                Transform.WorldPosition = from + direction * distance;
-                travelled += distance;
-                Impact(hit.Entity, hit.Point);
-                return;
-            }
-            Transform.WorldPosition = from + direction * step;
-            travelled += step;
+            float step = Math.Min(speed * deltaTime, remaining);
+            Advance(step);
             remaining -= step;
-            if (remaining <= 0f) Finish();   // out of range: gone, no detonation (Unity's rule)
+            if (live && remaining <= 0f) Finish();
         }
 
-        bool TargetOnSegment(Vector3 from, float length, out MechCombatTargets.Target found, out float along)
+        void Advance(float step)
         {
-            found = null; along = 0f;
-            float best = float.MaxValue;
-            foreach (var t in MechCombatTargets.All)
+            if (!(step > 0f)) return;
+            Vector3 from = Transform.WorldPosition;
+            // Resolve the nearest contact first so aim volumes do not hit through geometry.
+            while (FindContact(from, step, out Entity hit, out Vector3 point))
             {
-                if (!t.Entity.IsAlive || MechCombatTargets.Same(t.Entity, owner)) continue;
-                Vector3 centre = t.AimPosition;   // roots sit at the feet
-                Vector3 offset = centre - from;
-                float s = MechMath.Clamp(Vector3.Dot(offset, direction), 0f, length);
-                Vector3 closest = from + direction * s;
-                if ((centre - closest).Length > targetRadius + radius || s >= best) continue;
-                best = s; found = t; along = s;
+                Entity target = Damageable(hit);
+                bool passThrough = pierced != null && target != null && !WasPierced(target);
+                if (passThrough) pierced.Add(Key(target));
+                Impact(hit, point);
+                if (!passThrough)
+                {
+                    Transform.WorldPosition = point;
+                    Finish();
+                    return;
+                }
+            }
+            Transform.WorldPosition = from + direction * step;
+        }
+
+        bool FindContact(Vector3 from, float length, out Entity found, out Vector3 point)
+        {
+            found = null;
+            point = from;
+            float nearest = length;
+            if (piercingHits != null)
+            {
+                int count = Physics.RaycastNonAlloc(from, direction, piercingHits, length, LayerMask.All, owner);
+                for (int i = 0; i < count; i++)
+                {
+                    RaycastHit hit = piercingHits[i];
+                    if (WasPierced(hit.Entity)) continue;
+                    found = hit.Entity;
+                    point = hit.Point;
+                    nearest = hit.Distance;
+                    break;
+                }
+            }
+            else if (Physics.SphereCast(from, radius, direction, out RaycastHit contact, length, LayerMask.All, owner))
+            {
+                found = contact.Entity;
+                point = contact.Point;
+                nearest = contact.Distance;
+            }
+
+            if (enemyTarget != null)
+            {
+                Entity victim = enemyTarget.Entity;
+                if (!enemyTarget.IsDead && victim != null && victim.IsActive && !WasPierced(victim)
+                    && NearSegment(from, EnemyAimCentre(victim), nearest, out float along))
+                {
+                    found = victim;
+                    point = from + direction * along;
+                }
+            }
+            else
+            {
+                foreach (var target in MechCombatTargets.All)
+                {
+                    if (!target.Entity.IsAlive || !target.Entity.IsActive || MechCombatTargets.Same(target.Entity, owner)
+                        || WasPierced(target.Entity) || !NearSegment(from, target.AimPosition, nearest, out float along)) continue;
+                    found = target.Entity;
+                    point = from + direction * along;
+                    nearest = along;
+                }
             }
             return found != null;
         }
 
+        static Vector3 EnemyAimCentre(Entity victim)
+        {
+            Transform transform = victim.Transform;
+            return victim.HasComponent<CharacterController>()
+                ? transform.WorldPosition + transform.WorldRotation * victim.CharacterController.Center
+                : transform.WorldPosition;
+        }
+
+        bool NearSegment(Vector3 from, Vector3 centre, float limit, out float along)
+        {
+            Vector3 offset = centre - from;
+            along = Vector3.Dot(offset, direction);
+            return along >= 0f && along < limit && (offset - direction * along).Length <= targetRadius + radius;
+        }
+
+        bool WasPierced(Entity entity)
+        {
+            if (pierced == null) return false;
+            for (Entity part = entity; part != null; part = part.Transform.Parent)
+                if (pierced.Contains(Key(part))) return true;
+            return false;
+        }
+
+        Entity Damageable(Entity entity)
+        {
+            if (enemyTarget == null) return MechCombatTargets.Owning(entity)?.Entity;
+            CombatHealth health = CombatHealth.Find(entity);
+            return health != null && !(health is Enemy) && !health.IsDead ? health.Entity : null;
+        }
+
         void Impact(Entity hitEntity, Vector3 point)
         {
-            if (!live) return;
-            live = false;
-            Vector3 from = owner != null && owner.IsAlive ? owner.Transform.WorldPosition : point - direction;
-            // The shooter hears about every hit that lands (hit stop: Unity's OnConfirmedHit).
-            MechPlayer shooter = owner != null && owner.IsAlive ? owner.GetComponent<MechPlayer>() : null;
-            // Full damage wherever it lands: the flight already ends at Range (Unity: impactDamage = damage).
-            float damage = weapon.Def.Damage * damageScale;
-            if (damage > 0f && MechCombatTargets.TryDamage(hitEntity, damage, from) && shooter != null)
-                shooter.ConfirmHit(MechCombatTargets.Owning(hitEntity)?.Entity, MechHitKind.Projectile);
+            float damage = definition.Damage * damageScale;
+            bool splash = definition.Attack == MechAttackType.Splash && definition.SplashRadius > 0f;
+            if (enemyTarget != null)
+            {
+                Entity direct = Damageable(hitEntity);
+                if (direct != null) CombatHealth.Find(direct).ApplyDamage(damage);
+                Entity victim = enemyTarget.Entity;
+                if (splash && !enemyTarget.IsDead && victim != null && victim.IsActive
+                    && (EnemyAimCentre(victim) - point).Length <= definition.SplashRadius + targetRadius)
+                    enemyTarget.ApplyDamage(definition.SplashDamage * damageScale);
+                return;
+            }
 
-            // Splash: everything inside the radius, the direct target included, takes the splash damage.
-            if (weapon.Def.Attack == MechAttackType.Splash && weapon.Def.SplashRadius > 0f)
+            Vector3 from = owner != null && owner.IsAlive ? owner.Transform.WorldPosition : point - direction;
+            MechPlayer shooter = owner != null && owner.IsAlive ? owner.GetComponent<MechPlayer>() : null;
+            var directTarget = MechCombatTargets.Owning(hitEntity);
+            if (damage > 0f && directTarget != null)
+            {
+                directTarget.OnDamage(damage, from);
+                shooter?.ConfirmHit(directTarget.Entity, MechHitKind.Projectile);
+            }
+
+            // Splash is additive for the direct target, as in CombatBlast.
+            if (splash)
             {
                 var targets = new List<MechCombatTargets.Target>(MechCombatTargets.All);
-                foreach (var t in targets)
+                foreach (var target in targets)
                 {
-                    if (!t.Entity.IsAlive || MechCombatTargets.Same(t.Entity, owner)) continue;
-                    Vector3 centre = t.AimPosition;
-                    if ((centre - point).Length <= weapon.Def.SplashRadius + targetRadius)
-                    {
-                        t.OnDamage(weapon.Def.SplashDamage * damageScale, from);
-                        if (shooter != null) shooter.ConfirmHit(t.Entity, MechHitKind.Blast);
-                    }
+                    if (!target.Entity.IsAlive || !target.Entity.IsActive || MechCombatTargets.Same(target.Entity, owner)) continue;
+                    if ((target.AimPosition - point).Length > definition.SplashRadius + targetRadius) continue;
+                    target.OnDamage(definition.SplashDamage * damageScale, from);
+                    shooter?.ConfirmHit(target.Entity, MechHitKind.Blast);
                 }
             }
-            Finish();   // hit markers / impact VFX would hook in here (Unity: CombatVisualEvents)
+            onContact?.Invoke(hitEntity, point);
         }
 
         void Finish()

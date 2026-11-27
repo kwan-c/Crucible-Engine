@@ -4,14 +4,14 @@ using Crucible;
 namespace Crucible.Scripts
 {
     // Port of Gam3333's EnemyLocalPositionQuery: "could this golem go and stand there?"
-    // Ranged positioning (and later the horde coordinator) ask it about each spot they
+    // Ranged positioning and the horde coordinator ask it about each spot they
     // consider, and only ever send the golem to spots it says yes to.
     //
     // TryGoal(candidate) checks, cheapest first, as Unity's does:
-    //   1. the nav grid: the cell is open and not a terrain wall (Navigation.IsWalkable);
+    //   1. on a baked nav grid the cell is open and not a terrain wall (Navigation.IsWalkable);
     //   2. the ground: a ray down from 3 m above the golem's feet finds a floor there,
     //      flat enough (normal.y >= 0.7, about 45 degrees) and within 1.5 m of the
-    //      height its feet are at now. The answer is that ground point, BaseOffset up
+    //      height its feet are at now. The answer is that ground point, actual pivot height up
     //      (Unity's PivotHeight) - so the spot sits ON the ground, up a ramp or on a step.
     //      This is what lets a crossbow climb: each new spot may be up to 1.5 m higher
     //      than where it stands, and the next plan starts from there;
@@ -51,10 +51,10 @@ namespace Crucible.Scripts
         public bool TryGoal(Vector3 candidate, out Vector3 point)
         {
             point = Vector3.Zero;
-            if (!Navigation.IsWalkable(candidate)) return false;
+            if (Navigation.IsBaked && !Navigation.IsWalkable(candidate)) return false;
 
-            float baseOffset = owner.BaseOffset;
-            float feet = owner.Position.Y - baseOffset;
+            float feet = owner.GroundAtFeet();
+            float baseOffset = owner.Position.Y - feet;
 
             RaycastHit hit;
             Vector3 from = new Vector3(candidate.X, feet + RayStartAbove, candidate.Z);
@@ -69,10 +69,10 @@ namespace Crucible.Scripts
         // Unity's ClearSegment: the grid's line test, the body-sized sweep, then the spot itself.
         bool ClearSegment(Vector3 from, Vector3 to)
         {
-            if (!Navigation.IsPathClear(from, to)) return false;
+            if (Navigation.IsBaked && !Navigation.IsPathClear(from, to)) return false;
 
             float radius = owner.BodyRadius;
-            Vector3 lift = Vector3.Up * (StepHeight + radius - owner.BaseOffset);   // position -> ball centre
+            Vector3 lift = Vector3.Up * (StepHeight + radius + owner.GroundAtFeet() - from.Y);
             Vector3 delta = to - from;
             float length = delta.Length;
 

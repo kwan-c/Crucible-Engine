@@ -22,8 +22,7 @@ namespace Crucible.Scripts
     //   "Slash"   - Attack when the swing starts (Fodder_MeleeSlash, timed by the controller so
     //               its strike lands at releaseFrame).
     //   "Cannon"  - Charge when the attack starts, Fire when the shot leaves.
-    // Every parameter goes to the Body and to the parts mounted on it ("Head", "Cannon"), so
-    // they all move together.
+    // The body, head and animated weapon each consume the parameters their controller defines.
     //   "None"    - nothing (the crossbow: there is no crossbow clip yet).
     //   A cancelled attack sends Cancel, so a charge doesn't hang in its loop.
     //
@@ -38,17 +37,20 @@ namespace Crucible.Scripts
         // Everything with an Animator that moves with the golem: the "Body", and the parts
         // mounted on it, found by name - "Head" (the melee golems' ENEMYPART_Head, which carries
         // the same 16 clips as the body and runs the body's controller, so it stays in step)
-        // and "Cannon". Every parameter goes to all of them; a part whose controller lacks one
+        // and the equipped weapon. Every parameter goes to all of them; a part whose controller lacks one
         // just ignores it (the cannon has no Speed), as Unity's Animator does.
         Entity[] animatedParts = new Entity[0];
+        Animator equippedWeaponAnimator;
         bool warnedNoAnimator;
 
         void CreateAnimation()
         {
             var found = new System.Collections.Generic.List<Entity>();
-            foreach (Entity part in new[] { body, Entity.FindChild("Head"), Entity.FindChild("Cannon") })
-                if (part != null) found.Add(part);
+            Entity weapon = Entity.FindChild("Weapon Model") ?? Entity.FindChild("Cannon");
+            foreach (Entity part in new[] { body, Entity.FindChild("Head"), weapon })
+                if (part != null && part.HasComponent<Animator>()) found.Add(part);
             animatedParts = found.ToArray();
+            if (weapon != null && weapon.HasComponent<Animator>()) equippedWeaponAnimator = weapon.Animator;
         }
 
         void SetFloat(string name, float value) { foreach (Entity part in animatedParts) part.Animator.SetFloat(name, value); }
@@ -106,18 +108,25 @@ namespace Crucible.Scripts
         // Called from EnemyWeapon at the three moments of an attack.
         void AnimateAttackStart()
         {
+            if (previewSpinnerWindup)
+            {
+                if (attackAnimation == "Spinner") Trigger("Spin");
+                return;
+            }
             if (attackAnimation == "Slash") Trigger("Attack");
             else if (attackAnimation == "Cannon") Trigger("Charge");
+            if (melee) equippedWeaponAnimator?.SetTrigger("Fire");
         }
 
         void AnimateAttackRelease()
         {
             if (attackAnimation == "Cannon") Trigger("Fire");
+            else if (!melee) equippedWeaponAnimator?.SetTrigger("Fire");
         }
 
         void AnimateAttackCancel()
         {
-            if (attackAnimation == "Slash" || attackAnimation == "Cannon") Trigger("Cancel");
+            if (attackAnimation == "Slash" || attackAnimation == "Cannon" || attackAnimation == "Spinner") Trigger("Cancel");
         }
 
     }

@@ -20,8 +20,6 @@ namespace Crucible.Scripts
     //   Pressure             MoveTo(ring point, stop 0.15, slow 1.6) + FaceTarget(target),
     //                        only in a scene with an EnemyHordeCoordinator
     //
-    // Not ported: special attacks (spinner, rope) and the Zigzag chase mode (the new
-    // crossbow walks to firing positions instead).
     public sealed partial class Enemy
     {
         // Awareness (Unity's EnemyAgent).
@@ -36,6 +34,9 @@ namespace Crucible.Scripts
         public float minimumRange = 0f;
         public float rangedPlanningInterval = 0.35f;   // seconds between re-planning its spot
         public float rangedSpacing = 3f;               // metres it keeps from other shooters
+        public bool useHordeCoordination = true;
+        public bool useRangedPositioning = true;
+        public bool useSpecialCoordinator = true;
 
         // Tutorial/encounter use: stands idle with its brain off until Wake() is called.
         public bool startAsleep = false;
@@ -55,9 +56,12 @@ namespace Crucible.Scripts
         // golems coming in on the same bearing aim at slightly different points.
         public float ApproachBias { get; private set; }
 
-        public void SetPressureGoal(Vector3 goal, Entity target, Vector3 targetPosition, float replanAt)
+        internal bool PressureWaiting { get; private set; }
+        public void SetPressureGoal(Vector3 goal, Entity target, Vector3 targetPosition, float replanAt,
+                                    bool available = true, bool waiting = false)
         {
-            HasPressureGoal = true;
+            HasPressureGoal = available;
+            PressureWaiting = waiting;
             PressureGoal = goal;
             PressureTarget = target;
             PressurePlannedTarget = targetPosition;
@@ -75,7 +79,7 @@ namespace Crucible.Scripts
         StateGraphAgent brain;
         EnemyLocalPositionQuery positions;
         EnemyRangedPositioning ranged;
-        float normalSpeed;
+        float speedBeforeWander, appliedWanderSpeed;
         bool slowed;
 
         Entity target;
@@ -89,10 +93,18 @@ namespace Crucible.Scripts
         public Entity Target { get { return target; } }
         public float DistanceToTarget { get { return distanceToTarget; } }
         public bool TargetDetected { get { return detected; } }
-        public bool UsesRangedPositioning { get { return minimumRange > 0f && !melee; } }
+        public bool IsRanged { get { return !melee; } }
+        public bool UsesRangedPositioning { get { return IsRanged && useRangedPositioning; } }
         // Unity: melee roles with no coordinator keep "continuous pressure" - they pursue
         // the player through their cooldown instead of waiting for a turn.
-        public bool ContinuousMeleePressure { get { return melee; } }
+        public bool ContinuousMeleePressure
+        {
+            get
+            {
+                var horde = useHordeCoordination ? EnemyHordeCoordinator.Active : null;
+                return melee && (previewSpinnerWindup || horde == null || !horde.reservedPositions);
+            }
+        }
         public bool HasRangedPosition { get { return ranged != null && ranged.HasGoal; } }
         public Vector3 RangedPosition { get { return HasRangedPosition ? ranged.Goal : Position; } }
         public Vector3 Position { get { return Transform.WorldPosition; } }
@@ -117,7 +129,8 @@ namespace Crucible.Scripts
         }
 
         // Unity's IsReady: alive, switched on, and able to move.
-        public bool IsReady { get { return Entity.IsActive && !IsDead && agent != null; } }
+        public bool IsReady { get { return agent != null && !IsDead && Entity.IsAlive && Entity.IsActive
+            && Enabled && Entity.IsEnabled<EntityScript>(); } }
 
         public void Wake()
         {
@@ -134,7 +147,9 @@ namespace Crucible.Scripts
             brain = GetComponent<StateGraphAgent>();
             if (agent == null) Log.Warning("[Enemy] " + Entity.Name + ": needs a FlowFieldAgent - it won't move or attack");
             if (brain == null) Log.Warning("[Enemy] " + Entity.Name + ": needs a StateGraphAgent - nothing tells it what to do");
-            normalSpeed = agent != null ? agent.Speed : 0f;
+            physicalBaseOffset = BaseOffset;
+            if (HasComponent<Collider>() && Entity.Collider.Shape == ColliderShape.Box)
+                physicalBaseOffset = Entity.Collider.WorldSize.Y * .5f - Entity.Collider.Center.Y * Transform.Scale.Y;
             wanderAngle = (float)(random.NextDouble() * Math.PI * 2.0);
             positions = new EnemyLocalPositionQuery(this);
             ranged = new EnemyRangedPositioning(this);
@@ -154,7 +169,7 @@ namespace Crucible.Scripts
             ResolveTarget();
             detected = targetHealth != null && !targetHealth.IsDead && targetHealth.Entity.IsActive
                     && distanceToTarget <= (detected ? loseRadius : detectRadius);
-            if (!detected) ranged.Clear();
+            if (!detected) { ranged.Clear(); ClearPressure(); }
             return detected;
         }
 
@@ -165,7 +180,11 @@ namespace Crucible.Scripts
             Entity next = null;
             if (brain != null) brain.GetVariableValue("Target", out next);
             if (!ReferenceEquals(next, null) && !next.IsAlive) next = null;
-            if (next != target) { detected = false; ranged.Clear(); ClearPressure(); }
+            if (next != target)
+            {
+                if (attacking && next != attackTarget?.Entity) CancelAttack();
+                detected = false; ranged.Clear(); ClearPressure();
+            }
 
             target = next;
             targetHealth = target != null ? CombatHealth.Find(target) : null;
@@ -178,7 +197,7 @@ namespace Crucible.Scripts
         public bool Approach()
         {
             CurrentAction = "Approach";
-            if (UsesRangedPositioning) return ApproachRanged(false);
+            if (IsRanged) return ApproachRanged(false);
 
             if (minimumRange > 0f && distanceToTarget < minimumRange)
             {
@@ -187,12 +206,13 @@ namespace Crucible.Scripts
             }
 
             bool inReach = TargetInReach();
-            if (distanceToTarget <= attackRange + 0.25f && inReach) { Hold("In range"); return true; }
+            EnemyHordeCoordinator horde = useHordeCoordination ? EnemyHordeCoordinator.Active : null;
+            bool waiting = horde != null && horde.NeedsWaitingPosition(this);
+            if (!waiting && distanceToTarget <= attackRange + 0.25f && inReach) { ClearPressure(); Hold("In range"); return true; }
 
             // A scene with an EnemyHordeCoordinator: within its radius, walk at full speed to
             // this golem's own point on the attack ring (Unity's "Close to attack").
             Vector3 ringPoint;
-            EnemyHordeCoordinator horde = EnemyHordeCoordinator.Active;
             if (horde != null && horde.TryPressurePosition(this, out ringPoint))
             {
                 CurrentAction = "Close to attack";
@@ -203,7 +223,11 @@ namespace Crucible.Scripts
             // Far away: the flow field. Close: Arrive, which slows to a stop at attack range and
             // turns to face. Close but can't hit (not facing, a wall): chase again.
             bool chase = distanceToTarget > arriveRadius || (!inReach && distanceToTarget <= attackRange + 0.5f);
-            Move(chase ? Intent.Chase : Intent.Arrive);
+            if (!waiting && !inReach && distanceToTarget <= Math.Min(attackRange, weaponReach) + .25f
+                && target != null && Math.Abs(target.Transform.WorldPosition.Y - Position.Y) <= verticalReach
+                && ClearPathFrom(Position, target, true))
+                Move(Intent.HoldFacing);
+            else Move(chase ? Intent.Chase : Intent.Arrive);
             return false;
         }
 
@@ -213,21 +237,28 @@ namespace Crucible.Scripts
         bool ApproachRanged(bool coolingDown)
         {
             float distance = distanceToTarget;
+            if (distance > Math.Max(arriveRadius, attackRange + 2f))
+            {
+                ranged.Clear();
+                CurrentAction = "Approach firing range";
+                Move(Intent.Chase);
+                return false;
+            }
             bool firingDistance = distance >= minimumRange && distance <= attackRange + 0.25f;
             bool clear = HasClearRangedPathFrom(Position);
-            bool spread = coolingDown && ranged.Crowded(rangedSpacing);
+            bool spread = UsesRangedPositioning && coolingDown && ranged.Crowded(rangedSpacing, rangedPlanningInterval);
 
             // Ready shots always win over better spacing.
             if (firingDistance && clear && !spread)
             {
-                ranged.Clear();
+                if (ranged.HasGoal) ranged.Clear();
                 CurrentAction = coolingDown ? "Hold firing position / cooldown" : "Aim from firing position";
                 Move(Intent.HoldFacing);
-                return TargetInReach();
+                return target != null && CanReach(target);
             }
 
             Vector3 spot;
-            if (ranged.TryGetGoal(minimumRange, rangedPlanningInterval, rangedSpacing, out spot))
+            if (UsesRangedPositioning && ranged.TryGetGoal(minimumRange, rangedPlanningInterval, rangedSpacing, out spot))
             {
                 CurrentAction = distance < minimumRange ? "Reposition"
                               : spread ? "Spread ranged firing positions" : "Move to clear firing angle";
@@ -247,13 +278,9 @@ namespace Crucible.Scripts
         // keeps (or improves) its firing position.
         public bool Recover()
         {
-            Hold("Recover");
-            if (!AttackInProgress && UsesRangedPositioning)
-            {
-                ApproachRanged(true);
-                return CooldownRemaining <= 0f;
-            }
-            if (!AttackInProgress && ContinuousMeleePressure)
+            if (AttackInProgress) Hold("Recover");
+            else if (IsRanged) ApproachRanged(true);
+            else
             {
                 bool inPosition = Approach();
                 CurrentAction = inPosition ? "Recover" : "Pursue during cooldown";
@@ -271,7 +298,7 @@ namespace Crucible.Scripts
 
         void Move(Intent intent, Vector3 goal)
         {
-            if (agent == null) return;
+            if (agent == null || movementHeld || pushLeft > 0f || IsFrozen || IsDead) return;
             SetSlowed(intent == Intent.Wander);
 
             switch (intent)
@@ -282,7 +309,7 @@ namespace Crucible.Scripts
                 // Unity's crossbow chases in its Zigzag pathing mode, which faces the player
                 // whichever way it walks (so it reads as sidestepping); every other golem
                 // faces where it walks. The sway itself isn't ported, only the facing.
-                case Intent.Chase:      agent.FaceTarget(UsesRangedPositioning ? target : null); agent.FollowField(); break;
+                case Intent.Chase:      agent.FaceTarget(IsRanged ? target : null); agent.FollowField(); break;
                 case Intent.Arrive:     agent.FaceTarget(null);   agent.Arrive(target); break;
                 // 0.3 m: the spot was checked to have a clear shot, so it must end up ON
                 // it, not StoppingDistance short (a melee golem's would be its attack range).
@@ -305,13 +332,20 @@ namespace Crucible.Scripts
             }
         }
 
-        // Wander is slower (Unity's wanderSpeedFraction). The agent has one Speed, so it is
-        // lowered while wandering and put back for everything else.
+        // Return only the speed that wandering temporarily changed. Live tuning or a
+        // movement effect may take ownership of the agent's speed during the wander.
         void SetSlowed(bool slow)
         {
             if (slow == slowed) return;
+            if (slow)
+            {
+                speedBeforeWander = agent.Speed;
+                agent.Speed = Math.Max(0f, speedBeforeWander * wanderSpeedFraction);
+                appliedWanderSpeed = agent.Speed;
+            }
+            else if (agent.Speed == appliedWanderSpeed)
+                agent.Speed = speedBeforeWander;
             slowed = slow;
-            agent.Speed = slow ? normalSpeed * wanderSpeedFraction : normalSpeed;
         }
 
         // Steering.Wander (Reynolds): a point on a small circle ahead, nudged a little each
@@ -340,6 +374,8 @@ namespace Crucible.Scripts
         // For the position query: metres from its position down to its feet, and its body radius.
         public float BaseOffset { get { return agent != null ? agent.BaseOffset : 0f; } }
         public float BodyRadius { get { return agent != null ? agent.Radius : 0.5f; } }
+        float physicalBaseOffset;
+        internal float GroundAtFeet() { return Position.Y - physicalBaseOffset; }
 
         static Vector3 Flat(Vector3 v) { return new Vector3(v.X, 0f, v.Z); }
     }

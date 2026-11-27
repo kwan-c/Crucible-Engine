@@ -235,8 +235,7 @@ namespace Crucible
 		fs::remove(output, ec);
 		fs::remove(fs::path(output.string() + ".mdb"), ec);
 
-		// Same options as ManagedScripts/ManagedLibrary.cmake, minus -sdk:4.5: the
-		// vendored SDK has no 4.5-api folder, so that option only produced warning CS8001.
+		// Same options as ManagedScripts/ManagedLibrary.cmake (which explains why there is no -sdk).
 		const fs::path response = m_workDir / "Crucible.Scripts.rsp";
 		{
 			std::ofstream file(response, std::ios::binary | std::ios::trunc);
