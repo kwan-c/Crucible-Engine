@@ -146,8 +146,8 @@ namespace Crucible {
 
 		/*********************************************************************
 		 \brief  Appends what every laid-out element draws, in this order:
-				 - UIImage: one quad, its colour times the UIButton state's
-				   tint if it has one, with its texture.
+				 - UIImage: one textured quad cropped to its horizontal fill.
+				   Its colour is multiplied by the UIButton tint if present.
 				 - UISlider: track, fill, handle.
 				 - UIText: one quad per glyph (Text/TextLayout.h), with the
 				   font's atlas and draw mode. Truncate / Ellipsis cut at the

@@ -1,0 +1,34 @@
+{
+    "version": 1,
+    "entry": 0,
+    "anyState": [
+        250,
+        -180
+    ],
+    "variables": [
+        {
+            "name": "Self",
+            "type": "Entity"
+        },
+        {
+            "name": "Target",
+            "type": "Entity"
+        }
+    ],
+    "states": [
+        {
+            "name": "Spinner Charge",
+            "singleNode": false,
+            "subgraph": 15207733634132360683,
+            "editor": [
+                0,
+                0
+            ],
+            "tree": {
+                "root": -1,
+                "nodes": []
+            }
+        }
+    ],
+    "transitions": []
+}

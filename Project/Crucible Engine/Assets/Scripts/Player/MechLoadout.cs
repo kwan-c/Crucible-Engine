@@ -40,7 +40,8 @@ namespace Crucible.Scripts
     /// <summary>Which sockets a part fits. Unity: PartCategory / PartSlots.</summary>
     public enum MechPartKind { Arm, Shoulder, Head, Torso, Legs }
 
-    public enum MechAttackType { None, Melee, Projectile, Splash }
+    public enum MechAttackType { None, Melee, Projectile, Splash, Special }
+    public enum MechWeaponMechanic { None, Hook, Shotgun, Scythe, PunchyArm, Shield, RockRing, Mortar, Katyusha, Tentacles, Tesla }
 
     /// <summary>
     /// What a head, torso or legs part does on its key (Unity: PartAbility, same order).
@@ -65,6 +66,9 @@ namespace Crucible.Scripts
         public float RangeGolems;       // Unity's Range stat
         public float ProjectileSpeed;   // m/s (Unity: ProjectileSpeed)
         public float ProjectileSize;    // sphere radius of the shot, m (Unity: ProjectileSize)
+        public bool Piercing;
+        public float MeleeWidth;        // greybox box width in metres; zero uses the mech's settings
+        public MechWeaponMechanic Mechanic;
         public float AbilityCooldown;   // head / torso / legs
         public MechAbilityKind Ability; // None = the part has no ability (no HUD pod, its key does nothing)
         public float AbilityPower;      // meaning depends on Ability (see MechAbilityKind)
@@ -106,12 +110,56 @@ namespace Crucible.Scripts
             // Unity's PartData_Arm_Blaster has no stats yet (0 damage, no ammo); these are placeholders.
             new MechPartDef { Id = "blaster", Name = "BLASTER", Kind = MechPartKind.Arm, Attack = MechAttackType.Projectile,
                               Damage = 35f, FireRate = 2f, RangeGolems = 8f, ProjectileSpeed = 100f, ProjectileSize = .18f },
-            new MechPartDef { Id = "large_crossbow", Name = "LARGE CROSSBOW", Kind = MechPartKind.Shoulder, Attack = MechAttackType.Splash,
-                              Damage = 100f, SplashDamage = 10f, SplashRadius = .5f, Ammo = 30, Magazine = 1, FireRate = 1f, Reload = 4f,
-                              RangeGolems = 20f, Speed = -5f, ProjectileSpeed = 160f, ProjectileSize = .07f },
+            new MechPartDef { Id = "large_crossbow", Name = "LARGE CROSSBOW", Kind = MechPartKind.Shoulder, Attack = MechAttackType.Projectile,
+                              Damage = 180f, Ammo = 30, Magazine = 1, FireRate = 1f, Reload = 2.5f,
+                              RangeGolems = 20f, Speed = -5f, ProjectileSpeed = 160f, ProjectileSize = .07f, Piercing = true },
             new MechPartDef { Id = "cannon", Name = "CANNON", Kind = MechPartKind.Shoulder, Attack = MechAttackType.Splash,
-                              Damage = 100f, SplashDamage = 50f, SplashRadius = 3f, Ammo = 30, Magazine = 1, FireRate = 1f, Reload = 3f,
+                              Damage = 200f, SplashDamage = 120f, SplashRadius = 4f, Ammo = 30, Magazine = 1, FireRate = 1f, Reload = 5f,
                               RangeGolems = 10f, Speed = -4f, ProjectileSpeed = 100f, ProjectileSize = .3f },
+            // Unity Hung-GreyBox PartCatalogue/GreyboxArms and GreyboxShoulders.
+            new MechPartDef { Id = "minigun", Name = "MINIGUN", Kind = MechPartKind.Arm, Attack = MechAttackType.Projectile,
+                              Damage = 9f, Ammo = 400, Magazine = 50, FireRate = 10f, Reload = 2f,
+                              RangeGolems = 4.5f, Speed = -5f, ProjectileSpeed = 80f, ProjectileSize = .06f },
+            new MechPartDef { Id = "hook", Name = "HOOK", Kind = MechPartKind.Arm, Attack = MechAttackType.Projectile,
+                              Mechanic = MechWeaponMechanic.Hook, Damage = 30f, Ammo = 30, Magazine = 1,
+                              FireRate = .2f, Reload = .7f, RangeGolems = 8f, Speed = -3f, ProjectileSpeed = 60f, ProjectileSize = .15f },
+            new MechPartDef { Id = "hammer", Name = "HAMMER", Kind = MechPartKind.Arm, Attack = MechAttackType.Melee,
+                              Damage = 100f, SplashDamage = 50f, SplashRadius = 3f, FireRate = .7f, RangeGolems = 1f, Speed = -3.5f, MeleeWidth = 1.8f },
+            new MechPartDef { Id = "spear", Name = "SPEAR", Kind = MechPartKind.Arm, Attack = MechAttackType.Melee,
+                              Damage = 90f, SplashDamage = 90f, SplashRadius = .5f, FireRate = 1f, RangeGolems = 3f, Speed = -4f, MeleeWidth = .7f },
+            new MechPartDef { Id = "shotgun", Name = "SHOTGUN", Kind = MechPartKind.Arm, Attack = MechAttackType.Projectile,
+                              Mechanic = MechWeaponMechanic.Shotgun, Damage = 150f, Ammo = 50, Magazine = 5, FireRate = .8f,
+                              Reload = 3f, RangeGolems = 6f, Speed = -3f, ProjectileSpeed = 75f, ProjectileSize = .09f },
+            new MechPartDef { Id = "supersword", Name = "SUPERSWORD", Kind = MechPartKind.Arm, Attack = MechAttackType.Melee,
+                              Damage = 250f, SplashDamage = 250f, SplashRadius = 2.5f, FireRate = .35f, RangeGolems = 2.5f, Speed = -7f, MeleeWidth = 4.5f },
+            new MechPartDef { Id = "scythe", Name = "SCYTHE", Kind = MechPartKind.Arm, Attack = MechAttackType.Melee,
+                              Mechanic = MechWeaponMechanic.Scythe, Damage = 100f, SplashDamage = 100f, SplashRadius = 1.5f,
+                              FireRate = .65f, RangeGolems = 1.5f, Speed = -4f, MeleeWidth = 3.5f },
+            new MechPartDef { Id = "punchy_arm", Name = "PUNCHY ARM", Kind = MechPartKind.Arm, Attack = MechAttackType.Melee,
+                              Mechanic = MechWeaponMechanic.PunchyArm, Damage = 30f, SplashDamage = 30f, SplashRadius = .5f,
+                              FireRate = 2f, RangeGolems = .7f, Speed = -1.5f, MeleeWidth = 1f },
+            new MechPartDef { Id = "metal_blades", Name = "METAL BLADES", Kind = MechPartKind.Arm, Attack = MechAttackType.Splash,
+                              Damage = 60f, SplashDamage = 30f, SplashRadius = .5f, Ammo = 40, Magazine = 3, FireRate = 1f,
+                              Reload = 2f, RangeGolems = 8f, Speed = -3f, ProjectileSpeed = 65f, ProjectileSize = .12f },
+            new MechPartDef { Id = "shield", Name = "SHIELD", Kind = MechPartKind.Shoulder, Attack = MechAttackType.Special,
+                              Mechanic = MechWeaponMechanic.Shield, FireRate = .5f, Speed = -4f },
+            new MechPartDef { Id = "giant_rock", Name = "GIANT ROCK ON A ROPE", Kind = MechPartKind.Shoulder, Attack = MechAttackType.Special,
+                              Mechanic = MechWeaponMechanic.RockRing, Damage = 210f, SplashRadius = 1f,
+                              FireRate = .33333334f, RangeGolems = 7f, Speed = -6f },
+            new MechPartDef { Id = "fishing_line", Name = "FISHING LINE", Kind = MechPartKind.Shoulder, Attack = MechAttackType.Projectile,
+                              Damage = 10f, Ammo = 50, Magazine = 10, FireRate = .7f, Reload = 2f, RangeGolems = 7f,
+                              Speed = -2f, ProjectileSpeed = 120f, ProjectileSize = .025f },
+            new MechPartDef { Id = "mortar", Name = "MORTAR", Kind = MechPartKind.Shoulder, Attack = MechAttackType.Splash,
+                              Mechanic = MechWeaponMechanic.Mortar, Damage = 100f, SplashDamage = 100f, SplashRadius = 5f,
+                              Ammo = 25, Magazine = 1, FireRate = 1f, Reload = 5f, RangeGolems = 20f, Speed = -3f, ProjectileSpeed = 40f, ProjectileSize = .2f },
+            new MechPartDef { Id = "katyusha", Name = "KATYUSHA", Kind = MechPartKind.Shoulder, Attack = MechAttackType.Splash,
+                              Mechanic = MechWeaponMechanic.Katyusha, Damage = 20f, SplashDamage = 20f, SplashRadius = 2f,
+                              Ammo = 100, Magazine = 10, FireRate = .2f, Reload = 5f, RangeGolems = 15f, Speed = -7f, ProjectileSpeed = 65f, ProjectileSize = .12f },
+            new MechPartDef { Id = "tentacles", Name = "TENTACLES", Kind = MechPartKind.Shoulder, Attack = MechAttackType.Special,
+                              Mechanic = MechWeaponMechanic.Tentacles, Damage = 50f, FireRate = 1.5f, RangeGolems = 4f, Speed = -3f },
+            new MechPartDef { Id = "tesla_coil", Name = "TESLA COIL", Kind = MechPartKind.Shoulder, Attack = MechAttackType.Special,
+                              Mechanic = MechWeaponMechanic.Tesla, Damage = 4f, Ammo = 70, Magazine = 35,
+                              FireRate = 5f, Reload = 3f, RangeGolems = 7f },
             // Abilities from Unity main's PartData_Head / _Torso / _Legs_Fast. Golem Legs and Heavy Legs
             // have a cooldown stat there but no ability, so Space does nothing with them.
             new MechPartDef { Id = "golem_head", Name = "GOLEM HEAD", Kind = MechPartKind.Head, Health = 50f, AbilityCooldown = 10f,
@@ -143,7 +191,7 @@ namespace Crucible.Scripts
         public string KeyLabel { get { return KeyLabelFor(Socket); } }
         public bool UsesAmmo { get { return Def.Ammo > 0 || Def.Magazine > 0; } }
         public float ShotInterval { get { return Def.FireRate > 0f ? 1f / Def.FireRate : 1f; } }
-        public bool RepeatWhileHeld { get { return Socket == MechSocket.ArmL || Socket == MechSocket.ArmR; } }
+        public bool RepeatWhileHeld { get { return Socket == MechSocket.ArmL || Socket == MechSocket.ArmR || Def.Mechanic == MechWeaponMechanic.Tesla; } }
         public bool IsMelee { get { return Def.Attack == MechAttackType.Melee; } }
 
         public int RemainingAmmo { get; private set; }   // total shots left, loaded rounds included
@@ -186,12 +234,17 @@ namespace Crucible.Scripts
         /// </summary>
         public bool TryAttack(float now)
         {
-            if (IsCoolingDown(now) || IsEmpty) return false;
+            return TryAttack(now, 1);
+        }
+
+        public bool TryAttack(float now, int ammunitionCost)
+        {
+            if (IsCoolingDown(now) || (UsesAmmo && (ammunitionCost < 1 || ammunitionCost > MagazineRounds))) return false;
             readyStartedAt = now;
             readyAt = now + ShotInterval;
             if (!UsesAmmo) return true;
-            RemainingAmmo = Math.Max(0, RemainingAmmo - 1);
-            MagazineRounds = Math.Max(0, MagazineRounds - 1);
+            RemainingAmmo -= ammunitionCost;
+            MagazineRounds -= ammunitionCost;
             if (RemainingAmmo <= 0) { reloadEndsAt = 0f; return true; }
             if (MagazineRounds > 0) return true;
             MagazineRounds = Def.Magazine > 0 ? Math.Min(Def.Magazine, RemainingAmmo) : RemainingAmmo;

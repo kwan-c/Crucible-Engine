@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using Crucible;
 
 namespace Crucible.Scripts
@@ -13,6 +14,9 @@ namespace Crucible.Scripts
     public sealed class EnemySpawner : EntityScript
     {
         public Prefab enemyPrefab;
+        public Prefab alternatePrefab;
+        public Prefab thirdPrefab;
+        public Prefab fourthPrefab;
         public float waveInterval = 30f;
         public int enemiesPerWave = 10;
         public float spawnStagger = 0.5f;
@@ -23,10 +27,17 @@ namespace Crucible.Scripts
         int currentWave, spawnedThisWave, totalSpawned;
         float waveStartTime, nextWaveTime, nextSpawnTime;
         bool waveInProgress;
+        readonly List<Prefab> roster = new List<Prefab>(4);
+        readonly List<Entity> living = new List<Entity>();
+        Entity pendingWake;
+        float pruneAt;
+        public int ActiveCount { get { return living.Count; } }
 
         public override void OnCreate()
         {
-            if (enemyPrefab == null)
+            foreach (Prefab prefab in new[] { enemyPrefab, alternatePrefab, thirdPrefab, fourthPrefab })
+                if (prefab != null) roster.Add(prefab);
+            if (roster.Count == 0)
                 Log.Warning("[EnemySpawner] " + Entity.Name + ": no Enemy Prefab assigned - nothing will spawn.");
 
             float now = Time.ElapsedTime;
@@ -37,6 +48,21 @@ namespace Crucible.Scripts
         {
             float now = Time.ElapsedTime;
 
+            if (pendingWake != null)
+            {
+                var enemy = pendingWake.GetComponent<Enemy>();
+                if (enemy != null) enemy.Wake();
+                if (enemy != null || !pendingWake.IsAlive) pendingWake = null;
+            }
+            if (now >= pruneAt)
+            {
+                pruneAt = now + .2f;
+                for (int i = living.Count - 1; i >= 0; i--)
+                {
+                    var instance = living[i];
+                    if (!instance.IsActive || instance.GetComponent<Enemy>()?.IsDead == true) living.RemoveAt(i);
+                }
+            }
             if (!waveInProgress && now >= nextWaveTime)
                 BeginWave(now);
 
@@ -68,11 +94,14 @@ namespace Crucible.Scripts
 
         void SpawnOne()
         {
-            if (enemyPrefab == null) return;
+            if (roster.Count == 0) return;
 
             Entity point = PickRandomChild();
             Transform where = point != null ? point.Transform : Transform;
-            enemyPrefab.Instantiate(where.WorldPosition, where.WorldRotation);
+            var spawned = roster[totalSpawned % roster.Count].Instantiate(where.WorldPosition, where.WorldRotation);
+            if (spawned == null) return;
+            living.Add(spawned);
+            pendingWake = spawned;
             totalSpawned++;
         }
 

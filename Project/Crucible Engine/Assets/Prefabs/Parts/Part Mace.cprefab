@@ -61,7 +61,7 @@
             {
               "declaringType": "Crucible.Scripts.MechPart",
               "name": "settleOnSpawn",
-              "type": "Boolean",
+              "type": "Bool",
               "boolean": true,
               "integer": 0,
               "single": 0.0,
@@ -87,7 +87,7 @@
             {
               "declaringType": "Crucible.Scripts.MechPart",
               "name": "groundScale",
-              "type": "Single",
+              "type": "Float",
               "boolean": false,
               "integer": 0,
               "single": 0.55,
@@ -100,7 +100,7 @@
             {
               "declaringType": "Crucible.Scripts.MechPart",
               "name": "mountedScale",
-              "type": "Single",
+              "type": "Float",
               "boolean": false,
               "integer": 0,
               "single": 1.0,
@@ -113,7 +113,7 @@
             {
               "declaringType": "Crucible.Scripts.MechPart",
               "name": "groundLift",
-              "type": "Single",
+              "type": "Float",
               "boolean": false,
               "integer": 0,
               "single": 1.82,
@@ -126,7 +126,7 @@
             {
               "declaringType": "Crucible.Scripts.MechPart",
               "name": "mountFrame",
-              "type": "Boolean",
+              "type": "Bool",
               "boolean": true,
               "integer": 0,
               "single": 0.0,

@@ -120,11 +120,20 @@ namespace Crucible
             set { SetTextureInternal(I, G, value != null ? value.IdLow : 0, value != null ? value.IdHigh : 0); }
         }
 
+        /// <summary>Visible fraction from the left (0–1). Crops the image while preserving its texture scale and layout.</summary>
+        public float HorizontalFill
+        {
+            get { float v; return GetHorizontalFillInternal(I, G, out v) != 0 ? v : 1f; }
+            set { SetHorizontalFillInternal(I, G, ref value); }
+        }
+
         [MethodImpl(MethodImplOptions.InternalCall)] private static extern int GetTextureInternal(int index, int generation, out int low, out int high);
         [MethodImpl(MethodImplOptions.InternalCall)] private static extern int SetTextureInternal(int index, int generation, int low, int high);
 
         [MethodImpl(MethodImplOptions.InternalCall)] private static extern int GetColorInternal(int index, int generation, out Color value);
         [MethodImpl(MethodImplOptions.InternalCall)] private static extern int SetColorInternal(int index, int generation, ref Color value);
+        [MethodImpl(MethodImplOptions.InternalCall)] private static extern int GetHorizontalFillInternal(int index, int generation, out float value);
+        [MethodImpl(MethodImplOptions.InternalCall)] private static extern int SetHorizontalFillInternal(int index, int generation, ref float value);
     }
 
     /// <summary>A draggable value. Unity's Slider.</summary>

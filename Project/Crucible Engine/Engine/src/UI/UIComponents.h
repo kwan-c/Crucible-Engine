@@ -130,6 +130,7 @@ namespace Crucible {
 		// Runtime only (not registered): resolved from textureAsset with ResourceManager::GetTexture(),
 		// the way MeshRenderer::mesh is. A GPU handle means nothing after a reload, so it is never saved.
 		TextureHandle texture{};
+		float horizontalFill = 1.0f;      // runtime crop from the left, in [0, 1]
 	};
 	CRUCIBLE_COMPONENT(UIImage, UIImage)
 
