@@ -42,7 +42,7 @@ namespace Crucible.Scripts
         public float hoverBrighten = 0.25f;  // how much brighter the stone gets at full highlight
 
         /// <summary>The labels SetQuest shows, indexed by QuestType (Koth, Elimination, Escort).</summary>
-        public static readonly string[] Types = { "KOTH", "ELIMINATION", "ESCORT" };
+        public static readonly string[] Types = { "CAPTURE", "ELIMINATION", "ESCORT" };   // Koth shows as CAPTURE (M3 name)
 
         /// <summary>This slab's quest, once QuestStoneDrop has given it one (else null).</summary>
         public QuestInfo Quest { get; private set; }

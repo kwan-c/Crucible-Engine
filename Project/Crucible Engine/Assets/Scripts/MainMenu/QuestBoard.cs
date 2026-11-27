@@ -11,7 +11,8 @@
 * \details
 *    PLACEHOLDER DATA: Unity's six prototype side quests (titles, types and
 *    rewards from Gam3333's PrototypeQuest_2..7), each with a one-line
-*    stand-in briefing, and all of them load TutorialMap for now.
+*    stand-in briefing. KOTH quests load the Capture mission (SceneFor);
+*    the others load TutorialMap for now.
 *
 *    How the menu uses it:
 *        QuestBoard.Offers(6)    a fresh board: one QuestInfo per slab;
@@ -49,7 +50,7 @@ namespace Crucible.Scripts
         public string ScenePath;    // inside Assets, for Scene.Load
         public int Seed;            // for level generation: same seed, same level
 
-        /// <summary>"KOTH", "ELIMINATION" or "ESCORT": the label the slab and tablet show.</summary>
+        /// <summary>"CAPTURE" (QuestType.Koth), "ELIMINATION" or "ESCORT": the label the slab and tablet show.</summary>
         public string TypeName { get { return QuestSlab.Types[(int)Type]; } }
 
         public QuestInfo Copy() { return (QuestInfo)MemberwiseClone(); }
@@ -59,6 +60,12 @@ namespace Crucible.Scripts
     {
         /// <summary>Where every placeholder quest goes for now.</summary>
         public const string PlaceholderScene = "Scenes/Game/TestFolder/TutorialMap.scene";
+
+        /// <summary>KOTH quests: the generated Capture mission (Jean David, M3). The others keep the placeholder until their scenes exist.</summary>
+        public const string CaptureScene = "Scenes/Game/Missions/Capture.scene";
+
+        /// <summary>The scene a quest of this type loads.</summary>
+        public static string SceneFor(QuestType type) { return type == QuestType.Koth ? CaptureScene : PlaceholderScene; }
 
         // Unity's prototype side quests (Gam3333 PrototypeQuest_2..7: title, type, reward).
         // The briefings are stand-ins, one per type: Unity's own text was a generic placeholder
@@ -122,7 +129,7 @@ namespace Crucible.Scripts
                 type == QuestType.Koth ? "Take the marked ground and hold it until the time runs out." :
                 type == QuestType.Elimination ? "Clear every enemy from the area." :
                                                 "Keep the carrier safe until it reaches the end of the route.";
-            return new QuestInfo { Title = title, Type = type, Briefing = briefing, Reward = reward, ScenePath = PlaceholderScene };
+            return new QuestInfo { Title = title, Type = type, Briefing = briefing, Reward = reward, ScenePath = SceneFor(type) };
         }
 
     }   // QUESTBOARD CLASS

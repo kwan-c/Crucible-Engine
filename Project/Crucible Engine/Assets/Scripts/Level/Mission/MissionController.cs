@@ -3,7 +3,7 @@
 * \author:       Jean David Vidal Cruzado
 * \par:          Email: jeandavidvidal.c@digipen.edu
 * \date          27 November 2026
-* \version       1.3
+* \version       1.4
 * \brief         Runs a mission level's objectives: the Capture areas in
 *                order, then the extract. Put it on the same entity as the
 *                SubLevelGenerator.
@@ -41,6 +41,8 @@
 *    -v1.2       players from SubLevelGenerator.Players (one rule for both)
 *    -v1.3       capture areas pause roaming spawns while a player is inside
 *                (RoamingBlockers, as Unity's chunks did); never the extract
+*    -v1.4       Fail() / Failed / MissionFailed (e.g. every player down, from
+*                MissionExit); ReturnNote shown under the outcome
 *
 **************************************************************************/
 using System;
@@ -79,6 +81,23 @@ namespace Crucible.@Scripts
         public event Action<int, HoldZoneState> AreaStateChanged;
         public event Action ExtractOpened;
         public event Action MissionCompleted;
+        /// <summary>The mission was failed (Fail, e.g. every player down).</summary>
+        public event Action MissionFailed;
+
+        /// <summary>True once Fail was called: nothing ticks any more, the HUD shows "Mission failed".</summary>
+        public bool Failed { get; private set; }
+        /// <summary>The HUD's second line once the mission is over (e.g. "Returning to the main menu"); null = none.</summary>
+        public string ReturnNote { get; set; }
+
+        /// <summary>Ends the mission as failed (once; not after it is complete).</summary>
+        public void Fail()
+        {
+            if (mission == null || Failed || mission.State == MissionState.Complete) return;
+            Failed = true;
+            Log.Info("MissionController: mission failed");
+            UpdateOpen();
+            if (MissionFailed != null) MissionFailed();
+        }
 
         public MissionState State { get { return mission != null ? mission.State : MissionState.InProgress; } }
 
@@ -94,7 +113,7 @@ namespace Crucible.@Scripts
         {
             get
             {
-                if (mission == null || mission.State == MissionState.Complete) return null;
+                if (mission == null || mission.State == MissionState.Complete || Failed) return null;
                 return mission.State == MissionState.ExtractOpen ? extract : Current();
             }
         }
@@ -107,6 +126,7 @@ namespace Crucible.@Scripts
             get
             {
                 if (mission == null) return "";
+                if (Failed) return "Mission failed";
                 if (mission.State == MissionState.Complete) return "Mission complete";
                 if (mission.State == MissionState.ExtractOpen) return "Extract";
                 Zone a = Current();
@@ -119,7 +139,8 @@ namespace Crucible.@Scripts
         {
             get
             {
-                if (mission == null || mission.State == MissionState.Complete) return "";
+                if (mission == null) return "";
+                if (Failed || mission.State == MissionState.Complete) return ReturnNote ?? "";
                 if (mission.State == MissionState.ExtractOpen) return "Everyone to the extraction point";
                 Zone a = Current();
                 if (a == null) return "";
@@ -151,7 +172,7 @@ namespace Crucible.@Scripts
             }
             if (!generator.ChunksReady) return;
             if (generator.Generation != builtGeneration) Build();
-            if (mission == null || mission.State == MissionState.Complete) return;
+            if (mission == null || mission.State == MissionState.Complete || Failed) return;
 
             List<Entity> players = Players();
             this.players = players.Count;
@@ -197,6 +218,7 @@ namespace Crucible.@Scripts
             zones.Clear();
             extract = null;
             mission = null;
+            Failed = false;
             BuildCount++;
             MissionPreset preset = generator.Preset;
             settings = preset != null ? preset.Capture : null;
@@ -237,10 +259,10 @@ namespace Crucible.@Scripts
         private void UpdateOpen()
         {
             Zone current = Current();
-            bool inProgress = mission != null && mission.State == MissionState.InProgress;
+            bool inProgress = mission != null && mission.State == MissionState.InProgress && !Failed;
             foreach (Zone a in areas)
                 a.IsOpen = inProgress && a.State != HoldZoneState.Complete && (!settings.inOrder || a == current);
-            if (extract != null) extract.IsOpen = mission != null && mission.State == MissionState.ExtractOpen;
+            if (extract != null) extract.IsOpen = mission != null && mission.State == MissionState.ExtractOpen && !Failed;
         }
 
         // The generator's players (the "Player" tag, or its player field in test scenes).

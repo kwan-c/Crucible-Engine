@@ -346,7 +346,7 @@ namespace Crucible.Scripts
 
         private static string TypeLabel(QuestType type)
         {
-            return type == QuestType.Koth ? "KOTH" : type == QuestType.Elimination ? "Elimination" : "Escort";
+            return type == QuestType.Koth ? "Capture" : type == QuestType.Elimination ? "Elimination" : "Escort";
         }
 
         private void Play(AudioClip clip)
