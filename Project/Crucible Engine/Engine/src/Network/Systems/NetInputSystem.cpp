@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          6 November 2026
-* \version       1.6
+* \version       1.7
 * \brief
 *                NetInputSystem: client commands and heartbeat, the host's
 *                per-client intents, and the auto-spawned players.
@@ -19,6 +19,7 @@
 *                and yaw when it owns no PlayerInput), also without a player (protocol 10)
 *    -v1.6       players kept through a scene change are adopted and moved to the new scene's
 *                spawn point instead of spawned again (protocol 12)
+*    -v1.7       the player is the scene's player prefab (the one it places), else the content's default
 *
 **************************************************************************/
 #include "Network/Systems/NetInputSystem.h"
@@ -188,6 +189,7 @@ namespace Crucible
 	// prefab this system was given.
 	Net::NetPrefabId NetInputSystem::PlayerPrefab() const
 	{
+		if (m_session.ScenePlayerPrefab() != Net::kInvalidNetPrefab) return m_session.ScenePlayerPrefab();   // the one the scene places
 		return m_content.PlayerPrefab() != Net::kInvalidNetPrefab ? m_content.PlayerPrefab() : m_playerPrefab;
 	}
 
@@ -241,7 +243,7 @@ namespace Crucible
 		for (const auto& [id, entity] : m_session.Entities())
 		{
 			const NetworkIdentity* identity = world.IsAlive(entity) ? world.Read<NetworkIdentity>(entity) : nullptr;
-			if (identity == nullptr || identity->prefab != playerPrefab) continue;
+			if (identity == nullptr || !m_content.IsPlayerPrefab(identity->prefab)) continue;
 			const Net::PeerId peer = identity->owner;
 			if (peer == Net::kServerPeer)
 			{

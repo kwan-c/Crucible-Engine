@@ -489,6 +489,8 @@ bool NetworkPanel::DrawLobbyDiscovery()
     if (ImGui::IsItemHovered())
         ImGui::SetTooltip("The IPv4 address of the PC running CrucibleConnectionServer.exe\n"
                           "(it prints its addresses when it starts). Empty: no connection server.");
+    ImGui::TextDisabled("127.0.0.1 is the connection server on this PC. Using another device? Change it to the\n"
+                        "IPv4 address of the PC running the connection server.");
     changed |= ImGui::InputInt("Server port", &m_lobbyServerPort, 0, 0);
     ImGui::EndDisabled();
     if (m_edit.lobbyDiscovery == LobbyDiscovery::Server && m_lobbyServerAddress[0] == '\0') {

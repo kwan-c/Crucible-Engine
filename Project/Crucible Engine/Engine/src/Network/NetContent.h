@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.3
+* \version       1.4
 * \brief
 *                NetContent: everything two builds must agree on before
 *                they may play together - the serializers, the network
@@ -42,10 +42,12 @@
 *                PrepareWith, PlayerPrefab, Discovered (Networking Phase 14.2)
 *    -v1.2       scene profiles (Networking Phase 14.7)
 *    -v1.3       animator signature in the hash (Networking C# Phase 7)
+*    -v1.4       IsPlayerPrefab: several spawnPerPlayer prefabs, one per scene
 *
 **************************************************************************/
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
 #include <span>
 #include <string>
@@ -92,7 +94,13 @@ namespace Crucible
 
 		/// The discovered prefab with spawnPerPlayer (NetInputSystem spawns one per peer), or
 		/// kInvalidNetPrefab.
-		Net::NetPrefabId PlayerPrefab() const noexcept { return m_playerPrefab; }
+		Net::NetPrefabId PlayerPrefab() const noexcept { return m_playerPrefab; }   // the default player (first spawnPerPlayer)
+
+		/// Is `id` a player prefab (spawnPerPlayer)? A scene's player is the one it places.
+		bool IsPlayerPrefab(Net::NetPrefabId id) const noexcept
+		{
+			return id != Net::kInvalidNetPrefab && std::find(m_playerPrefabs.begin(), m_playerPrefabs.end(), id) != m_playerPrefabs.end();
+		}
 
 		/// The ids the last Prepare discovered.
 		std::span<const Net::NetPrefabId> Discovered() const noexcept { return m_discovered; }
@@ -141,6 +149,7 @@ namespace Crucible
 		std::vector<Net::NetPrefabId> m_discovered;   // removed again before the next discovery
 		std::vector<Net::NetPrefabId> m_sceneProfiles;   // this session's (Phase 14.7)
 		Net::NetPrefabId    m_playerPrefab = Net::kInvalidNetPrefab;
+		std::vector<Net::NetPrefabId> m_playerPrefabs;
 
 		void ForgetDiscovered();
 	};

@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          16 November 2026
-* \version       1.13
+* \version       1.14
 * \brief         Internal calls behind the C# Network class
 *                (ManagedScripts/Runtime/Networking/Network.cs) and the network part of
 *                Entity (NetworkId, Owner, IsMine), and the queue of network
@@ -72,6 +72,7 @@
 *                DataChanged (protocol 11)
 *    -v1.12      KeepAcrossScenes, KeepPlayersAcrossScenes, IsKeptAcrossScenes (protocol 12)
 *    -v1.13      lag compensation: ViewTick, MaxRewindSeconds, RaycastHistory (Network.RaycastAt)
+*    -v1.14      GetPlayerEntity: a player of any player prefab
 *
 **************************************************************************/
 #include "Scripting/ScriptBindings.h"
@@ -705,7 +706,7 @@ namespace Crucible::ScriptBindings
 				for (const auto& [id, entity] : session->Entities())
 				{
 					const NetworkIdentity* identity = world->Read<NetworkIdentity>(entity);
-					if (!identity || identity->prefab != playerPrefab || identity->owner != static_cast<Net::PeerId>(peer))
+					if (!identity || !core->GetNetContent().IsPlayerPrefab(identity->prefab) || identity->owner != static_cast<Net::PeerId>(peer))
 						continue;
 					if (foundId == Net::kInvalidNetworkId || id < foundId)
 					{
