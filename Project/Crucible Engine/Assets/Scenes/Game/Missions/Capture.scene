@@ -3,6 +3,157 @@
     "name": "Capture",
     "entities": [
         {
+            "id": "110260E53730801D",
+            "parent": "810260E53730801F",
+            "siblingIndex": 1,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 1.2000000476837158
+                    },
+                    "rotation": {
+                        "x": 0.7071067690849304,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.7071067690849304
+                    },
+                    "scale": {
+                        "x": 1.8181818723678589,
+                        "y": 1.8181818723678589,
+                        "z": 1.8181818723678589
+                    }
+                },
+                "EntityName": {
+                    "name": "Label"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 16408217611189506125,
+                    "fileId": 13612587412066649321,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
+                },
+                "WorldText": {
+                    "text": "",
+                    "colour": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0,
+                        "w": 1.0
+                    },
+                    "fontAsset": 0,
+                    "fontSize": 0.3199999928474426,
+                    "size": {
+                        "x": 4.0,
+                        "y": 1.2000000476837158
+                    },
+                    "pivot": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "billboard": "Upright",
+                    "alwaysOnTop": false,
+                    "doubleSided": true,
+                    "intensity": 1.0,
+                    "fade": false,
+                    "fadeStart": 20.0,
+                    "fadeEnd": 30.0,
+                    "horizontalAlign": "Center",
+                    "verticalAlign": "Middle",
+                    "wrap": true,
+                    "overflow": "Overflow",
+                    "lineSpacing": 1.0,
+                    "characterSpacing": 0.0,
+                    "richText": true,
+                    "bold": false,
+                    "underline": false,
+                    "bestFit": false,
+                    "minFontSize": 0.10000000149011612,
+                    "maxFontSize": 1.0,
+                    "outline": false,
+                    "outlineColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "outlineWidth": 0.019999999552965164,
+                    "glow": false,
+                    "glowColour": {
+                        "x": 1.0,
+                        "y": 0.8500000238418579,
+                        "z": 0.4000000059604645,
+                        "w": 0.800000011920929
+                    },
+                    "glowWidth": 0.029999999329447746,
+                    "glowSoftness": 0.5,
+                    "shadow": false,
+                    "shadowColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.6000000238418579
+                    },
+                    "shadowOffset": {
+                        "x": 0.019999999552965164,
+                        "y": 0.019999999552965164
+                    },
+                    "shadowSoftness": 0.0
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
+            "id": "190260E537308001",
+            "parent": "990260E537308021",
+            "siblingIndex": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 1.7999999523162842,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "CameraOrbit": {
+                    "sensitivity": 0.10000000149011612,
+                    "stickSpeed": 180.0,
+                    "minPitch": -18.0,
+                    "maxPitch": 30.0,
+                    "yaw": 0.0,
+                    "pitch": 12.0
+                },
+                "EntityName": {
+                    "name": "Camera Pivot"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 16408217611189506125,
+                    "fileId": 3504928380980592075,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
             "id": "27E468E52F2CC00B",
             "parent": "3FE468E52F2CC003",
             "siblingIndex": 1,
@@ -117,14 +268,86 @@
             }
         },
         {
-            "id": "3E8540DC9CCE8007",
-            "parent": "E68540DC9CCE8005",
+            "id": "310260E537308019",
+            "parent": "810260E53730801F",
+            "siblingIndex": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 2.843831777572632,
+                        "y": 0.25856468081474304,
+                        "z": -0.8868635296821594
+                    },
+                    "rotation": {
+                        "x": 0.5223868489265442,
+                        "y": -0.4813676178455353,
+                        "z": -0.5456447005271912,
+                        "w": -0.44459977746009827
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 11181561406948196535,
+                    "modelRoot": 31,
+                    "materialOverrides": [
+                        6507507179800756225,
+                        6507507179800756229,
+                        6507507179800756227,
+                        6507507179800756231,
+                        6507507179800756233,
+                        6507507179800756237,
+                        6507507179800756235,
+                        6507507179800756239,
+                        6507507179800756241,
+                        6507507179800756243,
+                        6507507179800756245
+                    ],
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 0,
+                    "materialAsset": 0
+                },
+                "EntityName": {
+                    "name": "Model"
+                },
+                "AnimatedModel": {
+                    "controllerAsset": 15044359590195862093,
+                    "clip": 0,
+                    "speed": 1.0,
+                    "loop": true,
+                    "previewInEditor": false,
+                    "playOnStart": true
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 16408217611189506125,
+                    "fileId": 13384031397114478061,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
+            "id": "390260E53730800B",
+            "parent": "D10260E537308009",
             "siblingIndex": 0,
             "components": {
                 "Transform": {
                     "positions": {
                         "x": 0.0,
-                        "y": 1.5,
+                        "y": 0.0,
                         "z": 0.0
                     },
                     "rotation": {
@@ -139,16 +362,21 @@
                         "z": 1.0
                     }
                 },
-                "CameraOrbit": {
-                    "sensitivity": 0.10000000149011612,
-                    "stickSpeed": 180.0,
-                    "minPitch": -30.0,
-                    "maxPitch": 70.0,
-                    "yaw": 0.0,
-                    "pitch": 0.0
-                },
                 "EntityName": {
-                    "name": "Camera Pivot"
+                    "name": "Mount Head"
+                },
+                "SocketAttachment": {
+                    "enabled": true,
+                    "socketName": "Head",
+                    "modelAsset": 12862501394589843471,
+                    "node": 2
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 16408217611189506125,
+                    "fileId": 18414336099679399645,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
                 },
                 "EntityTag": {
                     "tag": "Untagged"
@@ -227,6 +455,111 @@
             }
         },
         {
+            "id": "410260E53730801B",
+            "parent": "610260E537308015",
+            "siblingIndex": 1,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 2.5
+                    },
+                    "rotation": {
+                        "x": 0.7071067690849304,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.7071067690849304
+                    },
+                    "scale": {
+                        "x": 1.8181818723678589,
+                        "y": 1.8181818723678589,
+                        "z": 1.8181818723678589
+                    }
+                },
+                "EntityName": {
+                    "name": "Label"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 16408217611189506125,
+                    "fileId": 6587664452496414133,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
+                },
+                "WorldText": {
+                    "text": "",
+                    "colour": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0,
+                        "w": 1.0
+                    },
+                    "fontAsset": 0,
+                    "fontSize": 0.3199999928474426,
+                    "size": {
+                        "x": 4.0,
+                        "y": 1.2000000476837158
+                    },
+                    "pivot": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "billboard": "Upright",
+                    "alwaysOnTop": false,
+                    "doubleSided": true,
+                    "intensity": 1.0,
+                    "fade": false,
+                    "fadeStart": 20.0,
+                    "fadeEnd": 30.0,
+                    "horizontalAlign": "Center",
+                    "verticalAlign": "Middle",
+                    "wrap": true,
+                    "overflow": "Overflow",
+                    "lineSpacing": 1.0,
+                    "characterSpacing": 0.0,
+                    "richText": true,
+                    "bold": false,
+                    "underline": false,
+                    "bestFit": false,
+                    "minFontSize": 0.10000000149011612,
+                    "maxFontSize": 1.0,
+                    "outline": false,
+                    "outlineColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "outlineWidth": 0.019999999552965164,
+                    "glow": false,
+                    "glowColour": {
+                        "x": 1.0,
+                        "y": 0.8500000238418579,
+                        "z": 0.4000000059604645,
+                        "w": 0.800000011920929
+                    },
+                    "glowWidth": 0.029999999329447746,
+                    "glowSoftness": 0.5,
+                    "shadow": false,
+                    "shadowColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.6000000238418579
+                    },
+                    "shadowOffset": {
+                        "x": 0.019999999552965164,
+                        "y": 0.019999999552965164
+                    },
+                    "shadowSoftness": 0.0
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
             "id": "4513C1756A880087",
             "components": {
                 "Transform": {
@@ -282,7 +615,7 @@
                                     "real": 0.0,
                                     "text": "",
                                     "stringIsNull": false,
-                                    "entityId": 16610754116893704197,
+                                    "entityId": 0,
                                     "assetId": 0,
                                     "componentType": ""
                                 },
@@ -507,6 +840,189 @@
             }
         },
         {
+            "id": "610260E537308015",
+            "parent": "390260E53730800B",
+            "siblingIndex": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "Collider": {
+                    "type": "Sphere",
+                    "size": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "radius": 4.0,
+                    "height": 2.0,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "friction": 0.20000000298023224,
+                    "bounciness": 0.0,
+                    "layer": "NonMoving",
+                    "isTrigger": true
+                },
+                "EntityName": {
+                    "name": "Part Head"
+                },
+                "ScriptComponent": {
+                    "scripts": [
+                        {
+                            "enabled": true,
+                            "assembly": "Managed/Crucible.Scripts.dll",
+                            "namespace": "Crucible.Scripts",
+                            "class": "MechPart",
+                            "fields": [
+                                {
+                                    "declaringType": "Crucible.Scripts.MechPart",
+                                    "name": "partId",
+                                    "type": "String",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "golem_head",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.MechPart",
+                                    "name": "groundScale",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.550000011920929,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.MechPart",
+                                    "name": "mountedScale",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 1.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.MechPart",
+                                    "name": "groundLift",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.25,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.MechPart",
+                                    "name": "mountFrame",
+                                    "type": "Bool",
+                                    "boolean": true,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                }
+                            ]
+                        }
+                    ]
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 16408217611189506125,
+                    "fileId": 5470205451183236701,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
+            "id": "690260E537308011",
+            "parent": "D10260E537308009",
+            "siblingIndex": 3,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Mount ArmL"
+                },
+                "SocketAttachment": {
+                    "enabled": true,
+                    "socketName": "ArmL",
+                    "modelAsset": 12862501394589843471,
+                    "node": 9
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 16408217611189506125,
+                    "fileId": 4089757753168062121,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
             "id": "7FE468E52F2CC007",
             "parent": "EFE468E52F2CC005",
             "siblingIndex": 0,
@@ -578,15 +1094,15 @@
             }
         },
         {
-            "id": "868540DC9CCE8009",
-            "parent": "3E8540DC9CCE8007",
+            "id": "810260E53730801F",
+            "parent": "690260E537308011",
             "siblingIndex": 0,
             "components": {
                 "Transform": {
                     "positions": {
                         "x": 0.0,
                         "y": 0.0,
-                        "z": 5.0
+                        "z": 0.0
                     },
                     "rotation": {
                         "x": 0.0,
@@ -600,15 +1116,143 @@
                         "z": 1.0
                     }
                 },
-                "Camera": {
-                    "enabled": true,
-                    "fovY": 60.0,
-                    "nearZ": 0.10000000149011612,
-                    "farZ": 1000.0,
-                    "priority": 1
+                "AudioSource": {
+                    "clip": 5612796659169525771,
+                    "loadType": "DecompressOnLoad",
+                    "output": "SFX",
+                    "playOnAwake": false,
+                    "loop": false,
+                    "volume": 1.0,
+                    "pitch": 1.0,
+                    "spatialBlend": 0.3499999940395355,
+                    "minDistance": 4.0,
+                    "maxDistance": 40.0,
+                    "rolloffMode": "Linear"
+                },
+                "Collider": {
+                    "type": "Sphere",
+                    "size": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "radius": 4.0,
+                    "height": 2.0,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "friction": 0.20000000298023224,
+                    "bounciness": 0.0,
+                    "layer": "NonMoving",
+                    "isTrigger": true
                 },
                 "EntityName": {
-                    "name": "Player Camera"
+                    "name": "Part Sword"
+                },
+                "ScriptComponent": {
+                    "scripts": [
+                        {
+                            "enabled": true,
+                            "assembly": "Managed/Crucible.Scripts.dll",
+                            "namespace": "Crucible.Scripts",
+                            "class": "MechPart",
+                            "fields": [
+                                {
+                                    "declaringType": "Crucible.Scripts.MechPart",
+                                    "name": "partId",
+                                    "type": "String",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "sword",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.MechPart",
+                                    "name": "groundScale",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.550000011920929,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.MechPart",
+                                    "name": "mountedScale",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 1.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.MechPart",
+                                    "name": "groundLift",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.7599999904632568,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.MechPart",
+                                    "name": "mountFrame",
+                                    "type": "Bool",
+                                    "boolean": true,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.MechPart",
+                                    "name": "attackSound",
+                                    "type": "AudioClip",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 5612796659169525771,
+                                    "componentType": ""
+                                }
+                            ]
+                        }
+                    ]
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 16408217611189506125,
+                    "fileId": 15674668234867780375,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
                 },
                 "EntityTag": {
                     "tag": "Untagged"
@@ -693,7 +1337,45 @@
                     "prefabAsset": 13899294224571155983,
                     "fileId": 8212707074700077019,
                     "isRoot": true,
-                    "prefabHash": 444887650615227403,
+                    "prefabHash": 7414864566505631632,
+                    "overrides": []
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
+            "id": "910260E537308005",
+            "parent": "990260E537308021",
+            "siblingIndex": 1,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": -1.7000000476837158,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 1.0,
+                        "z": 0.0,
+                        "w": 6.123234262925839e-17
+                    },
+                    "scale": {
+                        "x": 0.550000011920929,
+                        "y": 0.550000011920929,
+                        "z": 0.550000011920929
+                    }
+                },
+                "EntityName": {
+                    "name": "Mech Visual"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 16408217611189506125,
+                    "fileId": 15266602826625965349,
+                    "isRoot": false,
+                    "prefabHash": 0,
                     "overrides": []
                 },
                 "EntityTag": {
@@ -784,6 +1466,234 @@
                         "y": 0.27000001072883606,
                         "z": 0.18000000715255737
                     }
+                }
+            }
+        },
+        {
+            "id": "990260E537308021",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "CharacterController": {
+                    "height": 3.4000000953674316,
+                    "radius": 0.8999999761581421,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "slopeLimit": 45.0,
+                    "stepOffset": 0.4000000059604645,
+                    "pushStrength": 100.0,
+                    "layer": "Player"
+                },
+                "PlayerController": {
+                    "moveSpeed": 6.0,
+                    "jumpHeight": 1.5,
+                    "faceCamera": true
+                },
+                "EntityName": {
+                    "name": "Player"
+                },
+                "ScriptComponent": {
+                    "scripts": [
+                        {
+                            "enabled": true,
+                            "assembly": "Managed/Crucible.Scripts.dll",
+                            "namespace": "Crucible.Scripts",
+                            "class": "MechPlayer",
+                            "fields": []
+                        }
+                    ]
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 16408217611189506125,
+                    "fileId": 16046677203094256929,
+                    "isRoot": true,
+                    "prefabHash": 2919806227429480178,
+                    "overrides": [
+                        "EntityTag/tag"
+                    ]
+                },
+                "EntityTag": {
+                    "tag": "Player"
+                }
+            }
+        },
+        {
+            "id": "A10260E537308007",
+            "parent": "910260E537308005",
+            "siblingIndex": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 8250815376162455563,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 0,
+                    "materialAsset": 6507507179800756225
+                },
+                "AudioSource": {
+                    "clip": 5612796659169525767,
+                    "loadType": "DecompressOnLoad",
+                    "output": "SFX",
+                    "playOnAwake": false,
+                    "loop": true,
+                    "volume": 0.30000001192092896,
+                    "pitch": 1.0,
+                    "spatialBlend": 0.3499999940395355,
+                    "minDistance": 4.0,
+                    "maxDistance": 30.0,
+                    "rolloffMode": "Linear"
+                },
+                "EntityName": {
+                    "name": "Legs"
+                },
+                "AnimatedModel": {
+                    "controllerAsset": 5349696062991956255,
+                    "clip": 1,
+                    "speed": 1.0,
+                    "loop": true,
+                    "previewInEditor": false,
+                    "playOnStart": true
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 16408217611189506125,
+                    "fileId": 12203531905419890895,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
+            "id": "A10260E537308013",
+            "parent": "D10260E537308009",
+            "siblingIndex": 4,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Mount ArmR"
+                },
+                "SocketAttachment": {
+                    "enabled": true,
+                    "socketName": "ArmR",
+                    "modelAsset": 12862501394589843471,
+                    "node": 20
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 16408217611189506125,
+                    "fileId": 17746235959141092815,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
+            "id": "B10260E53730800F",
+            "parent": "D10260E537308009",
+            "siblingIndex": 2,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Mount ShoulderR"
+                },
+                "SocketAttachment": {
+                    "enabled": true,
+                    "socketName": "ShoulderR",
+                    "modelAsset": 12862501394589843471,
+                    "node": 27
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 16408217611189506125,
+                    "fileId": 9862405652064253161,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -988,6 +1898,72 @@
             }
         },
         {
+            "id": "D10260E537308009",
+            "parent": "A10260E537308007",
+            "siblingIndex": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 12862501394589843471,
+                    "modelRoot": 31,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 0,
+                    "materialAsset": 6507507179800756227
+                },
+                "EntityName": {
+                    "name": "Torso"
+                },
+                "AnimatedModel": {
+                    "controllerAsset": 0,
+                    "clip": 2,
+                    "speed": 1.0,
+                    "loop": true,
+                    "previewInEditor": false,
+                    "playOnStart": true
+                },
+                "SocketAttachment": {
+                    "enabled": true,
+                    "socketName": "Hip",
+                    "modelAsset": 8250815376162455563,
+                    "node": 2
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 16408217611189506125,
+                    "fileId": 2183807441157560321,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
             "id": "D81908E4FDA9AEDF",
             "components": {
                 "Transform": {
@@ -1043,13 +2019,15 @@
             }
         },
         {
-            "id": "E68540DC9CCE8005",
+            "id": "E10260E53730800D",
+            "parent": "D10260E537308009",
+            "siblingIndex": 1,
             "components": {
                 "Transform": {
                     "positions": {
                         "x": 0.0,
-                        "y": 10.0,
-                        "z": 0.4270303249359131
+                        "y": 0.0,
+                        "z": 0.0
                     },
                     "rotation": {
                         "x": 0.0,
@@ -1063,43 +2041,24 @@
                         "z": 1.0
                     }
                 },
-                "MeshRenderer": {
-                    "visible": true,
-                    "modelAsset": 0,
-                    "modelRoot": 4294967295,
-                    "materialOverrides": [],
-                    "colour": {
-                        "x": 0.5,
-                        "y": 0.5,
-                        "z": 0.5,
-                        "w": 0.5
-                    },
-                    "meshAsset": 5067099792209742713,
-                    "materialAsset": 0
-                },
-                "CharacterController": {
-                    "height": 2.0,
-                    "radius": 0.5,
-                    "center": {
-                        "x": 0.0,
-                        "y": 0.0,
-                        "z": 0.0
-                    },
-                    "slopeLimit": 45.0,
-                    "stepOffset": 0.30000001192092896,
-                    "pushStrength": 100.0,
-                    "layer": "Player"
-                },
-                "PlayerController": {
-                    "moveSpeed": 6.0,
-                    "jumpHeight": 1.5,
-                    "faceCamera": true
-                },
                 "EntityName": {
-                    "name": "Player"
+                    "name": "Mount ShoulderL"
+                },
+                "SocketAttachment": {
+                    "enabled": true,
+                    "socketName": "ShoulderL",
+                    "modelAsset": 12862501394589843471,
+                    "node": 16
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 16408217611189506125,
+                    "fileId": 317342989834090561,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
                 },
                 "EntityTag": {
-                    "tag": "Player"
+                    "tag": "Untagged"
                 }
             }
         },
@@ -1165,6 +2124,112 @@
                 "PrefabInstance": {
                     "prefabAsset": 13899294224571155983,
                     "fileId": 2927938733113849975,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
+            "id": "F10260E537308003",
+            "parent": "190260E537308001",
+            "siblingIndex": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 1.399999976158142,
+                        "y": 0.6000000238418579,
+                        "z": 9.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "AudioListener": {},
+                "Camera": {
+                    "enabled": true,
+                    "fovY": 60.0,
+                    "nearZ": 0.10000000149011612,
+                    "farZ": 1000.0,
+                    "priority": 1
+                },
+                "EntityName": {
+                    "name": "Player Camera"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 16408217611189506125,
+                    "fileId": 15108720573731307883,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
+            "id": "F10260E537308017",
+            "parent": "610260E537308015",
+            "siblingIndex": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 7097893871555608585,
+                    "modelRoot": 7,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 0,
+                    "materialAsset": 6507507179800756229
+                },
+                "EntityName": {
+                    "name": "Model"
+                },
+                "AnimatedModel": {
+                    "controllerAsset": 0,
+                    "clip": 0,
+                    "speed": 1.0,
+                    "loop": true,
+                    "previewInEditor": false,
+                    "playOnStart": true
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 16408217611189506125,
+                    "fileId": 6655336532875184291,
                     "isRoot": false,
                     "prefabHash": 0,
                     "overrides": []

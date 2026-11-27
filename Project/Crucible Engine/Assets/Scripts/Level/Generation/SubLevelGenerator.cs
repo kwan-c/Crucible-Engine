@@ -3,7 +3,7 @@
 * \author:       Jean David Vidal Cruzado
 * \par:          Email: jeandavidvidal.c@digipen.edu
 * \date          10 November 2026
-* \version       2.5
+* \version       2.6
 * \brief         Generates a sub-level from a seed: the terrain and, for a
 *                mission level, its chunks. Roads and decor are later port
 *                steps.
@@ -82,6 +82,9 @@
 *                the chunk's scripts are attached, then the nav re-bake
 *    -v2.5       Preset, SpawnedChunks, Generation and ChunksReady for the
 *                MissionController
+*    -v2.6       players found by the "Player" tag (the player field is an
+*                optional override); every player placed at the start,
+*                3 m apart; slope limit on every player
 **************************************************************************/
 using System.Collections.Generic;
 
@@ -137,7 +140,7 @@ namespace Crucible.@Scripts
         // --- who does what (found by name under this entity when left empty) -- //
         public Entity terrain;                  // has Terrain, MeshRenderer, Collider (HeightField)
         public Entity navSurface;               // has FlowFieldSurface
-        public Entity player;                   // has CharacterController; moved to the map's centre
+        public Entity player;                   // optional: leave empty - every entity tagged "Player" is used (see Players)
 
         private TerrainMap map;
         private bool playerPlaced;
@@ -170,6 +173,8 @@ namespace Crucible.@Scripts
         private ChunkPlacement spawnPlacement;
         private Entity spawnStart;                                                  // the spawn chunk's PlayerStart, if any
         private const float kPlayerDrop = 2f;                                       // metres above the start the player drops from
+        private const float kPlayerSpacing = 3f;                                    // metres between players at the start
+        private int playerSearchFrames;
 
         public override void OnCreate()
         {
@@ -357,6 +362,7 @@ namespace Crucible.@Scripts
             spawnPlacement = null;
             spawnStart = null;
             playerPlaced = false;
+            playerSearchFrames = 0;
 
             List<string> warned = new List<string>();    // no HashSet: it lives in System.Core, which the engine's Mono doesn't load
             for (int index = 0; index < placements.Count; index++)
@@ -480,25 +486,58 @@ namespace Crucible.@Scripts
         // Unity's ApplyPlayerSlope: the player climbs exactly what enemies can.
         private void ApplyPlayerSlope()
         {
-            CharacterController controller = player != null ? player.GetComponent<CharacterController>() : null;
-            if (controller != null) controller.SlopeLimit = maxWalkableSlope;
+            foreach (Entity p in Players())
+            {
+                CharacterController controller = p.GetComponent<CharacterController>();
+                if (controller != null) controller.SlopeLimit = maxWalkableSlope;
+            }
+        }
+
+        /// <summary>
+        /// The players: the `player` field if it is set to a live entity (test scenes), otherwise every entity
+        /// tagged "Player" - so a level needs no link to its Player, and networked players count as they come.
+        /// </summary>
+        public List<Entity> Players()
+        {
+            List<Entity> list = new List<Entity>();
+            if (player != null && player.IsAlive) { list.Add(player); return list; }
+            foreach (Entity e in Entity.FindAllWithTag("Player")) if (e != null && e.IsAlive) list.Add(e);
+            return list;
+        }
+
+        // Player i stands kPlayerSpacing metres round the first one (0 = on the spot), so several don't overlap.
+        private static Vector3 PlayerOffset(int i)
+        {
+            if (i == 0) return Vector3.Zero;
+            float a = (i - 1) * 2f * (float)System.Math.PI / 7f;
+            return new Vector3((float)System.Math.Cos(a) * kPlayerSpacing, 0f, (float)System.Math.Sin(a) * kPlayerSpacing);
         }
 
         // On a mission level, on the spawn chunk's PlayerStart (or its centre), dropped from 2 m as in
         // Unity; otherwise on the walkable cell nearest the map's centre, standing on the ground.
         private bool PlacePlayer()
         {
-            if (player == null) return true;
+            List<Entity> players = Players();
+            if (players.Count == 0)
+            {
+                // Players may appear a little after the level (spawned); warn once if none come.
+                if (++playerSearchFrames == 120) Log.Warning("SubLevelGenerator: no player - tag the Player entity \"Player\" (or set the player field)");
+                return false;
+            }
             Terrain ground = terrain.GetComponent<Terrain>();
             Vector3 origin = terrain.Transform.WorldPosition;
 
             if (spawnPlacement != null)
             {
                 Vector3 offset = spawnStart != null && spawnStart.IsAlive ? spawnStart.Transform.Position : Vector3.Zero;
-                float x = origin.X + spawnPlacement.X + offset.X, z = origin.Z + spawnPlacement.Z + offset.Z;
-                float y;
-                if (!ground.GroundHeight(x, z, out y)) return false;   // world transform not ready yet: try next frame
-                player.Transform.WorldPosition = new Vector3(x, System.Math.Max(y, origin.Y + spawnPlacement.Height + offset.Y) + kPlayerDrop, z);
+                for (int i = 0; i < players.Count; i++)
+                {
+                    Vector3 spread = PlayerOffset(i);
+                    float x = origin.X + spawnPlacement.X + offset.X + spread.X, z = origin.Z + spawnPlacement.Z + offset.Z + spread.Z;
+                    float y;
+                    if (!ground.GroundHeight(x, z, out y)) return false;   // world transform not ready yet: try next frame
+                    players[i].Transform.WorldPosition = new Vector3(x, System.Math.Max(y, origin.Y + spawnPlacement.Height + offset.Y) + kPlayerDrop, z);
+                }
                 return true;
             }
 
@@ -511,11 +550,15 @@ namespace Crucible.@Scripts
                         int col = centre + dx, row = centre + dz;
                         if (col < 0 || row < 0 || col >= map.Cols || row >= map.Rows || !map.IsWalkable(col, row)) continue;
 
-                        float x = origin.X + map.MinX + (col + 0.5f) * map.CellSize;
-                        float z = origin.Z + map.MinZ + (row + 0.5f) * map.CellSize;
-                        float y;
-                        if (!ground.GroundHeight(x, z, out y)) return false;   // world transform not ready yet: try next frame
-                        player.Transform.WorldPosition = new Vector3(x, y + 1.5f, z);
+                        for (int i = 0; i < players.Count; i++)
+                        {
+                            Vector3 spread = PlayerOffset(i);
+                            float x = origin.X + map.MinX + (col + 0.5f) * map.CellSize + spread.X;
+                            float z = origin.Z + map.MinZ + (row + 0.5f) * map.CellSize + spread.Z;
+                            float y;
+                            if (!ground.GroundHeight(x, z, out y)) return false;   // world transform not ready yet: try next frame
+                            players[i].Transform.WorldPosition = new Vector3(x, y + 1.5f, z);
+                        }
                         return true;
                     }
             Log.Warning("SubLevelGenerator: no walkable cell for the player");

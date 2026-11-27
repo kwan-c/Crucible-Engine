@@ -3,7 +3,7 @@
 * \author:       Jean David Vidal Cruzado
 * \par:          Email: jeandavidvidal.c@digipen.edu
 * \date          27 November 2026
-* \version       1.1
+* \version       1.2
 * \brief         Runs a mission level's objectives: the Capture areas in
 *                order, then the extract. Put it on the same entity as the
 *                SubLevelGenerator.
@@ -14,9 +14,9 @@
 *    generator spawned, so chunk prefabs need no objective scripts.
 *
 *    Each frame, once the generator's chunks are ready:
-*      1. Players: every entity tagged "Player" (for single player before
-*         the Player is tagged: the generator's `player` field). Networked
-*         players only need the same tag; nothing else here changes.
+*      1. Players: the generator's (every entity tagged "Player"; a test
+*         scene may set its player field instead). Networked players only
+*         need the same tag; nothing else here changes.
 *      2. Capture: the current area (the lowest unfinished 1st/2nd/3rd;
 *         with inOrder off, every unfinished area) runs a HoldZoneRules.
 *         "Inside" = EVERY player inside the area's footprint. Hold and
@@ -38,6 +38,7 @@
 *    -v1.0       Capture areas in order, collective instant extract
 *    -v1.1       Zones / Active / Title / Detail for the visuals and HUD;
 *                beacons moved to MissionZoneVisuals
+*    -v1.2       players from SubLevelGenerator.Players (one rule for both)
 *
 **************************************************************************/
 using System;
@@ -234,17 +235,12 @@ namespace Crucible.@Scripts
             if (extract != null) extract.IsOpen = mission != null && mission.State == MissionState.ExtractOpen;
         }
 
-        // Every entity tagged Player; before the Player is tagged, the generator's player field.
+        // The generator's players (the "Player" tag, or its player field in test scenes).
         private List<Entity> Players()
         {
-            List<Entity> list = new List<Entity>();
-            foreach (Entity e in Entity.FindAllWithTag("Player")) if (e != null && e.IsAlive) list.Add(e);
-            if (list.Count == 0 && generator.player != null && generator.player.IsAlive)
-            {
-                if (!warnedNoTag) Log.Warning("MissionController: no entity tagged Player - using the generator's player field");
-                warnedNoTag = true;
-                list.Add(generator.player);
-            }
+            List<Entity> list = generator.Players();
+            if (list.Count == 0 && !warnedNoTag) Log.Warning("MissionController: no player - tag the Player entity \"Player\"");
+            if (list.Count == 0) warnedNoTag = true;
             return list;
         }
 
