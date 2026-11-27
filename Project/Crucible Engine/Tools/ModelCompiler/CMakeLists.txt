@@ -11,6 +11,7 @@ add_executable(CrucibleModelCompiler
     ../Common/TextureBuild.cpp
     ../Common/ModelBuild.cpp
     ../../Engine/src/Systems/ExecutablePath.cpp
+    ../../Engine/src/Systems/UserDataPath.cpp
     ../../Engine/src/AssetPipe/AssetPaths.cpp
     ../../Engine/src/Diagnostics/FatalError.cpp
     ../../Engine/src/Diagnostics/Logger.cpp

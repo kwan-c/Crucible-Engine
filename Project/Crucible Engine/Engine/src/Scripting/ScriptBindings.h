@@ -116,6 +116,10 @@ namespace Crucible
 		 *********************************************************************/
 		void SetCore(Core* core);
 
+		/// The engine SetCore was last given (nullptr if none): for other bindings that need it
+		/// (Bindings/QualitySettingsBindings.cpp). Defined in Bindings/ScreenBindings.cpp.
+		Core* CurrentCore();
+
 		/*********************************************************************
 		 \brief  Gives the C# MeshRenderer the resource manager (a model's
 		         material slots). nullptr clears it. Non-owning; main thread
@@ -146,6 +150,16 @@ namespace Crucible
 		 *********************************************************************/
 		void SetPhysicsEvents(EventBuses* events);
 
+		/*********************************************************************
+		 \brief  Gives the C# Network class the engine's network session
+		         (Core::GetNetwork) and subscribes the scripts' OnNetwork* /
+		         OnPeer* callbacks to NetworkEvents on the network bus; nullptr
+		         for either disconnects both. Non-owning; main thread only.
+		         Called by ScriptRuntime::ConnectEngine. Defined in
+		         Bindings/NetworkBindings.cpp.
+		 *********************************************************************/
+		void SetNetwork(Core* core, EventBuses* events);
+
 		// --- Per-feature registration, called by RegisterAll() ---
 		void RegisterLogBindings();      // Bindings/LogBindings.cpp      (C# Log)
 		void RegisterAnimatorBindings(); // Bindings/AnimatorBindings.cpp (C# Animator)
@@ -173,7 +187,9 @@ namespace Crucible
 		void RegisterTerrainBindings();        // Bindings/TerrainBindings.cpp        (C# Terrain: Build, GroundHeight)
 		void RegisterApplicationBindings();    // Bindings/ApplicationBindings.cpp    (C# Application: IsPlaying)
 		void RegisterTagBindings();            // Bindings/TagBindings.cpp            (C# Entity.Tag, CompareTag, FindWithTag)
+		void RegisterNetworkBindings();        // Bindings/NetworkBindings.cpp        (C# Network, Entity.NetworkId / Owner / IsMine)
 		void RegisterRagdollBindings();        // Bindings/RagdollBindings.cpp        (C# Ragdoll.Spawn) - Hugo
 		void RegisterGraphicsBindings();       // Bindings/GraphicsBindings.cpp       (C# Graphics: shader builds still running)
+		void RegisterQualitySettingsBindings(); // Bindings/QualitySettingsBindings.cpp (C# QualitySettings: preset, AA, shadows, AO, bloom, fog)
 	}
 }

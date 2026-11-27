@@ -5,7 +5,7 @@
 * \par:          Email: jeandavidvidal.c@digipen.edu,
 *                Email: low.h@digipen.edu
 * \date          17 November 2026
-* \version       1.1
+* \version       1.2
 * \brief
 *                Moves the FlowFieldAgents: steering, the crowd, collision,
 *                facing and standing on the ground.
@@ -23,6 +23,9 @@
 *                walked (and isn't "arrived" meanwhile). OnGround asks physics
 *                for the body's contacts instead of one ray from its centre,
 *                so golems climb ramps
+*    -v1.2       StandOnGround with no floor under the ray: the height of
+*                the agent's own layer, not the terrain's top (in a cave the
+*                top is the rock over it)
 *
 **************************************************************************/
 #include "NavAgentMover.h"
@@ -784,9 +787,11 @@ namespace Crucible {
             set a little too high doesn't make it slide down from the air.
           - Ground further below (off a ledge): fall, gaining kFallGravity m/s
             every second, and land on it - a real fall, not a teleport.
-          - No ground at all under it (off the edge of the level): the old
-            flat plane at the surface's height, if a surface is baked;
-            otherwise its height is left alone.
+          - No ground under it (off the edge of the level, or a facet too
+            steep to count): its own layer's height in the nav grid (the
+            floor it is on, in a cave), or the terrain's ground where it has
+            no layer, if a surface is baked; otherwise its height is left
+            alone.
 
         Before this, every agent stood on that flat plane: in Golem_test the
         Ground box's top is at y = 0.25 but its entity at y = 0, so every
@@ -841,9 +846,11 @@ namespace Crucible {
 
         }
 
-        // Nothing under it: the flat plane, as before, or leave it be.
+        // Nothing under it: the layer it is on, the ground, or leave it be.
         agent.m_fallSpeed = 0.0f;
-        if (grid.IsBaked()) position.y = ground.GroundHeight(position) + agent.m_baseOffset;
+        if (!grid.IsBaked()) return;
+        const int node = grid.NodeAt(Math::vec3(position.x, position.y - agent.m_baseOffset, position.z));
+        position.y = (node >= 0 ? grid.NodeHeight(node) : ground.GroundHeight(position)) + agent.m_baseOffset;
 
     }   // NavAgentMover::StandOnGround()
 

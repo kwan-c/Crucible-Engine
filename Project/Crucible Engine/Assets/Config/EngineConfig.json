@@ -14,7 +14,11 @@
         "hostPort": 27020,
         "connectAddress": "127.0.0.1",
         "connectPort": 27020,
-        "maxClients": 3
+        "maxClients": 3,
+        "lobbyDiscovery": "auto",
+        "lobbyServerAddress": "",
+        "lobbyServerPort": 27018,
+        "discoveryPort": 27019
     },
     "project": {
         "startupScene": "Scenes/Game/Main Menu Scene V2.scene",
@@ -28,7 +32,6 @@
     },
     "game": {
         "graphics": {
-            "windowTitle": "Mekanomachia",
             "fullScreen": true,
             "maximized": false
         },

@@ -8,7 +8,6 @@ namespace @Crucible.@Scripts
 
         public override void OnCreate()
         {
-           //global::Crucible.Log.Info("OptionsTabs created for entity " + this.Entity);
            ShowTab(0);
         }
 

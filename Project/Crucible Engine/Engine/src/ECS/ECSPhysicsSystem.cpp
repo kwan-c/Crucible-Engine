@@ -2,12 +2,12 @@
 * \file:         ECSPhysicsSystem.cpp
 * \author:       Abhishek Akilandeswari Patchamuthu (v1.0 skeleton),
 *                Hugo Low Ren Hao (v2.0 physics binding),
-*                Jean David Vidal Cruzado (v3.1: terrain)
+*                Jean David Vidal Cruzado (v3.1, v3.2: terrain)
 * \par:          Email: a.patchamuthu@digipen.edu,
 *                Email: low.h@digipen.edu,
 *                Email: jeandavidvidal.c@digipen.edu
 * \date          27 September 2026
-* \version       3.1
+* \version       3.2
 * \brief
 *                Implementation of ECSPhysicsSystem. See the header for
 *                what happens each frame.
@@ -67,6 +67,7 @@
 *    -v3.1       a HeightField Collider is the ground of the Terrain on
 *                its entity, stretched by the entity's world scale; no
 *                body until that Terrain has been built
+*    -v3.2       ...and its cave volume, if it has one
 *
 **************************************************************************/
 #include "ECSPhysicsSystem.h"
@@ -139,6 +140,7 @@ namespace {
         return x.m_type == y.m_type && Same(x.m_halfExtents, y.m_halfExtents) && x.m_radius == y.m_radius
             && x.m_halfHeight == y.m_halfHeight && Same(x.m_center, y.m_center)
             && x.m_heightGrid == y.m_heightGrid && Same(x.m_gridScale, y.m_gridScale)   // a new grid is a new pointer
+            && x.m_volume == y.m_volume
             && a.m_motion == b.m_motion && a.m_layer == b.m_layer && a.m_mass == b.m_mass
             && a.m_friction == b.m_friction && a.m_restitution == b.m_restitution
             && a.m_gravityFactor == b.m_gravityFactor
@@ -1154,6 +1156,7 @@ namespace Crucible {
         // and no error, because waiting for the level generator is normal.
         if (collider.m_type == ShapeType::HeightField) {
             desc.m_shape.m_heightGrid = terrain != nullptr ? terrain->Heights() : nullptr;
+            desc.m_shape.m_volume     = terrain != nullptr ? terrain->Volume() : nullptr;
             desc.m_shape.m_gridScale  = scale;
             if (desc.m_shape.m_heightGrid == nullptr) {
                 Remove(record);

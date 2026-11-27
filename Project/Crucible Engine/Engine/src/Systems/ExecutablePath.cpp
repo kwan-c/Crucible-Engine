@@ -46,7 +46,7 @@ namespace Crucible {
 				if (length < buffer.size())
 				{
 					buffer.resize(length);
-					return std::filesystem::path(buffer).parent_path();   // drop "Mekanomachia.exe"
+					return std::filesystem::path(buffer).parent_path();   // drop the .exe's own name
 				}
 				if (buffer.size() >= 32768)
 					break;                                                // longer than any path Windows allows

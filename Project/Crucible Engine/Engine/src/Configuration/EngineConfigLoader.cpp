@@ -12,7 +12,8 @@
 #include "AssetPipe/AssetPaths.h"
 #include "Json/JsonWrapper.h"
 #include <Diagnostics/Logger.h>
-#include "Systems/ExecutablePath.h"
+#include "Systems/UserDataPath.h"
+#include "GameInfo.h"
 
 
 namespace Crucible
@@ -204,6 +205,10 @@ namespace Crucible
 				ReadString(*network, "connectAddress", config.network.connectAddress);
 				ReadUInt16(*network, "connectPort", config.network.connectPort);
 				ReadUInt(*network, "maxClients", config.network.maxClients);
+				ReadString(*network, "lobbyDiscovery", config.network.lobbyDiscovery);
+				ReadString(*network, "lobbyServerAddress", config.network.lobbyServerAddress);
+				ReadUInt16(*network, "lobbyServerPort", config.network.lobbyServerPort);
+				ReadUInt16(*network, "discoveryPort", config.network.discoveryPort);
 			}
 
 			// (no "audio": the volumes are the player's - see Configuration/UserSettings.h)
@@ -281,7 +286,7 @@ namespace Crucible
 		// Inside the Assets folder.
 		constexpr const char* CONFIG_RELATIVE_PATH = "Config/EngineConfig.json";
 
-		// Next to the .exe.
+		// In the program's data folder (UserDataPath.h).
 		constexpr const char* USER_SETTINGS_FILE = "UserSettings.json";
 
 		// Layers `app`'s section of UserSettings.json onto `config`. Only the window (mode,
@@ -376,6 +381,10 @@ namespace Crucible
 		doc.Set("network/connectAddress", config.network.connectAddress);
 		doc.Set("network/connectPort",    static_cast<std::uint32_t>(config.network.connectPort));
 		doc.Set("network/maxClients",     config.network.maxClients);
+		doc.Set("network/lobbyDiscovery",     config.network.lobbyDiscovery);
+		doc.Set("network/lobbyServerAddress", config.network.lobbyServerAddress);
+		doc.Set("network/lobbyServerPort",    static_cast<std::uint32_t>(config.network.lobbyServerPort));
+		doc.Set("network/discoveryPort",      static_cast<std::uint32_t>(config.network.discoveryPort));
 
 		doc.Set("project/startupScene", config.project.startupScene);
 		doc.SetList("project/aspectRatio", std::vector<std::uint32_t>{ config.project.aspectWidth, config.project.aspectHeight });
@@ -464,7 +473,7 @@ namespace Crucible
 
 	std::filesystem::path EngineConfigLoader::UserSettingsFile()
 	{
-		const std::filesystem::path& dir = ExecutableDirectory();
+		const std::filesystem::path dir = UserDataDirectory();
 		if (dir.empty()) return {};
 		return dir / USER_SETTINGS_FILE;
 	}
@@ -509,12 +518,20 @@ namespace Crucible
 
 	EngineConfig EngineConfigLoader::LoadForApp(AppKind app)
 	{
+		// The game's window is titled with its name (GameInfo.h, from the top-level
+		// CMakeLists.txt) unless the "game" section of EngineConfig.json gives another title.
+		auto useGameTitle = [app](EngineConfig& config) {
+			if (app == AppKind::Game)
+				config.graphics.windowTitle = GameInfo::Name;
+		};
+
 		const std::filesystem::path path = FindConfigFile();
 		if (path.empty())
 		{
 			CRU_WARN("EngineConfigLoader: no Assets folder found - using default config");
 			EngineConfig config{};
 			config.app = app;
+			useGameTitle(config);
 			ApplyUserSettings(app, config);
 			return config;
 		}
@@ -525,6 +542,7 @@ namespace Crucible
 			EngineConfig config{};
 			rapidjson::Document document = ReadRoot(path);
 			ApplySections(document, config);
+			useGameTitle(config);
 
 			if (const JsonValue* overrides = FindSection(document, AppSectionName(app)))
 				ApplySections(*overrides, config);
@@ -542,6 +560,7 @@ namespace Crucible
 			CRU_WARN("EngineConfigLoader: could not load '{}' - using default config. {}", path.string(), e.what());
 			EngineConfig config{};
 			config.app = app;
+			useGameTitle(config);
 			ApplyUserSettings(app, config);
 			return config;
 		}

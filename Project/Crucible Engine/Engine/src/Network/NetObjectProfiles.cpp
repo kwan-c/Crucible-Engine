@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          6 November 2026
-* \version       1.1
+* \version       1.8
 * \brief
 *                NetworkObjectAuthoring -> NetPrefabDesc, and network prefab
 *                discovery (see the header).
@@ -11,6 +11,15 @@
 * \history
 *    -v1.0       Networking Phase 14.2
 *    -v1.1       AuthoringOptions, CheckAuthoring (Networking Phase 14.3)
+*    -v1.2       NetVariables offered although the object has none in the editor
+*                (Networking C# Phase 4)
+*    -v1.3       NetAnimator offered the same way (Networking C# Phase 7)
+*    -v1.4       synced children: BuildProfile copies and checks the list,
+*                CheckAuthoring resolves each path; runtime-added serializers grouped one row per component
+*    -v1.5       CheckAuthoring: a renderer beyond Renderers' first 7 synced children is reported
+*    -v1.6       CheckAuthoring reports a record that cannot fit (WorstCaseRecordBytes), as a session start would
+*    -v1.7       childEnabledReplicated: BuildProfile, CheckAuthoring, belowRoot
+*    -v1.8       NetData is a network runtime component
 *
 **************************************************************************/
 #include "Network/NetObjectProfiles.h"
@@ -23,6 +32,8 @@
 #include "ECS/World.h"
 #include "Json/JsonWrapper.h"
 #include "Network/CanonicalHash.h"
+#include "Network/NetComponents.h"
+#include "Network/NetSyncedChildren.h"
 #include "Network/ReplicationRegistry.h"
 #include "Scene/EntityIO.h"
 #include "Scene/Prefab.h"
@@ -96,6 +107,9 @@ namespace Crucible
 		if (!Components(components, authoring.serverOnly, "serverOnly", out.serverOnly, error)) return false;
 		if (!Components(components, authoring.ownerLocalOnly, "ownerLocalOnly", out.ownerLocalOnly, error)) return false;
 		if (!Components(components, authoring.enabledReplicated, "enabledReplicated", out.enabledReplicated, error)) return false;
+		if (!Components(components, authoring.childEnabledReplicated, "childEnabledReplicated", out.childEnabledReplicated, error)) return false;
+		if (!CheckSyncedChildList(authoring.syncedChildren, error)) return false;
+		out.syncedChildren = authoring.syncedChildren;
 		out.sendPriority = authoring.sendPriority;
 		out.critical = authoring.critical;
 		return true;
@@ -153,7 +167,11 @@ namespace Crucible
 		bool IsNetworkRuntime(ComponentId id)
 		{
 			return id == ComponentTypeId<NetworkIdentity>() || id == ComponentTypeId<NetInterpolation>()
-				|| id == ComponentTypeId<PlayerInput>() || id == ComponentTypeId<NetworkObjectAuthoring>();
+				|| id == ComponentTypeId<PlayerInput>() || id == ComponentTypeId<NetworkObjectAuthoring>()
+				|| id == ComponentTypeId<NetVariables>() || id == ComponentTypeId<NetAnimator>()
+				|| id == ComponentTypeId<NetChildTransforms>() || id == ComponentTypeId<NetAttachment>()
+				|| id == ComponentTypeId<NetRenderers>() || id == ComponentTypeId<NetChildEnabled>()
+				|| id == ComponentTypeId<NetData>();
 		}
 	}
 
@@ -171,6 +189,7 @@ namespace Crucible
 			AuthoringComponentOption option;
 			option.name = std::string(components.Get(id).name);
 			option.onRoot = Has(world, root, id);
+			option.belowRoot = std::ranges::any_of(subtree, [&](Entity e) { return e != root && Has(world, e, id); });
 			option.toggleable = components.Get(id).toggleable;
 			serializers.ForEach([&](const ReplicatedComponent& s) { if (s.local == id) option.serializers.push_back(s.name); });
 			if (option.serializers.empty()) option.noReplication = "no registered serializer for this component";
@@ -183,6 +202,24 @@ namespace Crucible
 			if (option.serializers.empty() && !option.toggleable) continue;
 			out.push_back(std::move(option));
 		}
+		// Components the network layer adds itself while a session runs (NetVariables): the object
+		// never has one in the editor, but whether it replicates them is still its choice. One row
+		// per component, with every serializer of it (Children/Rotation and Children/Full).
+		serializers.ForEach([&](const ReplicatedComponent& s) {
+			if (!s.addedAtRuntime || !components.IsRegistered(s.local)) return;
+			if (s.id == NetComponentId::ChildOnOff) return;   // set by the Sync on/off column, like EnabledMask
+			const std::string name(components.Get(s.local).name);
+			const auto existing = std::ranges::find_if(out, [&](const AuthoringComponentOption& o) { return o.name == name; });
+			if (existing != out.end()) { existing->serializers.push_back(s.name); return; }
+			AuthoringComponentOption option;
+			option.name = name;
+			option.onRoot = true;
+			option.toggleable = false;
+			option.serializers.push_back(s.name);
+			option.noPolicy = "the network adds this one itself on every machine";
+			option.noEnabledSync = option.noPolicy;
+			out.push_back(std::move(option));
+		});
 		return out;
 	}
 
@@ -207,7 +244,7 @@ namespace Crucible
 		for (const NetComponentId sid : desc.replicated)
 		{
 			const ReplicatedComponent* s = serializers.Find(sid);
-			if (s != nullptr && s->local != kInvalidComponentId && !Has(world, root, s->local))
+			if (s != nullptr && s->local != kInvalidComponentId && !s->addedAtRuntime && !Has(world, root, s->local))
 				problems.push_back(std::format("replicated: '{}' needs a {} on this entity", s->name, components.Get(s->local).name));
 		}
 		const auto check = [&](const std::vector<ComponentId>& ids, const char* field, bool rootOnly) {
@@ -220,6 +257,47 @@ namespace Crucible
 					problems.push_back(std::format("{}: {} cannot be switched off", field, name));
 			}
 		};
+		// The whole record must fit one (the same check a session start makes).
+		if (const std::size_t worst = WorstCaseRecordBytes(serializers, desc); worst > kMaxRecordBytes)
+		{
+			std::string parts;
+			for (const NetComponentId id : desc.replicated)
+				if (const ReplicatedComponent* s = serializers.Find(id)) parts += std::format("{}{} {}", parts.empty() ? "" : " + ", s->name, WorstCaseBytes(*s, desc));
+			problems.push_back(std::format("replicated: can need {} bytes ({}), but one record holds at most {}", worst, parts, kMaxRecordBytes));
+		}
+
+		// On/off on the synced children: on at least one of them, and switchable.
+		for (const ComponentId id : desc.childEnabledReplicated)
+		{
+			const std::string_view name = components.Get(id).name;
+			bool onAChild = false;
+			for (const std::string& path : desc.syncedChildren)
+			{
+				Entity child;
+				if (ResolveChildPath(world, root, path, child) == ChildPathResult::Found && Has(world, child, id)) onAChild = true;
+			}
+			if (!onAChild) problems.push_back(std::format("sync on/off (children): none of the synced children has a {}", name));
+			else if (!components.Get(id).toggleable) problems.push_back(std::format("sync on/off (children): {} cannot be switched off", name));
+		}
+
+		// Synced children: each must name exactly one entity of this object.
+		for (const std::string& path : desc.syncedChildren)
+		{
+			Entity child;
+			const ChildPathResult found = ResolveChildPath(world, root, path, child);
+			if (found == ChildPathResult::Missing) problems.push_back(std::format("synced child '{}' is not below this object", path));
+			else if (found == ChildPathResult::Ambiguous) problems.push_back(std::format("synced child '{}' names more than one entity (give them different names)", path));
+		}
+		if (std::ranges::find(desc.replicated, NetComponentId::Renderers) != desc.replicated.end())
+		{
+			for (std::size_t i = NetRenderers::kSlots - 1; i < desc.syncedChildren.size(); ++i)
+			{
+				Entity child;
+				if (ResolveChildPath(world, root, desc.syncedChildren[i], child) == ChildPathResult::Found && Has(world, child, ComponentTypeId<MeshRenderer>()))
+					problems.push_back(std::format("Renderers: synced child '{}' has a MeshRenderer, but Renderers covers only the first {} synced children (move it up the list)",
+						desc.syncedChildren[i], NetRenderers::kSlots - 1));
+			}
+		}
 		check(desc.serverOnly, "serverOnly", false);
 		check(desc.ownerLocalOnly, "ownerLocalOnly", false);
 		check(desc.enabledReplicated, "enabledReplicated", true);

@@ -1,11 +1,11 @@
 /*************************************************************************
 * \file:         PhysicsShapes.cpp
 * \author:       Hugo Low Ren Hao (main author),
-*                Jean David Vidal Cruzado (v1.1: heightfields)
+*                Jean David Vidal Cruzado (v1.1, v1.2: heightfields, caves)
 * \par:          Email: low.h@digipen.edu,
 *                Email: jeandavidvidal.c@digipen.edu
 * \date          27 September 2026
-* \version       1.1
+* \version       1.2
 * \brief
 *                Turns a ShapeDesc (box, sphere, capsule, heightfield) into
 *                a Jolt shape.
@@ -18,6 +18,8 @@
 * \history
 *    -v1.0       first version
 *    -v1.1       HeightField: a HeightGrid as a Jolt HeightFieldShape
+*    -v1.2       A HeightField with a cave volume: holes under it, plus
+*                its surface as a Jolt MeshShape, in a StaticCompoundShape
 *
 **************************************************************************/
 #include "PhysicsSystem.h"
@@ -27,19 +29,24 @@
 #include <Jolt/Physics/Collision/Shape/BoxShape.h>
 #include <Jolt/Physics/Collision/Shape/CapsuleShape.h>
 #include <Jolt/Physics/Collision/Shape/HeightFieldShape.h>
+#include <Jolt/Physics/Collision/Shape/MeshShape.h>
 #include <Jolt/Physics/Collision/Shape/RotatedTranslatedShape.h>
 #include <Jolt/Physics/Collision/Shape/SphereShape.h>
+#include <Jolt/Physics/Collision/Shape/StaticCompoundShape.h>
 
 // STL
 #include <algorithm>    // BuildShape()
+#include <chrono>       // BuildVolumeMesh()
 #include <cmath>        // BuildShape()
 #include <vector>       // BuildHeightField()
 
 // Crucible engine
 #include "Diagnostics/Logger.h"
 #include "Math/HeightGrid.h"
+#include "Math/TerrainVolume.h"
 #include "Physics/JoltConversions.h"
 #include "Physics/PhysicsInternal.h"
+#include "Terrain/VolumeSurface.h"
 
 // ---------------------------------------------------------------------------
 // One job: a ShapeDesc in, a Jolt shape out.
@@ -84,7 +91,12 @@ namespace {
     // padding is holes, not ground. Jolt places sample (x, z) at
     // offset + scale * (x, height, z) and splits each cell along the same
     // diagonal as HeightGrid, so the two describe one surface.
-    JPH::RefConst<JPH::Shape> BuildHeightField(const HeightGrid& grid, const Math::vec3& gridScale) {
+    //
+    // With a volume, the corners strictly inside its footprint are holes too.
+    // Jolt drops any triangle touching a hole, so exactly the cells under the
+    // volume go, and the corners on its sides keep their heights for the
+    // cells around it - the seam the volume's surface meets.
+    JPH::RefConst<JPH::Shape> BuildHeightField(const HeightGrid& grid, const Math::vec3& gridScale, const TerrainVolume* volume) {
 
         constexpr std::uint32_t kBlockSize = 2;   // Jolt's default; HeightFieldShapeSettings::mBlockSize
 
@@ -98,6 +110,14 @@ namespace {
             for (std::uint32_t x = 0; x < grid.CornerCols(); ++x)
                 samples[static_cast<std::size_t>(z) * side + x] = grid.Height(x, z);
 
+        if (volume != nullptr && !volume->IsEmpty()) {
+            std::uint32_t x0, x1, z0, z1;
+            volume->Footprint(grid, x0, x1, z0, z1);
+            for (std::uint32_t z = z0 + 1; z < z1; ++z)
+                for (std::uint32_t x = x0 + 1; x < x1; ++x)
+                    samples[static_cast<std::size_t>(z) * side + x] = JPH::HeightFieldShapeConstants::cNoCollisionValue;
+        }
+
         const JPH::Vec3 offset(grid.MinX() * scale.GetX(), 0.0f, grid.MinZ() * scale.GetZ());
         const JPH::Vec3 step(grid.cellSize * scale.GetX(), scale.GetY(), grid.cellSize * scale.GetZ());
 
@@ -108,6 +128,35 @@ namespace {
         return Create(settings, "heightfield");
 
     }   // BuildHeightField()
+
+    // A cave volume's surface (VolumeSurface.h, the triangles the renderer
+    // draws) as a Jolt mesh, stretched as BuildHeightField stretches the
+    // ground. Both are counter-clockwise from the side facing the air, which
+    // is Jolt's front face. Null if there is no surface; the time is logged
+    // because a big cave is a big mesh, built on every terrain rebuild.
+    JPH::RefConst<JPH::Shape> BuildVolumeMesh(const TerrainVolume& volume, const Math::vec3& gridScale) {
+
+        const auto start = std::chrono::steady_clock::now();
+        const JPH::Vec3 scale = JPH::Vec3::sMax(ToJolt(gridScale).Abs(), JPH::Vec3::sReplicate(kMinSize));
+        const auto toJolt = [&scale](const Math::vec3& p) {
+            return JPH::Float3(p.x * scale.GetX(), p.y * scale.GetY(), p.z * scale.GetZ());
+        };
+
+        const std::vector<VolumeTriangle> surface = BuildVolumeSurface(volume);
+        if (surface.empty()) return nullptr;
+
+        JPH::TriangleList triangles;
+        triangles.reserve(surface.size());
+        for (const VolumeTriangle& t : surface)
+            triangles.push_back(JPH::Triangle(toJolt(t.a), toJolt(t.b), toJolt(t.c)));
+
+        JPH::RefConst<JPH::Shape> shape = Create(JPH::MeshShapeSettings(triangles), "cave mesh");
+
+        const double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+        CRU_INFO("Physics: cave collider, {} triangles in {:.1f} ms", surface.size(), ms);
+        return shape;
+
+    }   // BuildVolumeMesh()
 
 }   // ANONYMOUS NAMESPACE
 
@@ -178,7 +227,19 @@ namespace Crucible {
                     return nullptr;
                 }
 
-                shape = BuildHeightField(*desc.m_heightGrid, desc.m_gridScale);
+                const TerrainVolume* volume = desc.m_volume != nullptr && !desc.m_volume->IsEmpty() ? desc.m_volume.get() : nullptr;
+                shape = BuildHeightField(*desc.m_heightGrid, desc.m_gridScale, volume);
+                if (shape == nullptr || volume == nullptr) break;
+
+                // The cave: its mesh joins the holed heightfield as one static
+                // shape. If the mesh can't be built (logged), the ground still is.
+                const JPH::RefConst<JPH::Shape> cave = BuildVolumeMesh(*volume, desc.m_gridScale);
+                if (cave == nullptr) break;
+
+                JPH::StaticCompoundShapeSettings both;
+                both.AddShape(JPH::Vec3::sZero(), JPH::Quat::sIdentity(), shape.GetPtr());
+                both.AddShape(JPH::Vec3::sZero(), JPH::Quat::sIdentity(), cave.GetPtr());
+                shape = Create(both, "terrain with a cave");
                 break;
             }
         }

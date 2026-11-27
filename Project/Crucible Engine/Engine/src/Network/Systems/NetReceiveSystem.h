@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.8
+* \version       1.16
 * \brief
 *                The ECS system that runs the network session once per
 *                frame, first in PreUpdate, and makes the World follow it:
@@ -111,6 +111,19 @@
 *                on clients, scene identity checked (Networking Phase 14.5)
 *    -v1.7       placed players become spawn points (Networking Phase 14.6)
 *    -v1.8       registers scene profiles (Networking Phase 14.7)
+*    -v1.9       PerformSpawn: one spawn, shared with the script bindings
+*                (Networking C# Phase 3)
+*    -v1.10      scene objects are scanned again after every scene change of the session;
+*                SceneChange applied on clients (Networking C# Phase 9)
+*    -v1.11      EndSessionObjects: a session's objects end with it (a new session in the same
+*                Play found its scene objects still marked as networked)
+*    -v1.12      client query bodies on proxies and scene objects, removed with the session
+*                (Networking C# Phase 8)
+*    -v1.13      attachments: AttachOrWait, RetryAttachments, m_waitingAttachments
+*    -v1.14      ownership transfer: ApplyOwnerRequests, ApplyOwnerChange, SetOwner
+*    -v1.15      objects kept across scene changes (protocol 12): CollectKept, KeepForSceneChange,
+*                Rebind, DropUnboundKept
+*    -v1.16      SetSceneLoader (a client's scene load; tests give their own)
 *
 **************************************************************************/
 #pragma once
@@ -146,11 +159,17 @@ namespace Crucible
 		NetReceiveSystem(NetworkSession& session, NetContent& content, SceneManager& scenes) noexcept
 			: m_session(session), m_content(content), m_scenes(scenes) {}
 		NetReceiveSystem(const NetReceiveSystem&) = delete;   // holds received messages (move-only)
+		~NetReceiveSystem() override { m_session.SetKeptObjectsQuery({}); }
 
 		/// The asset GUID of a scene file (Core: the AssetManager's). Unset: 0, which both machines
 		/// then agree on, so only the scene-object hash is compared.
 		using SceneAssetResolver = std::function<std::uint64_t(const std::filesystem::path&)>;
 		void SetSceneAssetResolver(SceneAssetResolver resolver) { m_sceneAssetOf = std::move(resolver); }
+
+		/// A client's load of the host's next scene. Unset: SceneManager::RequestLoadAsset (Core);
+		/// tests give their own. True if the load was requested.
+		using SceneLoader = std::function<bool(std::uint64_t sceneAsset)>;
+		void SetSceneLoader(SceneLoader loader) { m_sceneLoader = std::move(loader); }
 		NetReceiveSystem& operator=(const NetReceiveSystem&) = delete;
 
 		SystemStage Stage() const override { return SystemStage::PreUpdate; }
@@ -162,6 +181,15 @@ namespace Crucible
 		/// them. Components an entity does not have are skipped.
 		static void SetComponentsEnabled(World& world, Entity root, std::span<const ComponentId> ids, bool on,
 			std::vector<Entity>& scratch);
+
+		/// Host: performs one spawn now - instantiates the network prefab at the spawn's position
+		/// and rotation, switches off what only its owner runs, and adds the NetworkIdentity LAST
+		/// (its hook maps the id), then tells the session (NotifySpawned). Returns the root. On
+		/// any failure the whole subtree is destroyed, the session is told (NotifySpawnFailed)
+		/// and kNullEntity is returned. `spawn.id` comes from RequestSpawn or BeginSpawn. Only
+		/// from code that may change the World's structure (an Exclusive system).
+		static Entity PerformSpawn(World& world, NetworkSession& session, const NetContent& content, SceneManager& scenes,
+			const PendingSpawn& spawn, std::vector<Entity>& scratch);
 
 	private:
 		// Host
@@ -177,10 +205,29 @@ namespace Crucible
 		void Leave(CloseReason reason, const std::string& why);
 		void ApplySnapshot(World& world, ByteReader& reader);
 
+		// Ownership
+		void ApplyOwnerRequests(World& world);                 // host: gameplay's requests, and a departed client's objects
+		bool ApplyOwnerChange(World& world, ByteReader& reader);   // client: an OwnerChange
+		bool SetOwner(World& world, Entity entity, Net::PeerId owner);   // both: identity, owner-only components, the event
+		std::vector<OwnerChangeRequest> m_ownerRequests;   // host: reused every frame
+
 		// Scene objects (both roles)
 		void StartSceneObjects(World& world);
+		void ForgetPersistentIdentities(World& world);
+		void EndSessionObjects(World& world);
 		bool ApplySceneObjectBatch(World& world, ByteReader& reader);
 		void RemoveUnboundSceneObjects(World& world);
+
+		// Kept across scene changes (protocol 12)
+		void CollectKept(std::vector<std::pair<Net::NetworkId, Entity>>& out);   // host: the session asks at a scene change
+		void KeepForSceneChange(World& world, const SceneChange& change, std::vector<std::pair<Net::NetworkId, Entity>>& out);   // client
+		bool Rebind(World& world, Entity root, const SpawnView& spawn, Net::NetTick tick, std::string& why);   // client
+		void DropUnboundKept(World& world);   // client, WorldEnd
+		SceneLoader               m_sceneLoader;
+		World*                    m_lastWorld = nullptr;   // the World of the latest Update (CollectKept runs outside one)
+		bool                      m_keptQuerySet = false;
+		std::vector<std::pair<Net::NetworkId, Entity>> m_kept;   // reused
+		std::vector<Net::NetworkId> m_unbound;                   // reused
 
 		NetworkSession&           m_session;
 		NetContent&               m_content;
@@ -198,9 +245,25 @@ namespace Crucible
 		struct LocalSceneObject { Entity entity = kNullEntity; Net::NetPrefabId profile = Net::kInvalidNetPrefab; bool bound = false; };
 		SceneAssetResolver        m_sceneAssetOf;
 		std::uint32_t             m_sceneGeneration = 0;   // the session's, when the scene was last scanned
+		std::uint32_t             m_sceneEpoch = 0;        // the session's SceneEpoch(), when it was last scanned
 		bool                      m_sceneStarted = false;
 		std::unordered_map<std::uint64_t, LocalSceneObject> m_localSceneObjects;   // client: scene id -> own entity
 		std::vector<Entity>       m_resolved;        // client: its records' entities (null: despawned since)
+		std::vector<Entity>       m_waitingAttachments;   // client: attached objects whose parent or mount is not here yet
+
+		// Client: after a record of an object that replicates Attachment.
+		void AttachOrWait(World& world, Entity root);
+		void RetryAttachments(World& world);
+
+		// The scene's own entities this session made network objects (both roles), with what the
+		// client switched off on them: given back as plain scene entities when the session ends.
+		struct SessionSceneObject
+		{
+			Entity entity = kNullEntity;
+			std::vector<ComponentId> switchedOff;
+			std::vector<Entity> queryBodies;   // client: removed when the session ends (Phase 8)
+		};
+		std::vector<SessionSceneObject> m_sessionSceneObjects;
 	};
 #ifdef _MSC_VER
 #pragma warning(pop)

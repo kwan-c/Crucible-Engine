@@ -3,7 +3,7 @@
 * \author:       Jean David Vidal Cruzado
 * \par:          Email: jeandavidvidal.c@digipen.edu
 * \date          10 November 2026
-* \version       1.0
+* \version       1.1
 * \brief
 *                Turns a TerrainGrid into the mesh that draws it: one
 *                function, no state, so it can be tested on its own.
@@ -21,8 +21,14 @@
 *                Counter-clockwise seen from above (the engine's front
 *                face), like Primitives::MakePlane.
 *
+*                A cave volume replaces the cells under it with its own
+*                surface (marching cubes): ground colour facing up, Tunnel
+*                colour facing up under rock (cave floors), Cliff colour on
+*                anything steeper.
+*
 * \history
 *    -v1.0       first version
+*    -v1.1       the cave volume
 *
 **************************************************************************/
 #pragma once
@@ -52,7 +58,8 @@ namespace Crucible {
         mesh.
 
         \return
-        6 vertices and 6 indices per cell.
+        6 vertices and 6 indices per cell not under the volume, then 3 per
+        volume triangle.
     */
     MeshData BuildTerrainMesh(const TerrainGrid& grid, const TerrainPalette& palette);
 

@@ -130,7 +130,14 @@ namespace Crucible
                 throw new InvalidOperationException("An EntityScript instance cannot be rebound.");
             Entity = new global::Crucible.Entity(unchecked((uint)index), unchecked((uint)generation));
             bound = true;
+            OnEntityBound();
         }
+
+        /// <summary>
+        /// Called right after BindEntity, before OnCreate. For ScriptCore base classes
+        /// (Networking/NetScript.cs binds its synced fields here); not for game scripts.
+        /// </summary>
+        internal virtual void OnEntityBound() {}
         /// <summary>Called once when Play starts (or when the script is first enabled).</summary>
         public virtual void OnCreate() {}
         /// <summary>Called every frame while Playing and enabled.</summary>
@@ -167,6 +174,124 @@ namespace Crucible
         public virtual void OnTriggerEnter(Entity other) {}
         /// <summary>Something left this trigger - or this left another's trigger.</summary>
         public virtual void OnTriggerExit(Entity other) {}
+
+        // --- network callbacks ------------------------------------------------------
+        // Multiplayer (see Networking/Network.cs). Called at the start of the frame the event
+        // happened in, before OnUpdate, in the order the events arrived. Every running
+        // script hears them, except a command aimed at one entity (see OnNetworkCommand).
+        // A script that starts later does not hear earlier events: read Network.Peers,
+        // Network.IsReady etc. in OnCreate.
+
+        /// <summary>
+        /// This machine is in a multiplayer session: the host is listening, or this client
+        /// has joined and received the host's world (Network.IsReady is true from here on).
+        /// Never called in a single-player (offline) game.
+        /// </summary>
+        public virtual void OnNetworkStarted() {}
+        /// <summary>
+        /// The session is over: Play stopped, the host left, the connection was lost - or a
+        /// join failed (then OnNetworkStarted never ran). <paramref name="reason"/> says which.
+        /// </summary>
+        public virtual void OnNetworkStopped(string reason) {}
+        /// <summary>
+        /// Another player is in the session (on a client: also once for everyone who was
+        /// already there when it joined). Never called for this machine's own player.
+        /// </summary>
+        public virtual void OnPeerJoined(int peer) {}
+        /// <summary>
+        /// Another player has finished loading and is in the game. On the host this is the
+        /// moment to give that player what it needs (its character, its score...).
+        /// </summary>
+        public virtual void OnPeerReady(int peer) {}
+        /// <summary>Another player left or lost the connection.</summary>
+        public virtual void OnPeerLeft(int peer) {}
+        /// <summary>
+        /// The authority only (host, or a single-player game): somebody asked for something
+        /// with Network.SendCommand. A command sent with a target reaches only the scripts on
+        /// that entity; one without reaches every script, so check <paramref name="kind"/>.
+        /// <paramref name="sender"/> is who asked (0 = this machine itself) and cannot be
+        /// faked; everything in <paramref name="data"/> can: read it, check data.Ok, then
+        /// check that this player may ask for this before acting. See Networking/NetReader.cs.
+        /// </summary>
+        public virtual void OnNetworkCommand(int sender, ushort kind, NetReader data) {}
+        /// <summary>
+        /// Every machine: the authority announced that something happened, with
+        /// Network.SendEvent - the place for what each player should see or hear (an effect,
+        /// a sound, a HUD message). An event sent with a target reaches only the scripts on
+        /// that entity; one without reaches every script, so check <paramref name="kind"/>.
+        /// It comes from the host, so it can be trusted more than a command - still check
+        /// data.Ok before using what you read.
+        /// </summary>
+        public virtual void OnNetworkEvent(ushort kind, NetReader data) {}
+        /// <summary>
+        /// One of THIS entity's network variables (Entity.NetVars) has a new value: on a client
+        /// because the host changed it, on the authority because a script set it. Called once
+        /// per changed slot, the frame after the change - the place to update a health bar.
+        /// A script that starts later is not told about earlier changes: read the values in
+        /// OnCreate too.
+        /// </summary>
+        public virtual void OnNetVarChanged(int slot) {}
+        /// <summary>
+        /// The session is moving to another scene (the host called Network.LoadScene). Only
+        /// scripts that survive the load hear it - DontDestroyOnLoad ones: every other script
+        /// of this scene is destroyed with it. On a client, OnNetworkStarted follows once the
+        /// new scene's world has arrived.
+        /// </summary>
+        public virtual void OnNetworkSceneLoading() {}
+        /// <summary>
+        /// Host only: after Network.LoadScene, every client has loaded the new scene and has its
+        /// world. The moment to start a round. (Scripts of the new scene hear it.)
+        /// </summary>
+        public virtual void OnAllPeersReady() {}
+
+        /// <summary>
+        /// Every machine, on this object's scripts: the host gave this network object to another
+        /// player (Network.SetOwner), or took a departed client's object back. 0 = the host.
+        /// Entity.Owner and IsMine already say the new owner.
+        /// </summary>
+        public virtual void OnOwnershipChanged(int previousOwner, int newOwner) {}
+
+        /// <summary>
+        /// Every machine, on this object's scripts: its NetData (Entity.NetData) changed - the host
+        /// set it, or a client received the new bytes. Read it with Entity.NetData.Read().
+        /// </summary>
+        public virtual void OnNetDataChanged() {}
+
+        /// <summary>
+        /// Called by the engine (ScriptRuntime::DispatchNetworkEvent) with plain values.
+        /// kind: 0 started, 1 stopped, 2 peer joined, 3 peer ready, 4 peer left, 5 command, 6 event,
+        /// 7 variable changed, 8 scene loading, 9 all peers ready, 10 ownership changed, 11 data changed
+        /// (ScriptNetEvent::Kind in Bindings/NetworkContext.h - keep the two in step).
+        /// </summary>
+        internal void DispatchNetworkEvent(int kind, int peer, int code, int serial, string text)
+        {
+            switch (kind)
+            {
+                case 0: OnNetworkStarted(); break;
+                case 1: OnNetworkStopped(text ?? string.Empty); break;
+                case 2: OnPeerJoined(peer); break;
+                case 3: OnPeerReady(peer); break;
+                case 4: OnPeerLeft(peer); break;
+                case 5:
+                {
+                    // Every script gets its own reader over the same bytes.
+                    byte[] payload = Network.PayloadOf(serial);
+                    OnNetworkCommand(peer, unchecked((ushort)code), new NetReader(payload, payload.Length));
+                    break;
+                }
+                case 6:
+                {
+                    byte[] payload = Network.PayloadOf(serial);
+                    OnNetworkEvent(unchecked((ushort)code), new NetReader(payload, payload.Length));
+                    break;
+                }
+                case 7: OnNetVarChanged(code); break;
+                case 8: OnNetworkSceneLoading(); break;
+                case 9: OnAllPeersReady(); break;
+                case 10: OnOwnershipChanged(code, peer); break;
+                case 11: OnNetDataChanged(); break;
+            }
+        }
 
         /// <summary>
         /// Called by the engine (ScriptRuntime::DispatchPhysicsEvent) with plain values.

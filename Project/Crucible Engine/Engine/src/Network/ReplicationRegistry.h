@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.1
+* \version       1.9
 * \brief
 *                ReplicationRegistry: how each replicated piece of state is
 *                written, decoded and committed, keyed by a stable protocol
@@ -51,10 +51,11 @@
 *                encode differently refuse each other at join.
 *
 *                Size: maxBytes is a serializer's worst case and may not
-*                exceed one record (kMaxRecordBytes, 255: a record's length
-*                is one byte); NetPrefabTable::Validate also checks a
-*                prefab's whole replicated list fits one record. Write holds
-*                every serializer to its maxBytes at run time.
+*                exceed one record (kMaxRecordBytes, 1024 since protocol 9);
+*                NetPrefabTable::Validate also checks a prefab's whole
+*                replicated list fits one record. Write holds every
+*                serializer to its maxBytes at run time. A record has at most
+*                kMaxRecordEntries (16) entries: its mask is a RecordMask.
 *
 *                Names are std::string values owned by the registry (a
 *                caller's string may die right after Register). The table is
@@ -69,6 +70,46 @@
 *                  TransformYawOnly  position + yaw (u16): 14 bytes
 *                  EnabledMask       on/off of the prefab's enabledReplicated
 *                                    components, bit i = entry i: 1 byte
+*                  NetVariables      the 64 script value slots: the mask of
+*                                    the non-zero ones as two varints (slots
+*                                    0-31, 32-63), then 4 bytes each: 2 to
+*                                    266 bytes. Its component is added by
+*                                    the network layer (addedAtRuntime), not
+*                                    saved with the object.
+*                  NetData           the object's byte block: a varint
+*                                    length (<= 256), then the bytes: 1 to
+*                                    258 bytes. Added at runtime too.
+*                  Animator          the 32 Animator parameter slots
+*                                    (NetAnimator): a u32 mask of the slots
+*                                    the host has set, then 4 bytes each: 4
+*                                    to 132 bytes. Added at runtime too.
+*                  TransformFullScale  Transform/Full, then the scale (3 x
+*                                    float): 28 bytes
+*                  TransformYawScale Transform/YawOnly, then the scale: 26
+*                                    bytes. The scale is applied as it comes
+*                                    (not interpolated); position and
+*                                    rotation are interpolated as always.
+*                  CharacterControllerSize  a CharacterController's height,
+*                                    radius and centre (5 x float): 20
+*                                    bytes. On a client the
+*                                    controller stays switched off (Host
+*                                    only); its query body is resized.
+*                  ChildRotations, ChildTransforms  "Children/Rotation" and
+*                                    "Children/Full": the synced children's
+*                                    local transforms (NetSyncedChildren.h).
+*                                    Added at runtime.
+*                  Attachment        the network object (and mount) this one
+*                                    hangs under: 1 to 10 bytes
+*                                    (NetAttachments.h). Added at
+*                                    runtime.
+*                  ChildOnOff        "Children/OnOff": the on/off states of
+*                                    childEnabledReplicated on each synced
+*                                    child: 2 + 2 per child. Added
+*                                    at runtime.
+*                  Renderers         MeshRenderer and MaterialParams of the
+*                                    root and the first 7 synced children:
+*                                    1 to 753 bytes (NetRendererSync.h).
+*                                    Added at runtime.
 *
 * \history
 *    -v1.0       replication registry and serializers; review
@@ -78,6 +119,17 @@
 *                copies, rolled back when any commit fails or throws
 *    -v1.1       FindByName and ForEach: authored settings name serializers
 *                (Networking Phase 14.2)
+*    -v1.2       NetVariables; addedAtRuntime serializers and EnsureRuntimeComponents
+*                (Networking C# Phase 4)
+*    -v1.3       Animator: replicated Animator parameters (Networking C# Phase 7)
+*    -v1.4       protocol 9: RecordMask (16 entries), records up to kMaxRecordBytes (1024),
+*                decoded states up to 1024 bytes
+*    -v1.5       Transform/Full+Scale, Transform/YawOnly+Scale and CharacterController/Size
+*    -v1.6       ChildRotations and ChildTransforms ids; Attachment and Renderers ids reserved
+*    -v1.7       maxBytesFor, WorstCaseBytes, WorstCaseRecordBytes: an object's own worst case (the child
+*                serializers and Renderers grow with its synced children)
+*    -v1.8       ChildOnOff (Children/OnOff)
+*    -v1.9       NetVariables 64 slots (schema 2); NetData (14) - protocol 11
 *
 **************************************************************************/
 #pragma once
@@ -95,6 +147,7 @@
 #include "EngineExport.h"
 #include "ECS/World.h"
 #include "Network/NetTypes.h"
+#include "Network/Protocol.h"   // RecordMask, kMaxRecordBytes, kMaxRecordEntries
 
 namespace Crucible
 {
@@ -110,6 +163,17 @@ namespace Crucible
 		TransformFull    = 1,   // position + rotation (smallest three)
 		TransformYawOnly = 2,   // position + yaw: upright characters and enemies
 		EnabledMask      = 3,   // on/off state of the prefab's enabledReplicated components
+		NetVariables     = 4,   // the object's 64 replicated script value slots (16 before protocol 11)
+		Animator         = 5,   // the object's replicated Animator parameters (NetAnimator)
+		TransformFullScale = 6, // TransformFull + the scale
+		TransformYawScale  = 7, // TransformYawOnly + the scale
+		CharacterControllerSize = 8,   // a CharacterController's height, radius and centre
+		ChildRotations   = 9,   // the synced children's local rotations (NetSyncedChildren.h)
+		ChildTransforms  = 10,  // the synced children's local positions and rotations
+		Attachment       = 11,  // the network object (and mount) this one hangs under
+		Renderers        = 12,  // MeshRenderer and MaterialParams of the root and synced children
+		ChildOnOff       = 13,  // on/off states of components on the synced children
+		NetData          = 14,  // the object's replicated byte block (protocol 11)
 		FirstGameId      = 64,
 	};
 
@@ -121,7 +185,7 @@ namespace Crucible
 	};
 
 	/// The largest decoded state one serializer may use (its scratch slot).
-	inline constexpr std::size_t kMaxDecodedStateBytes = 256;
+	inline constexpr std::size_t kMaxDecodedStateBytes = 1024;
 	/// The largest component a serializer may replicate (the saved copy for rollback).
 	inline constexpr std::size_t kMaxComponentCopyBytes = 512;
 
@@ -148,7 +212,25 @@ namespace Crucible
 		bool        (*commit)(void* component, const void* state, const ReplicationContext& ctx) = nullptr;
 
 		bool enabledFlags = false;   // the built-in EnabledMask only: the registry commits on/off flags itself
+
+		/// Its component is never saved with the object: the network layer adds it on every machine
+		/// (EnsureRuntimeComponents calls `ensure`) before the object's first record is written or
+		/// applied. So prefab validation does not ask for the component in the file.
+		bool addedAtRuntime = false;
+		void (*ensure)(World& world, Entity entity) = nullptr;   // adds a default one (addedAtRuntime only)
+
+		/// Optional: the worst case for one object, when it depends on the object's settings (the
+		/// child serializers and Renderers grow with its synced children). At most maxBytes. Null:
+		/// maxBytes. Only the record-size check uses it; writing and decoding stay bounded by maxBytes.
+		std::uint16_t (*maxBytesFor)(const NetPrefabDesc& desc) = nullptr;
 	};
+
+	/// The worst case of `serializer` for an object of profile `desc` (maxBytesFor, or maxBytes).
+	ENGINE_API std::size_t WorstCaseBytes(const ReplicatedComponent& serializer, const NetPrefabDesc& desc) noexcept;
+
+	/// The worst case of `desc`'s whole record: the sum over its replicated list (unregistered ids
+	/// count 0). A profile whose sum is over kMaxRecordBytes is refused at session start.
+	ENGINE_API std::size_t WorstCaseRecordBytes(const class ReplicationRegistry& serializers, const NetPrefabDesc& desc) noexcept;
 
 	/// Builds a serializer for one ECS component from typed functions:
 	///   bool Decode(ByteReader&, const ReplicationContext&, State& out);                 // no World
@@ -216,8 +298,14 @@ namespace Crucible
 		/// enabledFlags on anything but the built-in EnabledMask.
 		bool Register(const ReplicatedComponent& component, std::string& error);
 
-		/// TransformFull, TransformYawOnly and EnabledMask.
+		/// TransformFull, TransformYawOnly, EnabledMask, NetVariables, Animator, the scale variants of
+		/// the two Transforms and CharacterControllerSize.
 		bool RegisterBuiltIns(std::string& error);
+
+		/// Adds the default component of every addedAtRuntime serializer in ctx.desc's replicated
+		/// list that `entity` does not have yet. Call it on an object's root before its first
+		/// record is written (host) or applied (client). Changes the World's structure.
+		void EnsureRuntimeComponents(World& world, Entity entity, const ReplicationContext& ctx) const;
 
 		const ReplicatedComponent* Find(NetComponentId id) const noexcept
 		{
@@ -267,12 +355,12 @@ namespace Crucible
 
 		/// Writes the entries `mask` selects, in list order. All or nothing: on failure `out` holds
 		/// nothing of the record.
-		bool WriteRecord(const World& world, Entity entity, std::uint8_t mask, const ReplicationContext& ctx,
+		bool WriteRecord(const World& world, Entity entity, RecordMask mask, const ReplicationContext& ctx,
 			ByteWriter& out, std::string* error = nullptr) const;
 
 		/// True if `body` is exactly the entries `mask` selects, each decoding within its bound.
 		/// No World access.
-		bool ValidateRecord(std::uint8_t mask, std::span<const std::byte> body, const ReplicationContext& ctx) const;
+		bool ValidateRecord(RecordMask mask, std::span<const std::byte> body, const ReplicationContext& ctx) const;
 
 		/// Applies the record as one transaction (see the file notes): completely, or - on any
 		/// decode or precondition failure, a failed or throwing commit, or a failed copy - not at
@@ -281,12 +369,12 @@ namespace Crucible
 		/// those of restoring the old state) are not undone; a rolled-back component still counts
 		/// as written for change detection; a commit with undefined behaviour (writing outside
 		/// its component) cannot be undone.
-		bool ApplyRecord(World& world, Entity entity, std::uint8_t mask, std::span<const std::byte> body,
+		bool ApplyRecord(World& world, Entity entity, RecordMask mask, std::span<const std::byte> body,
 			const ReplicationContext& ctx, std::string* error = nullptr) const noexcept;
 
 		/// The same, for a record of `length` bytes at the reader's position: `in` moves past it only
 		/// if the whole record was applied.
-		bool ApplyRecord(World& world, Entity entity, std::uint8_t mask, ByteReader& in, std::size_t length,
+		bool ApplyRecord(World& world, Entity entity, RecordMask mask, ByteReader& in, std::size_t length,
 			const ReplicationContext& ctx, std::string* error = nullptr) const noexcept;
 
 	private:

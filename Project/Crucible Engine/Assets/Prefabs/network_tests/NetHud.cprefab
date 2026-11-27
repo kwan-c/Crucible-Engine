@@ -1,0 +1,651 @@
+{
+    "version": 3,
+    "name": "NetHud",
+    "entities": [
+        {
+            "id": "4E65744875640015",
+            "parent": -1,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Net Hud"
+                },
+                "UICanvas": {
+                    "enabled": true,
+                    "renderMode": "ScreenSpace",
+                    "referenceResolution": {
+                        "x": 1920.0,
+                        "y": 1080.0
+                    },
+                    "toggleWithEscape": false,
+                    "showsCursor": false,
+                    "scaleWithScreenSize": true,
+                    "sortOrder": 50,
+                    "pixelsPerUnit": 100.0,
+                    "pivot": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "billboard": "Off",
+                    "alwaysOnTop": false,
+                    "doubleSided": true,
+                    "intensity": 1.0,
+                    "fade": false,
+                    "fadeStart": 20.0,
+                    "fadeEnd": 30.0
+                }
+            }
+        },
+        {
+            "id": "4E65744875640101",
+            "parent": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Health"
+                },
+                "UIRect": {
+                    "anchorMin": {
+                        "x": 0.02,
+                        "y": 0.11
+                    },
+                    "anchorMax": {
+                        "x": 0.02,
+                        "y": 0.11
+                    },
+                    "pivot": {
+                        "x": 0.0,
+                        "y": 0.5
+                    },
+                    "position": {
+                        "x": 0.0,
+                        "y": 0.0
+                    },
+                    "size": {
+                        "x": 1000.0,
+                        "y": 40.0
+                    },
+                    "rotation": 0.0,
+                    "raycastTarget": false
+                },
+                "UIText": {
+                    "text": "",
+                    "colour": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0,
+                        "w": 1.0
+                    },
+                    "fontAsset": 0,
+                    "fontSize": 30.0,
+                    "horizontalAlign": "Left",
+                    "verticalAlign": "Middle",
+                    "wrap": false,
+                    "overflow": "Overflow",
+                    "lineSpacing": 1.0,
+                    "characterSpacing": 0.0,
+                    "richText": false,
+                    "bold": false,
+                    "underline": false,
+                    "bestFit": false,
+                    "minFontSize": 10.0,
+                    "maxFontSize": 40.0,
+                    "outline": false,
+                    "outlineColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "outlineWidth": 2.0,
+                    "glow": false,
+                    "glowColour": {
+                        "x": 1.0,
+                        "y": 0.85,
+                        "z": 0.4,
+                        "w": 0.8
+                    },
+                    "glowWidth": 3.0,
+                    "glowSoftness": 0.5,
+                    "shadow": true,
+                    "shadowColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.7
+                    },
+                    "shadowOffset": {
+                        "x": 2.0,
+                        "y": -2.0
+                    },
+                    "shadowSoftness": 0.0
+                }
+            }
+        },
+        {
+            "id": "4E65744875640102",
+            "parent": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Health Bar"
+                },
+                "UIRect": {
+                    "anchorMin": {
+                        "x": 0.02,
+                        "y": 0.06
+                    },
+                    "anchorMax": {
+                        "x": 0.02,
+                        "y": 0.06
+                    },
+                    "pivot": {
+                        "x": 0.0,
+                        "y": 0.5
+                    },
+                    "position": {
+                        "x": 0.0,
+                        "y": 0.0
+                    },
+                    "size": {
+                        "x": 520.0,
+                        "y": 24.0
+                    },
+                    "rotation": 0.0,
+                    "raycastTarget": false
+                },
+                "UISlider": {
+                    "minValue": 0.0,
+                    "maxValue": 100.0,
+                    "value": 100.0,
+                    "wholeNumbers": true,
+                    "interactable": false,
+                    "direction": "LeftToRight",
+                    "trackColour": {
+                        "x": 0.15,
+                        "y": 0.15,
+                        "z": 0.17,
+                        "w": 0.85
+                    },
+                    "fillColour": {
+                        "x": 0.3,
+                        "y": 0.9,
+                        "z": 0.35,
+                        "w": 1.0
+                    },
+                    "handleColour": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0,
+                        "w": 0.0
+                    },
+                    "handleSize": 0.0,
+                    "trackThickness": 1.0
+                }
+            }
+        },
+        {
+            "id": "4E65744875640103",
+            "parent": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Scores"
+                },
+                "UIRect": {
+                    "anchorMin": {
+                        "x": 0.02,
+                        "y": 0.96
+                    },
+                    "anchorMax": {
+                        "x": 0.02,
+                        "y": 0.96
+                    },
+                    "pivot": {
+                        "x": 0.0,
+                        "y": 1.0
+                    },
+                    "position": {
+                        "x": 0.0,
+                        "y": 0.0
+                    },
+                    "size": {
+                        "x": 700.0,
+                        "y": 240.0
+                    },
+                    "rotation": 0.0,
+                    "raycastTarget": false
+                },
+                "UIText": {
+                    "text": "",
+                    "colour": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0,
+                        "w": 1.0
+                    },
+                    "fontAsset": 0,
+                    "fontSize": 28.0,
+                    "horizontalAlign": "Left",
+                    "verticalAlign": "Top",
+                    "wrap": false,
+                    "overflow": "Overflow",
+                    "lineSpacing": 1.0,
+                    "characterSpacing": 0.0,
+                    "richText": false,
+                    "bold": false,
+                    "underline": false,
+                    "bestFit": false,
+                    "minFontSize": 10.0,
+                    "maxFontSize": 40.0,
+                    "outline": false,
+                    "outlineColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "outlineWidth": 2.0,
+                    "glow": false,
+                    "glowColour": {
+                        "x": 1.0,
+                        "y": 0.85,
+                        "z": 0.4,
+                        "w": 0.8
+                    },
+                    "glowWidth": 3.0,
+                    "glowSoftness": 0.5,
+                    "shadow": true,
+                    "shadowColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.7
+                    },
+                    "shadowOffset": {
+                        "x": 2.0,
+                        "y": -2.0
+                    },
+                    "shadowSoftness": 0.0
+                }
+            }
+        },
+        {
+            "id": "4E65744875640104",
+            "parent": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Feed"
+                },
+                "UIRect": {
+                    "anchorMin": {
+                        "x": 0.98,
+                        "y": 0.96
+                    },
+                    "anchorMax": {
+                        "x": 0.98,
+                        "y": 0.96
+                    },
+                    "pivot": {
+                        "x": 1.0,
+                        "y": 1.0
+                    },
+                    "position": {
+                        "x": 0.0,
+                        "y": 0.0
+                    },
+                    "size": {
+                        "x": 800.0,
+                        "y": 240.0
+                    },
+                    "rotation": 0.0,
+                    "raycastTarget": false
+                },
+                "UIText": {
+                    "text": "",
+                    "colour": {
+                        "x": 1.0,
+                        "y": 0.9,
+                        "z": 0.6,
+                        "w": 1.0
+                    },
+                    "fontAsset": 0,
+                    "fontSize": 28.0,
+                    "horizontalAlign": "Right",
+                    "verticalAlign": "Top",
+                    "wrap": false,
+                    "overflow": "Overflow",
+                    "lineSpacing": 1.0,
+                    "characterSpacing": 0.0,
+                    "richText": false,
+                    "bold": false,
+                    "underline": false,
+                    "bestFit": false,
+                    "minFontSize": 10.0,
+                    "maxFontSize": 40.0,
+                    "outline": false,
+                    "outlineColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "outlineWidth": 2.0,
+                    "glow": false,
+                    "glowColour": {
+                        "x": 1.0,
+                        "y": 0.85,
+                        "z": 0.4,
+                        "w": 0.8
+                    },
+                    "glowWidth": 3.0,
+                    "glowSoftness": 0.5,
+                    "shadow": true,
+                    "shadowColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.7
+                    },
+                    "shadowOffset": {
+                        "x": 2.0,
+                        "y": -2.0
+                    },
+                    "shadowSoftness": 0.0
+                }
+            }
+        },
+        {
+            "id": "4E65744875640105",
+            "parent": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Message"
+                },
+                "UIRect": {
+                    "anchorMin": {
+                        "x": 0.5,
+                        "y": 0.64
+                    },
+                    "anchorMax": {
+                        "x": 0.5,
+                        "y": 0.64
+                    },
+                    "pivot": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "position": {
+                        "x": 0.0,
+                        "y": 0.0
+                    },
+                    "size": {
+                        "x": 1400.0,
+                        "y": 140.0
+                    },
+                    "rotation": 0.0,
+                    "raycastTarget": false
+                },
+                "UIText": {
+                    "text": "",
+                    "colour": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0,
+                        "w": 1.0
+                    },
+                    "fontAsset": 0,
+                    "fontSize": 40.0,
+                    "horizontalAlign": "Center",
+                    "verticalAlign": "Middle",
+                    "wrap": false,
+                    "overflow": "Overflow",
+                    "lineSpacing": 1.0,
+                    "characterSpacing": 0.0,
+                    "richText": false,
+                    "bold": false,
+                    "underline": false,
+                    "bestFit": false,
+                    "minFontSize": 10.0,
+                    "maxFontSize": 40.0,
+                    "outline": false,
+                    "outlineColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "outlineWidth": 2.0,
+                    "glow": false,
+                    "glowColour": {
+                        "x": 1.0,
+                        "y": 0.85,
+                        "z": 0.4,
+                        "w": 0.8
+                    },
+                    "glowWidth": 3.0,
+                    "glowSoftness": 0.5,
+                    "shadow": true,
+                    "shadowColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.7
+                    },
+                    "shadowOffset": {
+                        "x": 2.0,
+                        "y": -2.0
+                    },
+                    "shadowSoftness": 0.0
+                }
+            }
+        },
+        {
+            "id": "4E65744875640106",
+            "parent": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Crosshair"
+                },
+                "UIRect": {
+                    "anchorMin": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "anchorMax": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "pivot": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "position": {
+                        "x": 0.0,
+                        "y": 0.0
+                    },
+                    "size": {
+                        "x": 60.0,
+                        "y": 60.0
+                    },
+                    "rotation": 0.0,
+                    "raycastTarget": false
+                },
+                "UIText": {
+                    "text": "+",
+                    "colour": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0,
+                        "w": 1.0
+                    },
+                    "fontAsset": 0,
+                    "fontSize": 40.0,
+                    "horizontalAlign": "Center",
+                    "verticalAlign": "Middle",
+                    "wrap": false,
+                    "overflow": "Overflow",
+                    "lineSpacing": 1.0,
+                    "characterSpacing": 0.0,
+                    "richText": false,
+                    "bold": false,
+                    "underline": false,
+                    "bestFit": false,
+                    "minFontSize": 10.0,
+                    "maxFontSize": 40.0,
+                    "outline": false,
+                    "outlineColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "outlineWidth": 2.0,
+                    "glow": false,
+                    "glowColour": {
+                        "x": 1.0,
+                        "y": 0.85,
+                        "z": 0.4,
+                        "w": 0.8
+                    },
+                    "glowWidth": 3.0,
+                    "glowSoftness": 0.5,
+                    "shadow": true,
+                    "shadowColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.7
+                    },
+                    "shadowOffset": {
+                        "x": 2.0,
+                        "y": -2.0
+                    },
+                    "shadowSoftness": 0.0
+                }
+            }
+        }
+    ]
+}

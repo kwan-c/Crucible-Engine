@@ -1,0 +1,39 @@
+/*!
+* @file			GameInfo.h (generated from Engine/src/GameInfo.h.in - edit that, not this)
+* @author		Tan Chun Kwang Xavier
+* @par			chunkwangxavier.tan@digipen.edu
+* @date			26 November 2026
+*
+* @brief		The game's name and version, as C++ constants.
+*
+* CMake writes this file into Build/Generated from Assets/Config/GameInfo.json (read by the
+* top-level CMakeLists.txt). To rename the game or change its version, edit them in the Editor
+* (File > Package Game > Installer details): the next build picks them up everywhere.
+*
+* All Content copyrighted 2026 DigiPen Institute of Technology Singapore.
+* All Rights Reserved
+*/
+#pragma once
+
+namespace Crucible::GameInfo {
+
+	// "Lithomachia": the .exe's name, the window title, the Local AppData folder, ...
+	inline constexpr const char* Name = "@CRUCIBLE_GAME_NAME@";
+
+	// "0.1.0", and its parts (for Vulkan's VK_MAKE_VERSION, for one).
+	inline constexpr const char* Version      = "@CRUCIBLE_GAME_VERSION@";
+	inline constexpr unsigned    VersionMajor = @CRUCIBLE_GAME_VERSION_MAJOR@;
+	inline constexpr unsigned    VersionMinor = @CRUCIBLE_GAME_VERSION_MINOR@;
+	inline constexpr unsigned    VersionPatch = @CRUCIBLE_GAME_VERSION_PATCH@;
+
+	// Who the installer and Windows' app list say made it, and the folder under Program Files
+	// the installer puts it in (may be empty).
+	inline constexpr const char* Publisher     = "@CRUCIBLE_GAME_PUBLISHER@";
+	inline constexpr const char* InstallFolder = "@CRUCIBLE_GAME_INSTALL_FOLDER@";
+
+	// The installer's AppId, without braces: how Windows tells that a new version is the same
+	// game. Never changes. The installer gets it from the generated
+	// Tools/Package/Installer/GameInfo.iss.
+	inline constexpr const char* AppId = "@CRUCIBLE_GAME_APP_ID@";
+
+}

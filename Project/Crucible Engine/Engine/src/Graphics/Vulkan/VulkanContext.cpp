@@ -14,7 +14,8 @@
 **************************************************************************/
 
 #include "VulkanContext.h"
-#include "Systems/ExecutablePath.h"   // where the pipeline cache file lives
+#include "Systems/UserDataPath.h"     // where the pipeline cache file lives
+#include "GameInfo.h"                 // the name and version reported to the driver
 
 // Compile VMA's implementation exactly once, here. VulkanContext.h already pulled in
 // <vk_mem_alloc.h> for declarations (no VMA_IMPLEMENTATION defined there); the library's own
@@ -69,8 +70,9 @@ namespace Crucible {
         CreateLogicalDevice();
         CreateAllocator();
 
-        // Beside the program: one cache per machine and per build folder, never in the repository.
-        m_pipelineCache.Load(m_physicalDevice, m_device, ExecutableDirectory() / "Cache" / "PipelineCache.bin");
+        // In the program's own data folder (UserDataPath.h): beside the Editor's .exe, or in Local
+        // AppData for the game - an installed game cannot write to Program Files.
+        m_pipelineCache.Load(m_physicalDevice, m_device, UserDataDirectory() / "Cache" / "PipelineCache.bin");
 
     }   // VulkanContext::VulkanContext()
 
@@ -97,8 +99,8 @@ namespace Crucible {
     void VulkanContext::CreateInstance() {
 
         constexpr vk::ApplicationInfo appInfo{
-            .pApplicationName = "Mekanomachia",
-            .applicationVersion = VK_MAKE_VERSION(1, 0, 0),
+            .pApplicationName = GameInfo::Name,
+            .applicationVersion = VK_MAKE_VERSION(GameInfo::VersionMajor, GameInfo::VersionMinor, GameInfo::VersionPatch),
             .pEngineName = "Crucible Engine",
             .engineVersion = VK_MAKE_VERSION(1, 0, 0),
             .apiVersion = vk::ApiVersion13

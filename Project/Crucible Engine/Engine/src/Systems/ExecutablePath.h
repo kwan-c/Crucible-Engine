@@ -22,7 +22,7 @@
 
 namespace Crucible {
 
-	// The folder holding the running .exe (Editor.exe / Mekanomachia.exe - not Engine.dll), as an
+	// The folder holding the running .exe (Editor.exe / the game's .exe - not Engine.dll), as an
 	// absolute path. Looked up once and cached. Falls back to the working directory if the OS
 	// cannot say, and is empty only if even that fails.
 	ENGINE_API const std::filesystem::path& ExecutableDirectory();

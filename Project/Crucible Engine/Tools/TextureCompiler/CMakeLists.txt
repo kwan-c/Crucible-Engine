@@ -13,6 +13,7 @@ add_executable(CrucibleTextureCompiler
     ../../Engine/src/AssetPipe/AssetRegistry.cpp
     ../../Engine/src/AssetPipe/AssetPaths.cpp
     ../../Engine/src/Systems/ExecutablePath.cpp
+    ../../Engine/src/Systems/UserDataPath.cpp
     ../../Engine/src/Diagnostics/FatalError.cpp
     ../../Engine/src/Diagnostics/Logger.cpp
     ../../Engine/src/Diagnostics/LogSink.cpp

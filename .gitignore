@@ -1,5 +1,8 @@
 # Build folders
 /Project/Crucible Engine/build/
+/Project/Crucible Engine/Tools/Package/Installer/GAMEDIRECTORY/
+/Project/Crucible Engine/Tools/Package/Installer/INSTALLER/
+/Project/Crucible Engine/Tools/Package/Installer/GameInfo.iss
 CMakeCache.txt
 CMakeFiles/
 cmake_install.cmake

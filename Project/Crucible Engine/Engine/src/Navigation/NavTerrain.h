@@ -5,7 +5,7 @@
 * \par:          Email: jeandavidvidal.c@digipen.edu,
 *                Email: low.h@digipen.edu
 * \date          31 October 2026
-* \version       1.1
+* \version       1.2
 * \brief
 *                NavTerrain: the two questions navigation asks the ground
 *                (is this a wall, how high is it here). FlatNavTerrain:
@@ -21,9 +21,14 @@
 * \history
 *    -v1.0       first version
 *    -v1.1       comment: the step / agent-height band (was "shoulder")
+*    -v1.2       Floors: every floor in a column where the ground is a
+*                cave volume, not one height
 *
 **************************************************************************/
 #pragma once
+
+// STL
+#include <vector>
 
 // Crucible engine
 #include "Math/Math.h"
@@ -43,6 +48,15 @@
 
 namespace Crucible {
 
+    // One floor in a column of cave: where rock below meets air above.
+    struct NavFloor {
+
+        float height   = 0.0f;    // world y
+        float headroom = 0.0f;    // up to the rock above it; infinity under open sky
+        bool  steep    = false;   // steeper than the walkable slope: a wall to walk on
+
+    };  // NAVFLOOR STRUCT
+
     class NavTerrain {
 
     public:
@@ -59,6 +73,16 @@ namespace Crucible {
         // Agents use it to stand on the ground; the bake uses it to measure
         // obstacles against the step / agent-height band.
         virtual float GroundHeight(const Math::vec3& position) const = 0;
+
+        // Where the ground is a cave (more than one floor in a column), every
+        // floor in the column through this point, lowest first, and true: the
+        // grid uses these there instead of GroundHeight and IsWall. False
+        // where the plain ground applies - everywhere, unless overridden.
+        virtual bool Floors(const Math::vec3& position, std::vector<NavFloor>& floors) const {
+            (void)position;
+            floors.clear();
+            return false;
+        }
 
     };  // NAVTERRAIN CLASS
 

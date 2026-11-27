@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.0
+* \version       1.11
 * \brief
 *                ReplicationRegistry and the built-in serializers (see the
 *                header).
@@ -13,17 +13,40 @@
 *                fixes: maxBytes limited to one record, bounded Write;
 *                decode/commit, bounded readers, owned names; records
 *                applied as transactions with rollback
+*    -v1.1       the NetVariables serializer; EnsureRuntimeComponents
+*    -v1.2       the Animator serializer (NetAnimator)
+*    -v1.3       EnabledMask: a flag for a server-only Collider or CharacterController
+*                switches the entity's client query body, never the component itself
+*                (Networking C# Phase 8); a Collider's flag on an entity with a
+*                CharacterController switches nothing (the host ignores that Collider too)
+*    -v1.4       protocol 9: RecordMask, up to kMaxRecordEntries (16) entries per record;
+*                EnabledMask keeps its own limit of 8 (its one-byte encoding is unchanged)
+*    -v1.5       Transform/Full+Scale and Transform/YawOnly+Scale; CharacterController/Size.
+*                Non-finite values are sent as 1 (scale) or the default, never as NaN
+*    -v1.6       registers Children/Rotation and Children/Full (NetSyncedChildren.cpp)
+*    -v1.7       registers Attachment (NetAttachments.cpp)
+*    -v1.8       registers Renderers (NetRendererSync.cpp)
+*    -v1.9       WorstCaseBytes and WorstCaseRecordBytes (maxBytesFor)
+*    -v1.10      registers Children/OnOff (NetSyncedChildren.cpp)
+*    -v1.11      NetVariables: 64 slots, the mask as two varints (schema 2); the NetData
+*                serializer (protocol 11)
 *
 **************************************************************************/
 #include "Network/ReplicationRegistry.h"
 
 #include <algorithm>
+#include <cmath>
 #include <exception>
 #include <format>
 
 #include "Network/ByteStream.h"
 #include "Network/CanonicalHash.h"
+#include "Network/NetAttachments.h"
+#include "Network/NetComponents.h"
 #include "Network/NetPrefabTable.h"
+#include "Network/NetQueryBodies.h"
+#include "Network/NetRendererSync.h"
+#include "Network/NetSyncedChildren.h"
 #include "Network/Protocol.h"
 #include "Network/Quantize.h"
 
@@ -31,8 +54,9 @@ namespace Crucible
 {
 	namespace
 	{
-		// The most entries one record can have (its mask is a u8).
-		constexpr std::size_t kMaxRecordEntries = 8;
+		// EnabledMask's encoding is one byte: at most 8 enabledReplicated components (NetPrefabTable
+		// checks it). Records themselves have up to kMaxRecordEntries (Protocol.h).
+		constexpr std::size_t kMaxEnabledEntries = 8;
 
 		struct alignas(std::max_align_t) StateSlot { std::byte bytes[kMaxDecodedStateBytes]; };
 		struct alignas(std::max_align_t) CopySlot  { std::byte bytes[kMaxComponentCopyBytes]; };
@@ -121,7 +145,7 @@ namespace Crucible
 		bool DecodeEnabledMask(ByteReader& in, const ReplicationContext& ctx, MaskState& out)
 		{
 			out.mask = in.U8();
-			return in.Ok() && ctx.desc != nullptr && ctx.desc->enabledReplicated.size() <= kMaxRecordEntries
+			return in.Ok() && ctx.desc != nullptr && ctx.desc->enabledReplicated.size() <= kMaxEnabledEntries
 				&& (out.mask >> ctx.desc->enabledReplicated.size()) == 0;
 		}
 
@@ -197,7 +221,7 @@ namespace Crucible
 		if (component.name.empty()) { error = std::format("serializer id {} has no name", static_cast<int>(component.id)); return false; }
 		if (component.maxBytes == 0 || component.maxBytes > kMaxRecordBytes)
 		{
-			error = std::format("serializer '{}' declares maxBytes {}: it must be 1 to {} (one record's length is a byte)",
+			error = std::format("serializer '{}' declares maxBytes {}: it must be 1 to {} (the largest record)",
 				component.name, component.maxBytes, kMaxRecordBytes);
 			return false;
 		}
@@ -226,14 +250,334 @@ namespace Crucible
 		return true;
 	}
 
+	namespace
+	{
+		// NetVariables on the wire: the mask of the slots that are not 0 as two varints (slots 0-31,
+		// then 32-63), then those slots, 4 bytes each, lowest first. A listed slot that is 0 is
+		// malformed: one state, one encoding.
+		struct NetVariablesState
+		{
+			std::array<std::uint32_t, NetVariables::kSlots> slots;
+		};
+
+		bool WriteNetVariables(const World& world, Entity entity, const ReplicationContext&, ByteWriter& out)
+		{
+			const NetVariables* variables = world.Read<NetVariables>(entity);
+			if (variables == nullptr) return false;
+			std::uint64_t mask = 0;
+			for (std::uint32_t i = 0; i < NetVariables::kSlots; ++i)
+				if (variables->slots[i] != 0) mask |= std::uint64_t{ 1 } << i;
+			out.VarU32(static_cast<std::uint32_t>(mask));
+			out.VarU32(static_cast<std::uint32_t>(mask >> 32));
+			for (std::uint32_t i = 0; i < NetVariables::kSlots; ++i)
+				if (variables->slots[i] != 0) out.U32(variables->slots[i]);
+			return out.Ok();
+		}
+
+		bool DecodeNetVariables(ByteReader& in, const ReplicationContext&, NetVariablesState& out)
+		{
+			out.slots = {};
+			const std::uint64_t low = in.VarU32();
+			const std::uint64_t mask = low | (static_cast<std::uint64_t>(in.VarU32()) << 32);
+			if (!in.Ok()) return false;
+			for (std::uint32_t i = 0; i < NetVariables::kSlots; ++i)
+			{
+				if ((mask & (std::uint64_t{ 1 } << i)) == 0) continue;
+				out.slots[i] = in.U32();
+				if (!in.Ok() || out.slots[i] == 0) return false;
+			}
+			return in.Ok();
+		}
+
+		// Notes which slots really changed, so scripts hear about those only.
+		bool CommitNetVariables(NetVariables& variables, const NetVariablesState& state, const ReplicationContext&)
+		{
+			for (std::uint32_t i = 0; i < NetVariables::kSlots; ++i)
+				if (variables.slots[i] != state.slots[i]) variables.changed |= std::uint64_t{ 1 } << i;
+			variables.slots = state.slots;
+			return true;
+		}
+
+		ReplicatedComponent NetVariablesSerializer()
+		{
+			ReplicatedComponent serializer = MakeSerializer<NetVariables, NetVariablesState, &DecodeNetVariables, &CommitNetVariables>({
+				.id = NetComponentId::NetVariables, .name = "NetVariables", .schemaVersion = 2,
+				.maxBytes = 5 + 5 + 4 * NetVariables::kSlots, .write = &WriteNetVariables });
+			serializer.addedAtRuntime = true;
+			serializer.ensure = [](World& world, Entity entity) { world.AddComponent(entity, NetVariables{}); };
+			return serializer;
+		}
+	}
+
+	namespace
+	{
+		// NetData on the wire: a varint length (<= NetData::kMaxBytes), then the bytes.
+		struct NetDataState
+		{
+			std::array<std::byte, NetData::kMaxBytes> bytes;
+			std::uint16_t length;
+		};
+
+		bool WriteNetData(const World& world, Entity entity, const ReplicationContext&, ByteWriter& out)
+		{
+			const NetData* data = world.Read<NetData>(entity);
+			if (data == nullptr || data->length > NetData::kMaxBytes) return false;
+			out.VarU32(data->length);
+			out.Bytes(std::span(data->bytes.data(), data->length));
+			return out.Ok();
+		}
+
+		bool DecodeNetData(ByteReader& in, const ReplicationContext&, NetDataState& out)
+		{
+			const std::uint32_t length = in.VarU32();
+			if (!in.Ok() || length > NetData::kMaxBytes) return false;   // checked BEFORE taking the bytes
+			const std::span<const std::byte> bytes = in.Sub(length);
+			if (!in.Ok()) return false;
+			out.bytes = {};
+			std::copy(bytes.begin(), bytes.end(), out.bytes.begin());
+			out.length = static_cast<std::uint16_t>(length);
+			return true;
+		}
+
+		// Scripts hear about it only when the bytes really changed.
+		bool CommitNetData(NetData& data, const NetDataState& state, const ReplicationContext&)
+		{
+			const bool same = data.length == state.length
+				&& std::equal(data.bytes.begin(), data.bytes.begin() + data.length, state.bytes.begin());
+			if (!same)
+			{
+				data.bytes = state.bytes;
+				data.length = state.length;
+				data.changed = true;
+			}
+			return true;
+		}
+
+		ReplicatedComponent NetDataSerializer()
+		{
+			ReplicatedComponent serializer = MakeSerializer<NetData, NetDataState, &DecodeNetData, &CommitNetData>({
+				.id = NetComponentId::NetData, .name = "NetData", .schemaVersion = 1,
+				.maxBytes = 2 + NetData::kMaxBytes, .write = &WriteNetData });
+			serializer.addedAtRuntime = true;
+			serializer.ensure = [](World& world, Entity entity) { world.AddComponent(entity, NetData{}); };
+			return serializer;
+		}
+	}
+
+	namespace
+	{
+		// Animator on the wire: a u32 mask of the slots the host has set, then those slots, 4 bytes
+		// each, lowest first. Unlike NetVariables a set slot may be 0 (false, 0, 0.0): the mask
+		// says which ones the host wrote, the others keep the controller's initial value.
+		struct NetAnimatorState
+		{
+			std::array<std::uint32_t, NetAnimator::kSlots> slots;
+			std::uint32_t written;
+		};
+
+		bool WriteNetAnimator(const World& world, Entity entity, const ReplicationContext&, ByteWriter& out)
+		{
+			const NetAnimator* animator = world.Read<NetAnimator>(entity);
+			if (animator == nullptr) return false;
+			out.U32(animator->written);
+			for (std::uint32_t i = 0; i < NetAnimator::kSlots; ++i)
+				if ((animator->written & (1u << i)) != 0) out.U32(animator->slots[i]);
+			return out.Ok();
+		}
+
+		bool DecodeNetAnimator(ByteReader& in, const ReplicationContext&, NetAnimatorState& out)
+		{
+			out.slots = {};
+			out.written = in.U32();
+			for (std::uint32_t i = 0; i < NetAnimator::kSlots && in.Ok(); ++i)
+				if ((out.written & (1u << i)) != 0) out.slots[i] = in.U32();
+			return in.Ok();
+		}
+
+		// The client's own bookkeeping (firedSeen, primed) stays: NetAnimatorSystem plays the
+		// trigger counts that changed.
+		bool CommitNetAnimator(NetAnimator& animator, const NetAnimatorState& state, const ReplicationContext&)
+		{
+			animator.slots = state.slots;
+			animator.written = state.written;
+			animator.received = true;
+			return true;
+		}
+
+		ReplicatedComponent NetAnimatorSerializer()
+		{
+			ReplicatedComponent serializer = MakeSerializer<NetAnimator, NetAnimatorState, &DecodeNetAnimator, &CommitNetAnimator>({
+				.id = NetComponentId::Animator, .name = "Animator", .schemaVersion = 1,
+				.maxBytes = 4 + 4 * NetAnimator::kSlots, .write = &WriteNetAnimator });
+			serializer.addedAtRuntime = true;
+			serializer.ensure = [](World& world, Entity entity) { world.AddComponent(entity, NetAnimator{}); };
+			return serializer;
+		}
+	}
+
+	namespace
+	{
+		// ---- the scale variants of the Transforms ----------------------
+		// Transform/Full or /YawOnly as they are, then the scale as three floats. A non-finite
+		// value is never sent (1 is): a client refuses one, which would refuse the whole snapshot.
+
+		struct TransformScaleState
+		{
+			Math::vec3 position;
+			Math::quat rotation;
+			Math::vec3 scale;
+		};
+
+		float Finite(float v, float fallback) noexcept { return std::isfinite(v) ? v : fallback; }
+
+		bool WriteScale(const World& world, Entity e, ByteWriter& out)
+		{
+			const Transform* t = world.Read<Transform>(e);
+			if (t == nullptr) return false;
+			out.F32(Finite(t->scale.x, 1.f));
+			out.F32(Finite(t->scale.y, 1.f));
+			out.F32(Finite(t->scale.z, 1.f));
+			return out.Ok();
+		}
+
+		bool ReadScale(ByteReader& in, Math::vec3& out)
+		{
+			const float x = in.F32();
+			const float y = in.F32();
+			const float z = in.F32();
+			out = Math::vec3(x, y, z);
+			return in.Ok() && std::isfinite(x) && std::isfinite(y) && std::isfinite(z);
+		}
+
+		bool WriteTransformFullScale(const World& world, Entity e, const ReplicationContext& ctx, ByteWriter& out)
+		{
+			return WriteTransformFull(world, e, ctx, out) && WriteScale(world, e, out);
+		}
+
+		bool DecodeTransformFullScale(ByteReader& in, const ReplicationContext& ctx, TransformScaleState& out)
+		{
+			TransformState base{};
+			if (!DecodeTransformFull(in, ctx, base)) return false;
+			out.position = base.position;
+			out.rotation = base.rotation;
+			return ReadScale(in, out.scale);
+		}
+
+		bool WriteTransformYawScale(const World& world, Entity e, const ReplicationContext& ctx, ByteWriter& out)
+		{
+			return WriteTransformYaw(world, e, ctx, out) && WriteScale(world, e, out);
+		}
+
+		bool DecodeTransformYawScale(ByteReader& in, const ReplicationContext& ctx, TransformScaleState& out)
+		{
+			TransformState base{};
+			if (!DecodeTransformYaw(in, ctx, base)) return false;
+			out.position = base.position;
+			out.rotation = base.rotation;
+			return ReadScale(in, out.scale);
+		}
+
+		bool CommitTransformScale(Transform& t, const TransformScaleState& state, const ReplicationContext&)
+		{
+			t.positions = state.position;
+			t.rotation = state.rotation;
+			t.scale = state.scale;
+			return true;
+		}
+
+		// ---- CharacterController/Size --------------------------------------
+		// Height, radius and centre: what the capsule is. On a client the controller itself stays
+		// switched off (Host only); the values size its query body (NetQueryBodies).
+
+		struct CharacterSizeState
+		{
+			float      height;
+			float      radius;
+			Math::vec3 center;
+		};
+
+		bool WriteCharacterSize(const World& world, Entity e, const ReplicationContext&, ByteWriter& out)
+		{
+			const CharacterController* c = world.Read<CharacterController>(e);
+			if (c == nullptr) return false;
+			const CharacterController defaults{};
+			out.F32(Finite(c->m_height, defaults.m_height));
+			out.F32(Finite(c->m_radius, defaults.m_radius));
+			out.F32(Finite(c->m_center.x, 0.f));
+			out.F32(Finite(c->m_center.y, 0.f));
+			out.F32(Finite(c->m_center.z, 0.f));
+			return out.Ok();
+		}
+
+		bool DecodeCharacterSize(ByteReader& in, const ReplicationContext&, CharacterSizeState& out)
+		{
+			out.height = in.F32();
+			out.radius = in.F32();
+			const float x = in.F32();
+			const float y = in.F32();
+			const float z = in.F32();
+			out.center = Math::vec3(x, y, z);
+			return in.Ok() && std::isfinite(out.height) && std::isfinite(out.radius) && std::isfinite(x) && std::isfinite(y) && std::isfinite(z);
+		}
+
+		bool CommitCharacterSize(CharacterController& c, const CharacterSizeState& state, const ReplicationContext&)
+		{
+			c.m_height = state.height;
+			c.m_radius = state.radius;
+			c.m_center = state.center;
+			return true;
+		}
+	}
+
+	std::size_t WorstCaseBytes(const ReplicatedComponent& serializer, const NetPrefabDesc& desc) noexcept
+	{
+		if (serializer.maxBytesFor == nullptr) return serializer.maxBytes;
+		return std::min<std::size_t>(serializer.maxBytesFor(desc), serializer.maxBytes);
+	}
+
+	std::size_t WorstCaseRecordBytes(const ReplicationRegistry& serializers, const NetPrefabDesc& desc) noexcept
+	{
+		std::size_t total = 0;
+		for (const NetComponentId id : desc.replicated)
+			if (const ReplicatedComponent* s = serializers.Find(id)) total += WorstCaseBytes(*s, desc);
+		return total;
+	}
+
+	void ReplicationRegistry::EnsureRuntimeComponents(World& world, Entity entity, const ReplicationContext& ctx) const
+	{
+		if (ctx.desc == nullptr || !world.IsAlive(entity)) return;
+		for (const NetComponentId id : ctx.desc->replicated)
+		{
+			const ReplicatedComponent* c = Find(id);
+			if (c != nullptr && c->addedAtRuntime && c->ensure != nullptr && c->read(world, entity) == nullptr) c->ensure(world, entity);
+		}
+	}
+
 	bool ReplicationRegistry::RegisterBuiltIns(std::string& error)
 	{
-		return Register(MakeSerializer<Transform, TransformState, &DecodeTransformFull, &CommitTransform>({
+		return Register(NetVariablesSerializer(), error)
+			&& Register(NetDataSerializer(), error)
+			&& Register(NetAnimatorSerializer(), error)
+			&& Register(ChildRotationsSerializer(), error)
+			&& Register(ChildTransformsSerializer(), error)
+			&& Register(ChildOnOffSerializer(), error)
+			&& Register(AttachmentSerializer(), error)
+			&& Register(RenderersSerializer(), error)
+			&& Register(MakeSerializer<Transform, TransformState, &DecodeTransformFull, &CommitTransform>({
 				.id = NetComponentId::TransformFull, .name = "Transform/Full", .schemaVersion = 1,
 				.maxBytes = 16, .write = &WriteTransformFull }), error)
 			&& Register(MakeSerializer<Transform, TransformState, &DecodeTransformYaw, &CommitTransform>({
 				.id = NetComponentId::TransformYawOnly, .name = "Transform/YawOnly", .schemaVersion = 1,
 				.maxBytes = 14, .write = &WriteTransformYaw }), error)
+			&& Register(MakeSerializer<Transform, TransformScaleState, &DecodeTransformFullScale, &CommitTransformScale>({
+				.id = NetComponentId::TransformFullScale, .name = "Transform/Full+Scale", .schemaVersion = 1,
+				.maxBytes = 28, .write = &WriteTransformFullScale }), error)
+			&& Register(MakeSerializer<Transform, TransformScaleState, &DecodeTransformYawScale, &CommitTransformScale>({
+				.id = NetComponentId::TransformYawScale, .name = "Transform/YawOnly+Scale", .schemaVersion = 1,
+				.maxBytes = 26, .write = &WriteTransformYawScale }), error)
+			&& Register(MakeSerializer<CharacterController, CharacterSizeState, &DecodeCharacterSize, &CommitCharacterSize>({
+				.id = NetComponentId::CharacterControllerSize, .name = "CharacterController/Size", .schemaVersion = 1,
+				.maxBytes = 20, .write = &WriteCharacterSize }), error)
 			&& Register(EnabledMaskSerializer(), error);
 	}
 
@@ -316,11 +660,12 @@ namespace Crucible
 
 	// ---- one record ------------------------------------------------------------------------
 
-	bool ReplicationRegistry::WriteRecord(const World& world, Entity entity, std::uint8_t mask, const ReplicationContext& ctx,
+	bool ReplicationRegistry::WriteRecord(const World& world, Entity entity, RecordMask mask, const ReplicationContext& ctx,
 		ByteWriter& out, std::string* error) const
 	{
 		if (ctx.desc == nullptr) { if (error) *error = "no prefab"; return false; }
 		const auto& list = ctx.desc->replicated;
+		if (list.size() > kMaxRecordEntries) { if (error) *error = "the prefab's list has more entries than a record"; return false; }
 		if (list.size() < kMaxRecordEntries && (mask >> list.size()) != 0) { if (error) *error = "mask selects an entry past the prefab's list"; return false; }
 		std::array<std::byte, kMaxRecordBytes> scratch;
 		ByteWriter record(scratch);
@@ -332,7 +677,7 @@ namespace Crucible
 		return out.Ok();
 	}
 
-	bool ReplicationRegistry::ValidateRecord(std::uint8_t mask, std::span<const std::byte> body, const ReplicationContext& ctx) const
+	bool ReplicationRegistry::ValidateRecord(RecordMask mask, std::span<const std::byte> body, const ReplicationContext& ctx) const
 	{
 		if (ctx.desc == nullptr || body.size() > kMaxRecordBytes) return false;
 		const auto& list = ctx.desc->replicated;
@@ -343,7 +688,7 @@ namespace Crucible
 		return in.AtEnd();   // nothing left over: every byte belonged to an entry
 	}
 
-	bool ReplicationRegistry::ApplyRecord(World& world, Entity entity, std::uint8_t mask, std::span<const std::byte> body,
+	bool ReplicationRegistry::ApplyRecord(World& world, Entity entity, RecordMask mask, std::span<const std::byte> body,
 		const ReplicationContext& ctx, std::string* error) const noexcept
 	{
 		try
@@ -381,7 +726,7 @@ namespace Crucible
 		}
 	}
 
-	bool ReplicationRegistry::ApplyRecord(World& world, Entity entity, std::uint8_t mask, ByteReader& in, std::size_t length,
+	bool ReplicationRegistry::ApplyRecord(World& world, Entity entity, RecordMask mask, ByteReader& in, std::size_t length,
 		const ReplicationContext& ctx, std::string* error) const noexcept
 	{
 		ByteReader probe = in;   // a copy: `in` moves only if the whole record was applied
@@ -390,6 +735,26 @@ namespace Crucible
 		if (!ApplyRecord(world, entity, mask, body, ctx, error)) return false;
 		in.Skip(length);
 		return true;
+	}
+
+	namespace
+	{
+		// What EnabledMask's flag i switches on `entity`: the component itself, or - for a
+		// server-only one (a synced Host-only Collider or CharacterController, Phase 8) - the
+		// Collider of the entity's client query body. That component stays off on a client.
+		// False: nothing to switch (no query body: the host, or this client's own player; or a
+		// Collider beside a CharacterController, which is no body on the host either - the
+		// query body copies the character, and only its flag moves it).
+		bool FlagTarget(const World& world, Entity entity, const NetPrefabDesc& desc, std::size_t i, Entity& target, ComponentId& id)
+		{
+			id = desc.enabledReplicated[i];
+			target = entity;
+			if (std::ranges::find(desc.serverOnly, id) == desc.serverOnly.end()) return true;
+			if (id == ComponentTypeId<Collider>() && world.HasComponent<CharacterController>(entity)) return false;
+			target = FindClientQueryBody(world, entity);
+			id = ComponentTypeId<Collider>();
+			return target.IsValid();
+		}
 	}
 
 	bool ReplicationRegistry::Transact(World& world, Entity entity, std::span<Entry> entries, const ReplicationContext& ctx,
@@ -416,7 +781,12 @@ namespace Crucible
 				if (e.c->enabledFlags)
 				{
 					for (std::size_t i = 0; i < ctx.desc->enabledReplicated.size(); ++i)
-						if (world.IsComponentEnabled(entity, ctx.desc->enabledReplicated[i])) e.oldFlags |= static_cast<std::uint8_t>(1u << i);
+					{
+						Entity target;
+						ComponentId id;
+						if (FlagTarget(world, entity, *ctx.desc, i, target, id) && world.IsComponentEnabled(target, id))
+							e.oldFlags |= static_cast<std::uint8_t>(1u << i);
+					}
 					continue;
 				}
 				const void* current = e.c->read(world, entity);
@@ -437,7 +807,10 @@ namespace Crucible
 					{
 						const bool on = ((wanted >> i) & 1u) != 0;
 						if ((((e.oldFlags >> i) & 1u) != 0) == on) continue;
-						if (!world.TrySetComponentEnabled(entity, ctx.desc->enabledReplicated[i], on))
+						Entity target;
+						ComponentId id;
+						if (!FlagTarget(world, entity, *ctx.desc, i, target, id)) continue;   // no query body here: nothing to switch
+						if (!world.TrySetComponentEnabled(target, id, on))
 						{
 							SetError(error, std::format("'{}' could not switch a component", e.c->name));
 							ok = false;
@@ -474,7 +847,10 @@ namespace Crucible
 					for (std::size_t i = 0; i < ctx.desc->enabledReplicated.size(); ++i)
 					{
 						if (((e.changedFlags >> i) & 1u) == 0) continue;
-						try { world.TrySetComponentEnabled(entity, ctx.desc->enabledReplicated[i], ((e.oldFlags >> i) & 1u) != 0); }
+						Entity target;
+						ComponentId id;
+						if (!FlagTarget(world, entity, *ctx.desc, i, target, id)) continue;
+						try { world.TrySetComponentEnabled(target, id, ((e.oldFlags >> i) & 1u) != 0); }
 						catch (...) {}   // cannot happen: the same call just succeeded in the same context
 					}
 				}
