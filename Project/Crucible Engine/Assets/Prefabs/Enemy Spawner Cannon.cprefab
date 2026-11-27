@@ -73,6 +73,19 @@
                                     "stringIsNull": false,
                                     "entityId": 0,
                                     "assetId": 0
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.EnemySpawner",
+                                    "name": "alternatePrefab",
+                                    "type": "Prefab",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0,
+                                    "real": 0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 17058197998951610773
                                 }
                             ]
                         }

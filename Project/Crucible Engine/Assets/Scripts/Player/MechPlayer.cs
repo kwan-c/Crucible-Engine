@@ -207,6 +207,28 @@ namespace Crucible.Scripts
         int selectedPart;
 
         Vector3 planarVelocity;
+        Vector3 externalVelocity;
+        float externalRemaining, externalDuration;
+
+        // Same collision-aware motor as walking and boosting. Speed is in world metres/second.
+        public bool ApplyKnockback(Vector3 direction, float speed, float duration)
+        {
+            direction = MechMath.Flat(direction);
+            if (IsDead || !MechMath.Finite(direction.Length) || direction.Length < .001f
+                || !MechMath.Finite(speed) || !MechMath.Finite(duration) || speed <= 0f || duration <= 0f) return false;
+            externalVelocity = direction.Normalized * Math.Min(40f, speed);
+            externalDuration = externalRemaining = Math.Min(1f, duration);
+            return true;
+        }
+
+        Vector3 KnockbackStep(float dt)
+        {
+            if (externalRemaining <= 0f) return Vector3.Zero;
+            float step = Math.Min(dt, externalRemaining);
+            float weight = (externalRemaining - .5f * step) / externalDuration;
+            externalRemaining -= step;
+            return externalVelocity * (step * weight);
+        }
         bool brakingAfterBoost;
         float uninterruptedMoveTime;
         Vector3 quickBoostDirection;
@@ -279,6 +301,7 @@ namespace Crucible.Scripts
                 meleeWeapon = null;   // a swing still sliding in dies with the mech
                 ClearWeaponEffects();
                 planarVelocity = Vector3.Zero;
+                externalRemaining = 0f;
                 quickBoostTimer = 0f;
                 uninterruptedMoveTime = 0f; IsAutoRunning = false;
                 body.SimpleMove(Vector3.Zero);
@@ -608,6 +631,7 @@ namespace Crucible.Scripts
 
             bool boostEnded;
             Vector3 planarStep = StepPlanarMotion(sprint, moveDirection, deltaTime, out boostEnded);
+            planarStep += KnockbackStep(deltaTime);
             UpdateFacing(moveDirection, hasMove, cameraForward, deltaTime);
 
             // Gravity, the ground and jumping (the legs ability, RequestAbility) belong to the

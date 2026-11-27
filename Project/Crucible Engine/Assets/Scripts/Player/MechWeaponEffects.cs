@@ -94,6 +94,7 @@ namespace Crucible.Scripts
                 return false;
             }
             hookRemaining -= deltaTime;
+            KnockbackStep(deltaTime); // The active hook owns this motor step; the external impulse still expires.
             float speed = Math.Min(24f, (distance - 2f) / deltaTime);
             body.SimpleMove(offset * (speed / distance));
             Velocity = body.Velocity;

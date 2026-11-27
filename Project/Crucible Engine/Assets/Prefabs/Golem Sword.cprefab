@@ -435,7 +435,7 @@
                 },
                 "SocketAttachment": {
                     "enabled": true,
-                    "socketName": "Shoulder",
+                    "socketName": "Head",
                     "modelAsset": 4175691030365061123,
                     "node": 17
                 },
@@ -451,14 +451,14 @@
                 "Transform": {
                     "positions": {
                         "x": 0,
-                        "y": 0.22529602533913667,
-                        "z": -2.838871094735743
+                        "y": -1.169102,
+                        "z": 4.5371
                     },
                     "rotation": {
-                        "x": 0.70023178175696,
+                        "x": -0.55129204,
                         "y": 0,
                         "z": 0,
-                        "w": 0.7139155775142276
+                        "w": 0.83431234
                     },
                     "scale": {
                         "x": 1,
@@ -482,9 +482,9 @@
                 },
                 "SocketAttachment": {
                     "enabled": true,
-                    "socketName": "Melee",
+                    "socketName": "Shoulder",
                     "modelAsset": 4175691030365061123,
-                    "node": 18
+                    "node": 17
                 },
                 "AnimatedModel": {
                     "controllerAsset": 15044359590195862093,

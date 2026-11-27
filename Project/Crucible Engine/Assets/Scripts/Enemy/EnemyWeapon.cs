@@ -73,29 +73,27 @@ namespace Crucible.Scripts
         {
             cooldownLeft = Math.Max(0f, cooldownLeft - deltaTime);
 
-            if (attacking)
+            if (attacking && previewSpinnerWindup)
+                TickSpinner(deltaTime);
+            else if (attacking)
             {
                 // A lost or dead target cancels the hit that hasn't landed. A bolt already
                 // flying keeps flying.
                 if (attackTarget == null || attackTarget.IsDead || !attackTarget.Entity.IsActive)
                 {
-                    if (!released) AnimateAttackCancel();   // EnemyAnimation.cs: don't leave a charge hanging
-                    attacking = false;
+                    CancelAttack();
                 }
                 else
                 {
                     age += deltaTime;
-                    if (!released && age >= WindupSeconds)
+                    if (!released && age >= fireDuration * releaseFrame)
                     {
                         released = true;
-                        if (!previewSpinnerWindup)
-                        {
-                            if (melee) StrikeMelee();
-                            else FireBolt();
-                            AnimateAttackRelease();
-                        }
+                        if (melee) StrikeMelee();
+                        else FireBolt();
+                        AnimateAttackRelease();
                     }
-                    if (age >= AttackSeconds) attacking = false;
+                    if (age >= fireDuration) CancelAttack();
                 }
             }
 
@@ -113,12 +111,14 @@ namespace Crucible.Scripts
         // Starts an attack if it is off cooldown and can reach. Returns whether it started.
         public bool TryAttack()
         {
-            if (!IsReady || invalidWeapon || attacking || cooldownLeft > 0f) return false;
+            if (!IsReady || asleep || invalidWeapon || attacking || cooldownLeft > 0f) return false;
             if (MechHitStop.BlocksNewActions(Entity)) return false;   // Unity's EnemyAttack: none during a hit stop
             if (targetHealth == null || targetHealth == this || targetHealth.IsDead || !targetHealth.Entity.IsActive) return false;
 
             Entity victim = targetHealth.Entity;
             if (!CanReach(victim) || !ClearPathFrom(Position, victim, melee)) return false;
+            if (previewSpinnerWindup && !PrepareSpinner(victim)) return false;
+            if (!previewSpinnerWindup && !AdmitMeleeAttack()) return false;
 
             attackTarget = targetHealth;
             aim = AimPoint(victim);                  // ranged shots aim once; bolts never home
@@ -136,9 +136,12 @@ namespace Crucible.Scripts
         public void CancelAttack()
         {
             if (attacking && !released) AnimateAttackCancel();
+            if (SpinnerStage != SpinnerPhase.Idle) EndSpinner();
+            ReleaseMeleeAttack();
             attacking = false;
             released = false;
             attackTarget = null;
+            HideTelegraph();
         }
 
         // Melee: within reach on the flat and no more than verticalReach above or below.
@@ -286,20 +289,27 @@ namespace Crucible.Scripts
             if (renderer.Visible != show) renderer.Visible = show;
             if (!show) return;
 
-            float groundY = Position.Y - (agent != null ? agent.BaseOffset : 1f) + 0.06f;   // just above the feet
+            float groundY = (previewSpinnerWindup ? GroundAtFeet() : Position.Y - (agent != null ? agent.BaseOffset : 1f)) + .06f;
             Vector3 start = new Vector3(Position.X, groundY, Position.Z);
-            Vector3 end = melee ? start + strikeFacing * 3f : new Vector3(aim.X, groundY, aim.Z);
+            Vector3 end = previewSpinnerWindup ? start + chargeDirection * (chargeSpeed * chargeDuration)
+                : melee ? start + strikeFacing * 3f : new Vector3(aim.X, groundY, aim.Z);
 
             Vector3 lane = end - start;
             float length = lane.Length;
             Vector3 direction = length > 0.01f ? lane * (1f / length) : strikeFacing;
-            float progress = Math.Max(0.1f, Math.Min(1f, age / Math.Max(0.01f, WindupSeconds)));
-            float filled = Math.Max(0.01f, length * progress);
+            float progress = Math.Max(0.1f, Math.Min(1f, age / Math.Max(0.01f, fireDuration * releaseFrame)));
+            float filled = Math.Max(0.01f, length * (previewSpinnerWindup ? 1f : progress));
 
-            // Scale is local; the golem roots are at scale 1, so local is world here.
             telegraphEntity.Transform.WorldPosition = start + direction * (filled * 0.5f);
             telegraphEntity.Transform.WorldRotation = Quaternion.LookRotation(direction);
-            telegraphEntity.Transform.Scale = new Vector3(melee ? 2f : 0.55f, telegraphThickness, filled);
+            if (previewSpinnerWindup)
+            {
+                // The preview prefab root is half scale. Express the warning in world metres.
+                Vector3 scale = Transform.Scale;
+                telegraphEntity.Transform.Scale = new Vector3(2f * contactRadius / Math.Max(.001f, Math.Abs(scale.X)),
+                    telegraphThickness, filled / Math.Max(.001f, Math.Abs(scale.Z)));
+            }
+            else telegraphEntity.Transform.Scale = new Vector3(melee ? 2f : 0.55f, telegraphThickness, filled);
         }
 
         void HideTelegraph()

@@ -858,7 +858,7 @@
                             "text": "",
                             "stringIsNull": false,
                             "entityId": 0,
-                            "assetId": 15215319874588264333
+                            "assetId": 2065691607722340663
                         },
                         {
                             "declaringType": "Crucible.Scripts.ZooEnemyWaves",
@@ -871,7 +871,59 @@
                             "text": "",
                             "stringIsNull": false,
                             "entityId": 0,
-                            "assetId": 1295932705955626589
+                            "assetId": 8796023608539152641
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.ZooEnemyWaves",
+                            "name": "secondSmallPrefab",
+                            "type": "Prefab",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 0,
+                            "real": 0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 12564058752782925993
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.ZooEnemyWaves",
+                            "name": "thirdSmallPrefab",
+                            "type": "Prefab",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 0,
+                            "real": 0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 8324290116436774721
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.ZooEnemyWaves",
+                            "name": "fourthSmallPrefab",
+                            "type": "Prefab",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 0,
+                            "real": 0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 5646529725118021769
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.ZooEnemyWaves",
+                            "name": "secondElitePrefab",
+                            "type": "Prefab",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 0,
+                            "real": 0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 17058197998951610773
                         }
                     ]
                 }
@@ -19266,7 +19318,7 @@
                     }
                 },
                 "WorldText": {
-                    "text": "G  Spinner Wind-up Test",
+                    "text": "G  Spinner Charge Test",
                     "colour": {
                         "x": 1,
                         "y": 1,
@@ -19362,6 +19414,50 @@
                 },
                 "EntityName": {
                     "name": "Spawn Point"
+                }
+            }
+        },
+        {
+            "id": "48C24F64B035A0C7",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0,
+                        "y": 0,
+                        "z": 0
+                    },
+                    "rotation": {
+                        "x": 0,
+                        "y": 0,
+                        "z": 0,
+                        "w": 1
+                    },
+                    "scale": {
+                        "x": 1,
+                        "y": 1,
+                        "z": 1
+                    }
+                },
+                "EntityName": {
+                    "name": "Enemy Coordination"
+                },
+                "ScriptComponent": {
+                    "scripts": [
+                        {
+                            "enabled": true,
+                            "assembly": "Managed/Crucible.Scripts.dll",
+                            "namespace": "Crucible.Scripts",
+                            "class": "EnemyHordeCoordinator",
+                            "fields": []
+                        },
+                        {
+                            "enabled": true,
+                            "assembly": "Managed/Crucible.Scripts.dll",
+                            "namespace": "Crucible.Scripts",
+                            "class": "EnemySpecialCoordinator",
+                            "fields": []
+                        }
+                    ]
                 }
             }
         }

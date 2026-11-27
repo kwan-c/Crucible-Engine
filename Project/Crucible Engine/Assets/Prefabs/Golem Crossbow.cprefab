@@ -470,8 +470,8 @@
                 "Transform": {
                     "positions": {
                         "x": 0,
-                        "y": 0,
-                        "z": 0
+                        "y": -1.2,
+                        "z": 2.12
                     },
                     "rotation": {
                         "x": 0,
@@ -501,9 +501,9 @@
                 },
                 "SocketAttachment": {
                     "enabled": true,
-                    "socketName": "Arm",
+                    "socketName": "Shoulder",
                     "modelAsset": 4175691030365061123,
-                    "node": 16
+                    "node": 17
                 },
                 "AnimatedModel": {
                     "controllerAsset": 5967637165055411507,
@@ -548,6 +548,61 @@
                 },
                 "EntityName": {
                     "name": "Weapon Muzzle"
+                }
+            }
+        },
+        {
+            "id": "C4B0F10000000011",
+            "parent": 1,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0,
+                        "y": -0.73,
+                        "z": 0
+                    },
+                    "rotation": {
+                        "x": 0.70710677,
+                        "y": 0,
+                        "z": 0,
+                        "w": 0.70710677
+                    },
+                    "scale": {
+                        "x": 0.45,
+                        "y": 0.9,
+                        "z": 0.72
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 14686256933579063307,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.550000011920929,
+                        "y": 0.41999998688697815,
+                        "z": 0.30000001192092896,
+                        "w": 0.5
+                    },
+                    "meshAsset": 0,
+                    "materialAsset": 0
+                },
+                "MaterialParams": {
+                    "emissiveScale": 1,
+                    "custom": {
+                        "x": 0,
+                        "y": 0,
+                        "z": 0
+                    }
+                },
+                "SocketAttachment": {
+                    "enabled": true,
+                    "socketName": "Weapon Mount",
+                    "modelAsset": 4175691030365061123,
+                    "node": 17
+                },
+                "EntityName": {
+                    "name": "Weapon Mount"
                 }
             }
         }

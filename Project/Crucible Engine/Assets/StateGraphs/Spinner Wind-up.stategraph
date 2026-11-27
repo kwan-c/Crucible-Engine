@@ -17,7 +17,7 @@
     ],
     "states": [
         {
-            "name": "Spinner Wind-up",
+            "name": "Spinner Charge",
             "singleNode": false,
             "subgraph": 15207733634132360683,
             "editor": [

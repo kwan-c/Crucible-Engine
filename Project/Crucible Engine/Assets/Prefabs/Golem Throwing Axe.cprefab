@@ -223,7 +223,7 @@
                                     "type": "Float",
                                     "boolean": false,
                                     "integer": 0,
-                                    "single": 3.2,
+                                    "single": 12,
                                     "real": 0,
                                     "text": "",
                                     "stringIsNull": false,
@@ -304,6 +304,19 @@
                                     "single": 0,
                                     "real": 0,
                                     "text": "Slash",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Enemy",
+                                    "name": "minimumRange",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 3,
+                                    "real": 0,
+                                    "text": "",
                                     "stringIsNull": false,
                                     "entityId": 0,
                                     "assetId": 0
@@ -526,7 +539,7 @@
                 },
                 "SocketAttachment": {
                     "enabled": true,
-                    "socketName": "Shoulder",
+                    "socketName": "Head",
                     "modelAsset": 4175691030365061123,
                     "node": 17
                 },
@@ -542,8 +555,8 @@
                 "Transform": {
                     "positions": {
                         "x": 0,
-                        "y": 0,
-                        "z": 0
+                        "y": 0.2,
+                        "z": 2.2
                     },
                     "rotation": {
                         "x": 0,
@@ -573,9 +586,9 @@
                 },
                 "SocketAttachment": {
                     "enabled": true,
-                    "socketName": "Arm",
+                    "socketName": "Shoulder",
                     "modelAsset": 4175691030365061123,
-                    "node": 16
+                    "node": 17
                 },
                 "AnimatedModel": {
                     "controllerAsset": 18179462202213845313,

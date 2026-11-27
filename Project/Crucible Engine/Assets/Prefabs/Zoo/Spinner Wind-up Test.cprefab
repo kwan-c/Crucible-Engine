@@ -209,7 +209,7 @@
                     ]
                 },
                 "FlowFieldAgent": {
-                    "speed": 6,
+                    "speed": 4,
                     "acceleration": 15,
                     "angularSpeed": 240,
                     "baseOffset": 1,
