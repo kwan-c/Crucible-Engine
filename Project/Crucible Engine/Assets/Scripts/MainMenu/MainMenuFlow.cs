@@ -35,6 +35,9 @@
 *                         label and the light fade back during the pan.
 *      Tables -> Title    Back: the camera pans up, the logo comes back
 *                         (Return trigger), the title buttons fade in.
+*                         BackSlab (the stone at the tables) does the same.
+*                         Hovered, its label brightens and its VFX plays,
+*                         like the tables.
 *    The torso arrows and Confirm only show in the torso view, Back in the
 *    torso and quest views (not at the tables); they all fade in on arrival
 *    and out as the view is left (over the quest table Back sits top-left,
@@ -62,8 +65,12 @@ namespace Crucible.Scripts
         public float panSeconds = 1.5f;
 
         // ---- The tables ----
-        public Entity torsoTable;            // table2 ("Torsos")
-        public Entity questTable;            // table3 ("Quests")
+        // Each table is an empty parent ("table2") holding the model with the collider and label
+        // ("table2Model") and a "TableHoverLight" (see Table hover feedback below). Set these to
+        // the models (or the parents: a hit anywhere under the entity set here counts).
+        public Entity torsoTable;            // table2Model ("Torsos")
+        public Entity questTable;            // table3Model ("Quests")
+        public Entity sideTable;             // table1Model: hover only (sound and VFX), no view behind it yet (found by name if empty)
         // Metres above the tray floor's centre (QuestStones). 0.78 made the table fill ~90% of the
         // screen (with a 60 degree vertical FOV the 0.77 m side needs 0.77 / 0.9 / (2 tan 30) =
         // 0.74 m to the rim, 0.034 m above the floor); 0.72 (Hugo: a little closer) fills ~97%.
@@ -75,6 +82,24 @@ namespace Crucible.Scripts
         // Back stays bright; a full-screen image clear over the table, dark toward the edges.
         public Prefab questVignette;
         public float vignetteAlpha = 0.8f;   // how dark the edges get (0..1)
+
+        // ---- Table hover feedback ----
+        // No setup: at start each table's (and BackSlab's) "TableHoverLight" is found next to it
+        // in its parent, and every ParticleEmitter under it (Sparkles, Glow, ...) is stopped. They
+        // play while that table's collider is hovered, and stop (live particles finish) when the
+        // mouse leaves.
+        public AudioClip tableHoverSound;    // once each time the mouse moves onto a table (or BackSlab)
+        public float tableHoverVolume = 1f;
+
+        // ---- BackSlab: the stone at the tables that goes back to the title ----
+        // Its collider is on a child (BackSlabColliderModel), its label is its "World Text" child.
+        // Hovered: the label brightens (hoverBrighten) and its VFX plays. Clicked: the same quick
+        // return to the title as Esc (Back): the camera pans up, the logo returns, buttons fade in.
+        public Entity backSlab;              // the "BackSlab" entity (found by name if left empty)
+
+        // ---- Sounds (played at the camera on the SFX bus; empty = silent) ----
+        public AudioClip logoExplodeSound;   // the logo's Logo_Explode, when Start is pressed
+        public float logoExplodeVolume = 1f;
 
         // ---- The ground the tables stand on ----
         public Entity ground;                // "TablesNGroundParent"
@@ -113,9 +138,14 @@ namespace Crucible.Scripts
         private Action arrived;
 
         // The tables' labels and their scene colours (hover brightens, then puts these back).
-        private WorldText torsoLabel, questLabel;
-        private Color torsoLabelColour, questLabelColour;
+        private WorldText torsoLabel, questLabel, backSlabLabel;
+        private Color torsoLabelColour, questLabelColour, backSlabLabelColour;
         private WorldText hovered;           // the label lit right now, or null
+        private Entity hoveredTable;         // the table under the mouse right now (any of the three), or null
+
+        // Each table's (and BackSlab's) hover light emitters, found at start (FindHoverLights).
+        private const string HoverLightName = "TableHoverLight";
+        private readonly Dictionary<Entity, List<ParticleEmitter>> hoverLights = new Dictionary<Entity, List<ParticleEmitter>>();
 
         public override void OnCreate()
         {
@@ -145,6 +175,17 @@ namespace Crucible.Scripts
             questLabel = LabelOf(questTable);
             if (torsoLabel != null) torsoLabelColour = torsoLabel.Color;
             if (questLabel != null) questLabelColour = questLabel.Color;
+
+            if (backSlab == null) backSlab = Entity.Find("BackSlab");
+            if (backSlab == null) Log.Warning("MainMenuFlow: backSlab is not set (no \"BackSlab\" found).");
+            backSlabLabel = LabelOf(backSlab);
+            if (backSlabLabel != null) backSlabLabelColour = backSlabLabel.Color;
+
+            if (sideTable == null) sideTable = Entity.Find("table1Model");
+
+            // Each table's hover lights, found once and switched off: the scene saves them Playing.
+            foreach (Entity table in new[] { sideTable, torsoTable, questTable, backSlab })
+                FindHoverLights(table);
 
             // Boot: the camera starts at the title spot, whatever the scene saved (it is saved at
             // position 2 so the tables are easy to edit).
@@ -201,7 +242,8 @@ namespace Crucible.Scripts
         private void StartToTables()
         {
             SetTitleButtonsClickable(false);
-            if (intro != null && intro.logo != null) intro.logo.Animator.SetTrigger("Explode");
+            if (intro != null && intro.logo != null && intro.logo.Animator.SetTrigger("Explode"))
+                PlayLogoExplodeSound();
             List<MenuTween> first = new List<MenuTween> { MenuTween.Wait(startDelay) };
             FadeTitleButtons(0f, first);   // shorter than the delay, so they are gone before the pan
             Run(first, () =>
@@ -280,16 +322,20 @@ namespace Crucible.Scripts
         private void UpdateTables()
         {
             Entity table = TableUnderMouse();
-            WorldText label = table == torsoTable ? torsoLabel : table == questTable ? questLabel : null;
-            if (label != hovered)
+            if (table != hoveredTable)
             {
                 ClearHover();
-                if (label != null) label.Color = Color.Lerp(label == torsoLabel ? torsoLabelColour : questLabelColour, Color.White, hoverBrighten);
+                WorldText label = LabelFor(table);
+                if (label != null) label.Color = Color.Lerp(SceneColourOf(label), Color.White, hoverBrighten);
                 hovered = label;
+                hoveredTable = table;
+                if (table != null) OnTableHoverStart(table);
             }
-            if (table == null || !Input.IsPressed(KeyCode.MouseLeft)) return;
+            // table1 only reacts to hover: it has no view to go to.
+            if (table == null || table == sideTable || !Input.IsPressed(KeyCode.MouseLeft)) return;
 
             ClearHover();
+            if (table == backSlab) { Back(); return; }   // the quick return to the title
             if (table == torsoTable)
             {
                 // Camera to position 3 while the ground slides out of the shot, together.
@@ -439,8 +485,40 @@ namespace Crucible.Scripts
             if (!cameraComponent.ScreenPointToRay(Input.MousePosition, out ray)) return null;
             RaycastHit hit;
             if (!Physics.Raycast(ray, out hit, 1000f)) return null;
-            if (hit.Entity == torsoTable || hit.Entity == questTable) return hit.Entity;
+            // A hit anywhere under the entity set counts (BackSlab's collider is on a child, and a
+            // table's field may be its model or its parent).
+            if (IsUnder(hit.Entity, torsoTable)) return torsoTable;
+            if (IsUnder(hit.Entity, questTable)) return questTable;
+            if (IsUnder(hit.Entity, sideTable)) return sideTable;
+            if (IsUnder(hit.Entity, backSlab)) return backSlab;
             return null;
+        }
+
+        // True if `entity` is `root` or one of its children, grandchildren, ...
+        private static bool IsUnder(Entity entity, Entity root)
+        {
+            if (root == null) return false;
+            for (Entity e = entity; e != null; e = e.Transform.Parent)
+                if (e == root) return true;
+            return false;
+        }
+
+        // The label of a hoverable table (or BackSlab), or null.
+        private WorldText LabelFor(Entity table)
+        {
+            if (table == null) return null;
+            if (table == torsoTable) return torsoLabel;
+            if (table == questTable) return questLabel;
+            if (table == backSlab) return backSlabLabel;
+            return null;
+        }
+
+        // The colour the scene gave a label (hover brightens from it, ClearHover puts it back).
+        private Color SceneColourOf(WorldText label)
+        {
+            if (label == torsoLabel) return torsoLabelColour;
+            if (label == questLabel) return questLabelColour;
+            return backSlabLabelColour;
         }
 
         // Fades a table's label to `alpha`, keeping its colour (null without a label: Run skips it).
@@ -460,7 +538,99 @@ namespace Crucible.Scripts
         {
             if (hovered == torsoLabel && torsoLabel != null) torsoLabel.Color = torsoLabelColour;
             if (hovered == questLabel && questLabel != null) questLabel.Color = questLabelColour;
+            if (hovered == backSlabLabel && backSlabLabel != null) backSlabLabel.Color = backSlabLabelColour;
             hovered = null;
+            if (hoveredTable != null) OnTableHoverEnd(hoveredTable);
+            hoveredTable = null;
+        }
+
+        // ------------------------------------------------------------------ sounds and VFX
+
+        /// <summary>The mouse moved onto a table: its hover sound plays once and its VFX starts.</summary>
+        private void OnTableHoverStart(Entity table)
+        {
+            PlaySfx(tableHoverSound, tableHoverVolume);
+            SetHoverLights(table, true);
+        }
+
+        /// <summary>The mouse left a table (or the view changed): its VFX stops.</summary>
+        private void OnTableHoverEnd(Entity table)
+        {
+            SetHoverLights(table, false);
+        }
+
+        /// <summary>The logo's explode sound (logoExplodeSound), as Logo_Explode begins.</summary>
+        private void PlayLogoExplodeSound() { PlaySfx(logoExplodeSound, logoExplodeVolume); }
+
+        /*********************************************************************
+         \brief  Finds a table's "TableHoverLight" and remembers every
+                 ParticleEmitter under it, stopped. The light sits next to
+                 the table's model in the table's parent ("table2" holds
+                 "table2Model" and "TableHoverLight"); BackSlab holds its own.
+         *********************************************************************/
+        private void FindHoverLights(Entity table)
+        {
+            if (table == null) return;
+            Entity light = table.FindChild(HoverLightName);   // set to the parent, or BackSlab
+            if (light == null)
+            {
+                // Set to the model: look in its own parent - but not in the shared ground, whose
+                // search would find another table's light.
+                Entity parent = table.Transform.Parent;
+                if (parent != null && parent != ground) light = parent.FindChild(HoverLightName);
+            }
+            if (light == null)
+            {
+                Log.Warning("MainMenuFlow: no \"" + HoverLightName + "\" found for '" + table.Name + "' (no hover VFX).");
+                return;
+            }
+            List<ParticleEmitter> emitters = new List<ParticleEmitter>();
+            CollectEmitters(light, emitters);
+            // Not playing at start. The scene saves them switched off as well; they are found and
+            // stopped all the same (a switched-off component keeps its data) and switched on at
+            // their first hover.
+            foreach (ParticleEmitter emitter in emitters) emitter.Stop();
+            hoverLights[table] = emitters;
+        }
+
+        // Adds every ParticleEmitter on `entity` and all its children, grandchildren, ...
+        private static void CollectEmitters(Entity entity, List<ParticleEmitter> into)
+        {
+            ParticleEmitter emitter = entity.GetComponent<ParticleEmitter>();
+            if (emitter != null) into.Add(emitter);
+            int count = entity.Transform.ChildCount;
+            for (int i = 0; i < count; i++)
+            {
+                Entity child = entity.Transform.GetChild(i);
+                if (child != null) CollectEmitters(child, into);
+            }
+        }
+
+        // Plays or stops a table's hover lights (Stop lets live particles finish).
+        private void SetHoverLights(Entity table, bool on)
+        {
+            List<ParticleEmitter> emitters;
+            if (table == null || !hoverLights.TryGetValue(table, out emitters)) return;
+            foreach (ParticleEmitter emitter in emitters)
+            {
+                if (on)
+                {
+                    emitter.Entity.SetEnabled<ParticleEmitter>(true);   // saved switched off in the scene
+                    emitter.Play();
+                }
+                // Left switched on, only stopped: the particles already out fade out naturally
+                // (switching it off would make them vanish at once).
+                else emitter.Stop();
+            }
+        }
+
+        // Plays a clip once at the menu camera on the SFX bus (no AudioSource needed, so the
+        // manager's own AudioSource is left to the music, MainMenuBGM).
+        private void PlaySfx(AudioClip clip, float volume)
+        {
+            if (clip == null) return;
+            Entity ear = viewCamera != null ? viewCamera : Entity;
+            Audio.PlayClipAtPoint(clip, ear.Transform.WorldPosition, volume, AudioBus.SFX);
         }
 
         // A table's "World Text" child (its label), or null.

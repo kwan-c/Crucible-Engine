@@ -297,6 +297,37 @@
             }
         },
         {
+            "id": "108098E52E6C4003",
+            "parent": "41F6D0E4896B8003",
+            "siblingIndex": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": -0.8138662576675415,
+                        "y": 3.0750484466552734,
+                        "z": 2.3015494346618652
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
+                    "name": "BackSlab"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
             "id": "10F878E4D5190001",
             "parent": "E4FCB8E406278017",
             "siblingIndex": 2,
@@ -342,14 +373,14 @@
         },
         {
             "id": "14FCB8E406278011",
-            "parent": "41F6D0E4896B8003",
-            "siblingIndex": 1,
+            "parent": "188098E530A6401D",
+            "siblingIndex": 0,
             "components": {
                 "Transform": {
                     "positions": {
-                        "x": 1.2541179656982422,
-                        "y": 3.071592330932617,
-                        "z": 1.131856918334961
+                        "x": 0.00011801719665527344,
+                        "y": -0.0004076957702636719,
+                        "z": -0.0001430511474609375
                     },
                     "rotation": {
                         "x": 0.0,
@@ -358,9 +389,9 @@
                         "w": 0.8988705277442932
                     },
                     "scale": {
-                        "x": 0.07000000029802322,
+                        "x": 0.06999999284744263,
                         "y": 0.07000000029802322,
-                        "z": 0.07000000029802322
+                        "z": 0.06999999284744263
                     }
                 },
                 "MeshRenderer": {
@@ -397,6 +428,37 @@
                     "isTrigger": false
                 },
                 "EntityName": {
+                    "name": "table1Model"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
+            "id": "188098E530A6401D",
+            "parent": "41F6D0E4896B8003",
+            "siblingIndex": 2,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 1.253999948501587,
+                        "y": 3.072000026702881,
+                        "z": 1.1319999694824219
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
                     "name": "table1"
                 },
                 "EntityTag": {
@@ -406,17 +468,17 @@
         },
         {
             "id": "1CFCB8E406278015",
-            "parent": "41F6D0E4896B8003",
-            "siblingIndex": 2,
+            "parent": "F08098E530A6401F",
+            "siblingIndex": 0,
             "components": {
                 "Transform": {
                     "positions": {
-                        "x": -1.0592402219772339,
-                        "y": 3.072000026702881,
-                        "z": 1.131856918334961
+                        "x": -0.00024020671844482422,
+                        "y": 0.0,
+                        "z": -0.0001430511474609375
                     },
                     "rotation": {
-                        "x": 7.273242008665193e-10,
+                        "x": 7.273242563776705e-10,
                         "y": 0.930531919002533,
                         "z": 2.7878130359759723e-10,
                         "w": 0.36621081829071045
@@ -461,7 +523,239 @@
                     "isTrigger": false
                 },
                 "EntityName": {
-                    "name": "table2"
+                    "name": "table2Model"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
+            "id": "288098E530A64031",
+            "parent": "B88098E530A64039",
+            "siblingIndex": 1,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.016580581665039063,
+                        "z": 0.471951961517334
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "ParticleEmitter": {
+                    "playing": true,
+                    "loop": true,
+                    "duration": 2.0,
+                    "rate": 20.0,
+                    "burstCount": 0,
+                    "maxParticles": 500,
+                    "shape": "Point",
+                    "shapeRadius": 0.25,
+                    "boxExtents": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5
+                    },
+                    "spreadDeg": 25.0,
+                    "coneAngleDeg": 25.0,
+                    "coneLength": 1.0,
+                    "worldSpace": true,
+                    "lifetimeMin": 0.800000011920929,
+                    "lifetimeMax": 1.5,
+                    "speedMin": 1.0,
+                    "speedMax": 2.0,
+                    "sizeMin": 1.0,
+                    "sizeMax": 2.0,
+                    "endSizeScale": 1.0,
+                    "gravityScale": 0.0,
+                    "drag": 0.0,
+                    "spinDeg": 0.0,
+                    "stretch": 0.0,
+                    "colourStart": {
+                        "x": 0.19555556774139404,
+                        "y": 0.967822253704071,
+                        "z": 1.0
+                    },
+                    "colourEnd": {
+                        "x": 0.19607841968536377,
+                        "y": 1.0,
+                        "z": 0.8820914030075073
+                    },
+                    "alphaStart": 0.5,
+                    "alphaEnd": 0.0,
+                    "brightness": 0.05000000074505806,
+                    "blend": "Additive",
+                    "textureAsset": 0,
+                    "flipbookCols": 1,
+                    "flipbookRows": 1,
+                    "emitLight": false,
+                    "lightColour": {
+                        "x": 1.0,
+                        "y": 0.6000000238418579,
+                        "z": 0.25
+                    },
+                    "lightIntensity": 0.75,
+                    "lightRange": 6.0,
+                    "seed": 1,
+                    "$enabled": false
+                },
+                "EntityName": {
+                    "name": "Glow"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 5224343677874454549,
+                    "fileId": 10988951200908689427,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": [
+                        "ParticleEmitter/$enabled"
+                    ]
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
+            "id": "308098E530A64027",
+            "parent": "988098E530A64035",
+            "siblingIndex": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "ParticleEmitter": {
+                    "playing": true,
+                    "loop": true,
+                    "duration": 2.0,
+                    "rate": 10.0,
+                    "burstCount": 0,
+                    "maxParticles": 500,
+                    "shape": "Cone",
+                    "shapeRadius": 0.4000000059604645,
+                    "boxExtents": {
+                        "x": 0.3499999940395355,
+                        "y": 0.10000000149011612,
+                        "z": 0.20000000298023224
+                    },
+                    "spreadDeg": 21.950000762939453,
+                    "coneAngleDeg": -0.3319999873638153,
+                    "coneLength": 1.0,
+                    "worldSpace": true,
+                    "lifetimeMin": 0.800000011920929,
+                    "lifetimeMax": 1.5,
+                    "speedMin": 1.0,
+                    "speedMax": 2.5,
+                    "sizeMin": 0.10000000149011612,
+                    "sizeMax": 0.15000000596046448,
+                    "endSizeScale": 1.0,
+                    "gravityScale": 0.0,
+                    "drag": 0.0,
+                    "spinDeg": 0.0,
+                    "stretch": 0.5,
+                    "colourStart": {
+                        "x": 0.0,
+                        "y": 0.9599999785423279,
+                        "z": 0.8191998600959778
+                    },
+                    "colourEnd": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "alphaStart": 0.20000000298023224,
+                    "alphaEnd": 0.5,
+                    "brightness": 1.0,
+                    "blend": "Additive",
+                    "textureAsset": 9992045996846022695,
+                    "flipbookCols": 1,
+                    "flipbookRows": 1,
+                    "emitLight": false,
+                    "lightColour": {
+                        "x": 1.0,
+                        "y": 0.6000000238418579,
+                        "z": 0.25
+                    },
+                    "lightIntensity": 1.2000000476837158,
+                    "lightRange": 6.0,
+                    "seed": 1,
+                    "$enabled": false
+                },
+                "EntityName": {
+                    "name": "Sparkles"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 5224343677874454549,
+                    "fileId": 6953725934784725009,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": [
+                        "ParticleEmitter/$enabled"
+                    ]
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
+            "id": "308098E530A64033",
+            "parent": "A88098E530A64021",
+            "siblingIndex": 1,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
+                    "name": "TableHoverLight"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 5224343677874454549,
+                    "fileId": 9259568943998418959,
+                    "isRoot": true,
+                    "prefabHash": 13454444542100018015,
+                    "overrides": []
                 },
                 "EntityTag": {
                     "tag": "Untagged"
@@ -493,6 +787,70 @@
                 },
                 "EntityName": {
                     "name": "CamPos"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
+            "id": "388098E52E6C4005",
+            "parent": "108098E52E6C4003",
+            "siblingIndex": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": -0.07304465770721436,
+                        "y": 0.0,
+                        "z": -0.12614822387695313
+                    },
+                    "rotation": {
+                        "x": 0.521072506904602,
+                        "y": 0.468028724193573,
+                        "z": -0.3579633831977844,
+                        "w": 0.6174907684326172
+                    },
+                    "scale": {
+                        "x": 0.10000000149011612,
+                        "y": 0.10000000149011612,
+                        "z": 0.10000000149011612
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 7256980010695049267,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.0
+                    },
+                    "meshAsset": 0,
+                    "materialAsset": 0
+                },
+                "Collider": {
+                    "type": "Box",
+                    "size": {
+                        "x": 2.75,
+                        "y": 1.0,
+                        "z": 2.25
+                    },
+                    "radius": 0.5,
+                    "height": 2.0,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "friction": 0.20000000298023224,
+                    "bounciness": 0.0,
+                    "layer": "NonMoving",
+                    "isTrigger": false
+                },
+                "EntityName": {
+                    "name": "BackSlabColliderModel"
                 },
                 "EntityTag": {
                     "tag": "Untagged"
@@ -562,7 +920,7 @@
         {
             "id": "54FCB8E406278013",
             "parent": "41F6D0E4896B8003",
-            "siblingIndex": 0,
+            "siblingIndex": 1,
             "components": {
                 "Transform": {
                     "positions": {
@@ -627,6 +985,141 @@
                 },
                 "EntityName": {
                     "name": "camPosition1"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
+            "id": "588098E530A64023",
+            "parent": "308098E530A64033",
+            "siblingIndex": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "ParticleEmitter": {
+                    "playing": true,
+                    "loop": true,
+                    "duration": 2.0,
+                    "rate": 10.0,
+                    "burstCount": 0,
+                    "maxParticles": 500,
+                    "shape": "Cone",
+                    "shapeRadius": 0.4000000059604645,
+                    "boxExtents": {
+                        "x": 0.3499999940395355,
+                        "y": 0.10000000149011612,
+                        "z": 0.20000000298023224
+                    },
+                    "spreadDeg": 21.950000762939453,
+                    "coneAngleDeg": -0.3319999873638153,
+                    "coneLength": 1.0,
+                    "worldSpace": true,
+                    "lifetimeMin": 0.800000011920929,
+                    "lifetimeMax": 1.5,
+                    "speedMin": 1.0,
+                    "speedMax": 2.5,
+                    "sizeMin": 0.10000000149011612,
+                    "sizeMax": 0.15000000596046448,
+                    "endSizeScale": 1.0,
+                    "gravityScale": 0.0,
+                    "drag": 0.0,
+                    "spinDeg": 0.0,
+                    "stretch": 0.5,
+                    "colourStart": {
+                        "x": 0.0,
+                        "y": 0.9599999785423279,
+                        "z": 0.8191998600959778
+                    },
+                    "colourEnd": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "alphaStart": 0.20000000298023224,
+                    "alphaEnd": 0.5,
+                    "brightness": 1.0,
+                    "blend": "Additive",
+                    "textureAsset": 9992045996846022695,
+                    "flipbookCols": 1,
+                    "flipbookRows": 1,
+                    "emitLight": false,
+                    "lightColour": {
+                        "x": 1.0,
+                        "y": 0.6000000238418579,
+                        "z": 0.25
+                    },
+                    "lightIntensity": 1.2000000476837158,
+                    "lightRange": 6.0,
+                    "seed": 1,
+                    "$enabled": false
+                },
+                "EntityName": {
+                    "name": "Sparkles"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 5224343677874454549,
+                    "fileId": 6953725934784725009,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": [
+                        "ParticleEmitter/$enabled"
+                    ]
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
+            "id": "588098E530A64037",
+            "parent": "188098E530A6401D",
+            "siblingIndex": 1,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
+                    "name": "TableHoverLight"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 5224343677874454549,
+                    "fileId": 9259568943998418959,
+                    "isRoot": true,
+                    "prefabHash": 13454444542100018015,
+                    "overrides": []
                 },
                 "EntityTag": {
                     "tag": "Untagged"
@@ -991,6 +1484,104 @@
             }
         },
         {
+            "id": "708098E52E6C4007",
+            "parent": "108098E52E6C4003",
+            "siblingIndex": 1,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": -0.050556480884552,
+                        "y": 0.009570598602294922,
+                        "z": -0.11650753021240234
+                    },
+                    "rotation": {
+                        "x": -0.0853004977107048,
+                        "y": 0.5748151540756226,
+                        "z": 0.060415539890527725,
+                        "w": 0.8115795254707336
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
+                    "name": "World Text"
+                },
+                "WorldText": {
+                    "text": "Back",
+                    "colour": {
+                        "x": 0.6941176652908325,
+                        "y": 0.4588235318660736,
+                        "z": 0.2666666805744171,
+                        "w": 1.0
+                    },
+                    "fontAsset": 11391592331814764547,
+                    "fontSize": 0.09000000357627869,
+                    "size": {
+                        "x": 4.0,
+                        "y": 1.0
+                    },
+                    "pivot": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "billboard": "Off",
+                    "alwaysOnTop": false,
+                    "doubleSided": true,
+                    "intensity": 1.0,
+                    "fade": false,
+                    "fadeStart": 20.0,
+                    "fadeEnd": 30.0,
+                    "horizontalAlign": "Center",
+                    "verticalAlign": "Middle",
+                    "wrap": true,
+                    "overflow": "Overflow",
+                    "lineSpacing": 1.0,
+                    "characterSpacing": 0.0,
+                    "richText": true,
+                    "bold": true,
+                    "underline": false,
+                    "bestFit": false,
+                    "minFontSize": 0.10000000149011612,
+                    "maxFontSize": 1.0,
+                    "outline": true,
+                    "outlineColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "outlineWidth": 0.004000000189989805,
+                    "glow": false,
+                    "glowColour": {
+                        "x": 1.0,
+                        "y": 0.8500000238418579,
+                        "z": 0.4000000059604645,
+                        "w": 0.800000011920929
+                    },
+                    "glowWidth": 0.029999999329447746,
+                    "glowSoftness": 0.5,
+                    "shadow": false,
+                    "shadowColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.6000000238418579
+                    },
+                    "shadowOffset": {
+                        "x": 0.019999999552965164,
+                        "y": 0.019999999552965164
+                    },
+                    "shadowSoftness": 0.0
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
             "id": "73F290E48EE2C003",
             "parent": "B4FCB8E406278019",
             "siblingIndex": 4,
@@ -1348,6 +1939,103 @@
             }
         },
         {
+            "id": "908098E530A6402F",
+            "parent": "B88098E530A64039",
+            "siblingIndex": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "ParticleEmitter": {
+                    "playing": true,
+                    "loop": true,
+                    "duration": 2.0,
+                    "rate": 10.0,
+                    "burstCount": 0,
+                    "maxParticles": 500,
+                    "shape": "Cone",
+                    "shapeRadius": 0.4000000059604645,
+                    "boxExtents": {
+                        "x": 0.3499999940395355,
+                        "y": 0.10000000149011612,
+                        "z": 0.20000000298023224
+                    },
+                    "spreadDeg": 21.950000762939453,
+                    "coneAngleDeg": -0.3319999873638153,
+                    "coneLength": 1.0,
+                    "worldSpace": true,
+                    "lifetimeMin": 0.800000011920929,
+                    "lifetimeMax": 1.5,
+                    "speedMin": 1.0,
+                    "speedMax": 2.5,
+                    "sizeMin": 0.10000000149011612,
+                    "sizeMax": 0.15000000596046448,
+                    "endSizeScale": 1.0,
+                    "gravityScale": 0.0,
+                    "drag": 0.0,
+                    "spinDeg": 0.0,
+                    "stretch": 0.5,
+                    "colourStart": {
+                        "x": 0.0,
+                        "y": 0.9599999785423279,
+                        "z": 0.8191998600959778
+                    },
+                    "colourEnd": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "alphaStart": 0.20000000298023224,
+                    "alphaEnd": 0.5,
+                    "brightness": 1.0,
+                    "blend": "Additive",
+                    "textureAsset": 9992045996846022695,
+                    "flipbookCols": 1,
+                    "flipbookRows": 1,
+                    "emitLight": false,
+                    "lightColour": {
+                        "x": 1.0,
+                        "y": 0.6000000238418579,
+                        "z": 0.25
+                    },
+                    "lightIntensity": 1.2000000476837158,
+                    "lightRange": 6.0,
+                    "seed": 1,
+                    "$enabled": false
+                },
+                "EntityName": {
+                    "name": "Sparkles"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 5224343677874454549,
+                    "fileId": 6953725934784725009,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": [
+                        "ParticleEmitter/$enabled"
+                    ]
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
             "id": "94FCB8E406278009",
             "components": {
                 "Transform": {
@@ -1370,6 +2058,44 @@
                 },
                 "EntityName": {
                     "name": "Logo"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
+            "id": "988098E530A64035",
+            "parent": "F08098E530A6401F",
+            "siblingIndex": 1,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
+                    "name": "TableHoverLight"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 5224343677874454549,
+                    "fileId": 9259568943998418959,
+                    "isRoot": true,
+                    "prefabHash": 13454444542100018015,
+                    "overrides": []
                 },
                 "EntityTag": {
                     "tag": "Untagged"
@@ -1453,7 +2179,8 @@
                     },
                     "lightIntensity": 4.0,
                     "lightRange": 6.0,
-                    "seed": 1
+                    "seed": 1,
+                    "$enabled": false
                 },
                 "EntityName": {
                     "name": "Sprite"
@@ -1466,7 +2193,8 @@
                     "overrides": [
                         "Transform/positions",
                         "ParticleEmitter/alphaStart",
-                        "ParticleEmitter/lightIntensity"
+                        "ParticleEmitter/lightIntensity",
+                        "ParticleEmitter/$enabled"
                     ]
                 },
                 "EntityTag": {
@@ -2030,6 +2758,37 @@
             }
         },
         {
+            "id": "A88098E530A64021",
+            "parent": "41F6D0E4896B8003",
+            "siblingIndex": 4,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.06800000369548798,
+                        "y": 3.072000026702881,
+                        "z": 1.7079999446868896
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
+                    "name": "table3"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
             "id": "B4FCB8E406278019",
             "components": {
                 "Transform": {
@@ -2083,6 +2842,143 @@
             }
         },
         {
+            "id": "B88098E530A6402D",
+            "parent": "588098E530A64037",
+            "siblingIndex": 1,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.016580581665039063,
+                        "z": 0.471951961517334
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "ParticleEmitter": {
+                    "playing": true,
+                    "loop": true,
+                    "duration": 2.0,
+                    "rate": 20.0,
+                    "burstCount": 0,
+                    "maxParticles": 500,
+                    "shape": "Point",
+                    "shapeRadius": 0.25,
+                    "boxExtents": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5
+                    },
+                    "spreadDeg": 25.0,
+                    "coneAngleDeg": 25.0,
+                    "coneLength": 1.0,
+                    "worldSpace": true,
+                    "lifetimeMin": 0.800000011920929,
+                    "lifetimeMax": 1.5,
+                    "speedMin": 1.0,
+                    "speedMax": 2.0,
+                    "sizeMin": 1.0,
+                    "sizeMax": 2.0,
+                    "endSizeScale": 1.0,
+                    "gravityScale": 0.0,
+                    "drag": 0.0,
+                    "spinDeg": 0.0,
+                    "stretch": 0.0,
+                    "colourStart": {
+                        "x": 0.19555556774139404,
+                        "y": 0.967822253704071,
+                        "z": 1.0
+                    },
+                    "colourEnd": {
+                        "x": 0.19607841968536377,
+                        "y": 1.0,
+                        "z": 0.8820914030075073
+                    },
+                    "alphaStart": 0.5,
+                    "alphaEnd": 0.0,
+                    "brightness": 0.05000000074505806,
+                    "blend": "Additive",
+                    "textureAsset": 0,
+                    "flipbookCols": 1,
+                    "flipbookRows": 1,
+                    "emitLight": false,
+                    "lightColour": {
+                        "x": 1.0,
+                        "y": 0.6000000238418579,
+                        "z": 0.25
+                    },
+                    "lightIntensity": 0.75,
+                    "lightRange": 6.0,
+                    "seed": 1,
+                    "$enabled": false
+                },
+                "EntityName": {
+                    "name": "Glow"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 5224343677874454549,
+                    "fileId": 10988951200908689427,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": [
+                        "ParticleEmitter/$enabled"
+                    ]
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
+            "id": "B88098E530A64039",
+            "parent": "108098E52E6C4003",
+            "siblingIndex": 2,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 0.20000000298023224,
+                        "y": 0.20000000298023224,
+                        "z": 0.20000000298023224
+                    }
+                },
+                "EntityName": {
+                    "name": "TableHoverLight"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 5224343677874454549,
+                    "fileId": 9259568943998418959,
+                    "isRoot": true,
+                    "prefabHash": 13454444542100018015,
+                    "overrides": [
+                        "Transform/scale"
+                    ]
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
             "id": "BEAF38E41DB24003",
             "components": {
                 "Transform": {
@@ -2102,6 +2998,19 @@
                         "y": 1.0,
                         "z": 1.0
                     }
+                },
+                "AudioSource": {
+                    "clip": 0,
+                    "loadType": "DecompressOnLoad",
+                    "output": "SFX",
+                    "playOnAwake": true,
+                    "loop": false,
+                    "volume": 1.0,
+                    "pitch": 1.0,
+                    "spatialBlend": 0.0,
+                    "minDistance": 1.0,
+                    "maxDistance": 500.0,
+                    "rolloffMode": "Logarithmic"
                 },
                 "EntityName": {
                     "name": "manager"
@@ -2479,6 +3388,20 @@
                                     "entityId": 0,
                                     "assetId": 9139294163134455095,
                                     "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.TorsoSelector",
+                                    "name": "headLight",
+                                    "type": "Entity",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 9289018263369728019,
+                                    "assetId": 0,
+                                    "componentType": ""
                                 }
                             ]
                         },
@@ -2792,6 +3715,13 @@
                                     "componentType": ""
                                 }
                             ]
+                        },
+                        {
+                            "enabled": true,
+                            "assembly": "Managed/Crucible.Scripts.dll",
+                            "namespace": "Crucible.Scripts",
+                            "class": "MainMenuBGM",
+                            "fields": []
                         }
                     ]
                 },
@@ -2901,6 +3831,103 @@
                         "y": 2.0
                     },
                     "shadowSoftness": 0.0
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
+            "id": "C88098E530A6402B",
+            "parent": "588098E530A64037",
+            "siblingIndex": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "ParticleEmitter": {
+                    "playing": true,
+                    "loop": true,
+                    "duration": 2.0,
+                    "rate": 10.0,
+                    "burstCount": 0,
+                    "maxParticles": 500,
+                    "shape": "Cone",
+                    "shapeRadius": 0.4000000059604645,
+                    "boxExtents": {
+                        "x": 0.3499999940395355,
+                        "y": 0.10000000149011612,
+                        "z": 0.20000000298023224
+                    },
+                    "spreadDeg": 21.950000762939453,
+                    "coneAngleDeg": -0.3319999873638153,
+                    "coneLength": 1.0,
+                    "worldSpace": true,
+                    "lifetimeMin": 0.800000011920929,
+                    "lifetimeMax": 1.5,
+                    "speedMin": 1.0,
+                    "speedMax": 2.5,
+                    "sizeMin": 0.10000000149011612,
+                    "sizeMax": 0.15000000596046448,
+                    "endSizeScale": 1.0,
+                    "gravityScale": 0.0,
+                    "drag": 0.0,
+                    "spinDeg": 0.0,
+                    "stretch": 0.5,
+                    "colourStart": {
+                        "x": 0.0,
+                        "y": 0.9599999785423279,
+                        "z": 0.8191998600959778
+                    },
+                    "colourEnd": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "alphaStart": 0.20000000298023224,
+                    "alphaEnd": 0.5,
+                    "brightness": 1.0,
+                    "blend": "Additive",
+                    "textureAsset": 9992045996846022695,
+                    "flipbookCols": 1,
+                    "flipbookRows": 1,
+                    "emitLight": false,
+                    "lightColour": {
+                        "x": 1.0,
+                        "y": 0.6000000238418579,
+                        "z": 0.25
+                    },
+                    "lightIntensity": 1.2000000476837158,
+                    "lightRange": 6.0,
+                    "seed": 1,
+                    "$enabled": false
+                },
+                "EntityName": {
+                    "name": "Sparkles"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 5224343677874454549,
+                    "fileId": 6953725934784725009,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": [
+                        "ParticleEmitter/$enabled"
+                    ]
                 },
                 "EntityTag": {
                     "tag": "Untagged"
@@ -3194,6 +4221,200 @@
             }
         },
         {
+            "id": "E08098E530A64025",
+            "parent": "308098E530A64033",
+            "siblingIndex": 1,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.016580581665039063,
+                        "z": 0.471951961517334
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "ParticleEmitter": {
+                    "playing": true,
+                    "loop": true,
+                    "duration": 2.0,
+                    "rate": 20.0,
+                    "burstCount": 0,
+                    "maxParticles": 500,
+                    "shape": "Point",
+                    "shapeRadius": 0.25,
+                    "boxExtents": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5
+                    },
+                    "spreadDeg": 25.0,
+                    "coneAngleDeg": 25.0,
+                    "coneLength": 1.0,
+                    "worldSpace": true,
+                    "lifetimeMin": 0.800000011920929,
+                    "lifetimeMax": 1.5,
+                    "speedMin": 1.0,
+                    "speedMax": 2.0,
+                    "sizeMin": 1.0,
+                    "sizeMax": 2.0,
+                    "endSizeScale": 1.0,
+                    "gravityScale": 0.0,
+                    "drag": 0.0,
+                    "spinDeg": 0.0,
+                    "stretch": 0.0,
+                    "colourStart": {
+                        "x": 0.19555556774139404,
+                        "y": 0.967822253704071,
+                        "z": 1.0
+                    },
+                    "colourEnd": {
+                        "x": 0.19607841968536377,
+                        "y": 1.0,
+                        "z": 0.8820914030075073
+                    },
+                    "alphaStart": 0.5,
+                    "alphaEnd": 0.0,
+                    "brightness": 0.05000000074505806,
+                    "blend": "Additive",
+                    "textureAsset": 0,
+                    "flipbookCols": 1,
+                    "flipbookRows": 1,
+                    "emitLight": false,
+                    "lightColour": {
+                        "x": 1.0,
+                        "y": 0.6000000238418579,
+                        "z": 0.25
+                    },
+                    "lightIntensity": 0.75,
+                    "lightRange": 6.0,
+                    "seed": 1,
+                    "$enabled": false
+                },
+                "EntityName": {
+                    "name": "Glow"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 5224343677874454549,
+                    "fileId": 10988951200908689427,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": [
+                        "ParticleEmitter/$enabled"
+                    ]
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
+            "id": "E08098E530A64029",
+            "parent": "988098E530A64035",
+            "siblingIndex": 1,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.016580581665039063,
+                        "z": 0.471951961517334
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "ParticleEmitter": {
+                    "playing": true,
+                    "loop": true,
+                    "duration": 2.0,
+                    "rate": 20.0,
+                    "burstCount": 0,
+                    "maxParticles": 500,
+                    "shape": "Point",
+                    "shapeRadius": 0.25,
+                    "boxExtents": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5
+                    },
+                    "spreadDeg": 25.0,
+                    "coneAngleDeg": 25.0,
+                    "coneLength": 1.0,
+                    "worldSpace": true,
+                    "lifetimeMin": 0.800000011920929,
+                    "lifetimeMax": 1.5,
+                    "speedMin": 1.0,
+                    "speedMax": 2.0,
+                    "sizeMin": 1.0,
+                    "sizeMax": 2.0,
+                    "endSizeScale": 1.0,
+                    "gravityScale": 0.0,
+                    "drag": 0.0,
+                    "spinDeg": 0.0,
+                    "stretch": 0.0,
+                    "colourStart": {
+                        "x": 0.19555556774139404,
+                        "y": 0.967822253704071,
+                        "z": 1.0
+                    },
+                    "colourEnd": {
+                        "x": 0.19607841968536377,
+                        "y": 1.0,
+                        "z": 0.8820914030075073
+                    },
+                    "alphaStart": 0.5,
+                    "alphaEnd": 0.0,
+                    "brightness": 0.05000000074505806,
+                    "blend": "Additive",
+                    "textureAsset": 0,
+                    "flipbookCols": 1,
+                    "flipbookRows": 1,
+                    "emitLight": false,
+                    "lightColour": {
+                        "x": 1.0,
+                        "y": 0.6000000238418579,
+                        "z": 0.25
+                    },
+                    "lightIntensity": 0.75,
+                    "lightRange": 6.0,
+                    "seed": 1,
+                    "$enabled": false
+                },
+                "EntityName": {
+                    "name": "Glow"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 5224343677874454549,
+                    "fileId": 10988951200908689427,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": [
+                        "ParticleEmitter/$enabled"
+                    ]
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
             "id": "E3F290E48EE2C00B",
             "parent": "9BF290E48EE2C007",
             "siblingIndex": 0,
@@ -3302,25 +4523,25 @@
         },
         {
             "id": "E4FCB8E406278017",
-            "parent": "41F6D0E4896B8003",
-            "siblingIndex": 3,
+            "parent": "A88098E530A64021",
+            "siblingIndex": 0,
             "components": {
                 "Transform": {
                     "positions": {
-                        "x": 0.06845378875732422,
-                        "y": 3.072000026702881,
-                        "z": 1.7082386016845703
+                        "x": 0.0004537850618362427,
+                        "y": 0.0,
+                        "z": 0.00023865699768066406
                     },
                     "rotation": {
                         "x": 0.0,
-                        "y": 0.7071067094802856,
+                        "y": 0.7071066498756409,
                         "z": 0.0,
-                        "w": 0.7071068286895752
+                        "w": 0.70710688829422
                     },
                     "scale": {
-                        "x": 0.06999999284744263,
+                        "x": 0.06999998539686203,
                         "y": 0.07000000029802322,
-                        "z": 0.06999999284744263
+                        "z": 0.06999998539686203
                     }
                 },
                 "MeshRenderer": {
@@ -3357,7 +4578,7 @@
                     "isTrigger": false
                 },
                 "EntityName": {
-                    "name": "table3"
+                    "name": "table3Model"
                 },
                 "EntityTag": {
                     "tag": "Untagged"
@@ -3441,7 +4662,8 @@
                     },
                     "lightIntensity": 8.0,
                     "lightRange": 6.0,
-                    "seed": 1
+                    "seed": 1,
+                    "$enabled": false
                 },
                 "EntityName": {
                     "name": "Sparks"
@@ -3452,7 +4674,8 @@
                     "isRoot": false,
                     "prefabHash": 0,
                     "overrides": [
-                        "ParticleEmitter/shapeRadius"
+                        "ParticleEmitter/shapeRadius",
+                        "ParticleEmitter/$enabled"
                     ]
                 },
                 "EntityTag": {
@@ -3485,6 +4708,37 @@
                 },
                 "EntityName": {
                     "name": "CamPos"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
+            "id": "F08098E530A6401F",
+            "parent": "41F6D0E4896B8003",
+            "siblingIndex": 3,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": -1.059000015258789,
+                        "y": 3.072000026702881,
+                        "z": 1.1319999694824219
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
+                    "name": "table2"
                 },
                 "EntityTag": {
                     "tag": "Untagged"

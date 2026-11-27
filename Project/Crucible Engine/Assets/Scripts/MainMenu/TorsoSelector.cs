@@ -64,6 +64,13 @@ namespace Crucible.Scripts
         public float dragSpin = 0.4f;        // degrees the front torso turns per pixel dragged
         public float spinBackSeconds = 0.3f; // back to facing forward after a drag
 
+        // ---- Sound (played at the camera on the SFX bus; empty = silent) ----
+        public AudioClip swapSound;          // each time the ring turns to the next / previous torso
+        public float swapVolume = 1f;
+
+        // ---- The head light: off while the ring is out, on otherwise ----
+        public Entity headLight;             // "MainMenuHeadLight" (empty: MainMenuIntro's, else found by name)
+
         // ---- The confirmed torso, for the game (MechPlayer reads these when a level starts) ----
         public static bool HasChoice;
         public static string ChosenPartId = "golem_torso";
@@ -112,6 +119,13 @@ namespace Crucible.Scripts
                 slots.Add(copy);
             }
             if (slots.Count == 0) Log.Warning("TorsoSelector: no torso prefabs set (torso1..torso6).");
+
+            if (headLight == null)
+            {
+                MainMenuIntro intro = Entity.GetComponent<MainMenuIntro>();
+                headLight = intro != null && intro.headLight != null ? intro.headLight : Entity.Find("MainMenuHeadLight");
+            }
+            if (headLight == null) Log.Warning("TorsoSelector: no head light found (set the headLight field).");
         }
 
         public override void OnUpdate(float deltaTime)
@@ -153,6 +167,7 @@ namespace Crucible.Scripts
             turn = 0f; spin = 0f; dragging = false;
             foreach (Entity slot in slots) slot.SetActive(true);
             golemTorso.SetEnabled<MeshRenderer>(false);   // the front copy stands in its place
+            SetHeadLightActive(false);                    // no head light while the ring is out
             drop = dropHeight;
             Layout();
             // Ease In: they speed up as they fall, so they land hard instead of floating down.
@@ -240,6 +255,18 @@ namespace Crucible.Scripts
             float step = 360f / slots.Count;
             // Slot selected+1 sits at +step; turning the ring by -step brings it to the front.
             turning = MenuTween.Value(0f, -direction * step, turnSeconds, a => { turn = a; Layout(); });
+            PlaySwapSound();
+        }
+
+        /// <summary>The torso swap sound (swapSound), as the ring starts turning to another torso.</summary>
+        private void PlaySwapSound()
+        {
+            if (swapSound == null) return;
+            // At the menu camera (MainMenuFlow's viewCamera), else at this entity. PlayClipAtPoint
+            // needs no AudioSource, so the manager's own AudioSource is left to the music.
+            MainMenuFlow flow = Entity.GetComponent<MainMenuFlow>();
+            Entity ear = flow != null && flow.viewCamera != null ? flow.viewCamera : Entity;
+            Audio.PlayClipAtPoint(swapSound, ear.Transform.WorldPosition, swapVolume, AudioBus.SFX);
         }
 
         // Where the golem's torso is right now (the ring's front slot) and which way is "away" from
@@ -292,11 +319,18 @@ namespace Crucible.Scripts
             spinBack = MenuTween.Value(spin, 0f, spinBackSeconds, s => { spin = s; Layout(); }, Ease.Out);
         }
 
+        /// <summary>The head light (with its Sprite and Sparks) on or off: off exactly while the torso view's ring is out.</summary>
+        private void SetHeadLightActive(bool active)
+        {
+            if (headLight != null) headLight.SetActive(active);
+        }
+
         // The lift has ended: copies away, and the golem wears the equipped slot's model and tint.
         private void PutBack()
         {
             foreach (Entity slot in slots) slot.SetActive(false);
             golemTorso.SetEnabled<MeshRenderer>(true);
+            SetHeadLightActive(true);   // the ring is away and the head is back down: light on again
             if (slots.Count == 0) return;
             Entity worn = slots[equipped];
             MeshRenderer target = golemTorso.GetComponent<MeshRenderer>();

@@ -63,6 +63,12 @@ namespace Crucible.Scripts
         public Entity headLight;                 // the "MainMenuHeadLight" entity (found by name if left empty)
         public float headLightFadeSeconds = 2.5f;  // 0% -> 100% of each emitter's Inspector alphaStart
 
+        // ---- Sounds (played at the camera on the SFX bus; empty = silent) ----
+        public AudioClip headLightSound;     // the head light powering on (as its fade starts)
+        public float headLightVolume = 1f;
+        public AudioClip logoStartSound;     // the logo's Logo_Start slam
+        public float logoStartVolume = 1f;
+
         /// <summary>True once the buttons are in and clickable (also after a skip, one frame later).</summary>
         public bool IsFinished { get; private set; }
 
@@ -252,6 +258,8 @@ namespace Crucible.Scripts
             GlowParts glow = new GlowParts();
             glow.emitter = emitter;
             glow.alphaStart = emitter.StartColor.A;   // the alphaStart typed in the Inspector
+            // Readable and settable even while the component is switched off (the scene saves
+            // these off): it keeps its data, it just isn't run or drawn until StartHeadLightFade.
             SetAlphaStart(emitter, 0f);
             headLightGlows.Add(glow);
         }
@@ -264,6 +272,30 @@ namespace Crucible.Scripts
         private void StartHeadLightFade()
         {
             headLightFade = MenuTween.Value(0f, 1f, headLightFadeSeconds, SetHeadLightLevel);
+            // The scene saves Sprite and Sparks switched off: on now, starting from alpha 0.
+            foreach (GlowParts glow in headLightGlows)
+            {
+                glow.emitter.Entity.SetEnabled<ParticleEmitter>(true);
+                glow.emitter.Play();
+            }
+            PlayHeadLightSound();
+        }
+
+        /// <summary>The head light's power-on sound (headLightSound), as its alphaStart starts to rise.</summary>
+        private void PlayHeadLightSound() { PlaySfx(headLightSound, headLightVolume); }
+
+        /// <summary>The logo's slam sound (logoStartSound), as Logo_Start begins.</summary>
+        private void PlayLogoStartSound() { PlaySfx(logoStartSound, logoStartVolume); }
+
+        // Plays a clip once at the menu camera (MainMenuFlow's viewCamera, else this entity) on the
+        // SFX bus. Audio.PlayClipAtPoint needs no AudioSource, so the manager's own AudioSource is
+        // left to the music (MainMenuBGM).
+        private void PlaySfx(AudioClip clip, float volume)
+        {
+            if (clip == null) return;
+            MainMenuFlow flow = Entity.GetComponent<MainMenuFlow>();
+            Entity ear = flow != null && flow.viewCamera != null ? flow.viewCamera : Entity;
+            Audio.PlayClipAtPoint(clip, ear.Transform.WorldPosition, volume, AudioBus.SFX);
         }
 
         // Sets every head light emitter to `level` (0..1) of its Inspector alphaStart.
@@ -281,6 +313,8 @@ namespace Crucible.Scripts
             logo.SetEnabled<MeshRenderer>(true);
             if (!logo.Animator.SetTrigger("PlayStart"))
                 Log.Warning("MainMenuIntro: the logo's Animator has no PlayStart trigger (MainMenuLogo.animcontroller).");
+            else
+                PlayLogoStartSound();
         }
 
         // Fades every button's picture and label back up to the opacity the scene gave it.
