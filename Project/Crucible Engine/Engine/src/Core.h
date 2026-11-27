@@ -4,6 +4,7 @@
 
 #include <string>
 #include <memory>
+#include <optional>
 #include <vector>
 
 #include "EngineExport.h"	// DLL export
@@ -62,6 +63,14 @@ namespace Crucible
         UserSettings& GetUserSettings() noexcept { return m_userSettings; }
         const UserSettings& GetUserSettings() const noexcept { return m_userSettings; }
         bool SaveUserSettings() const { return UserSettingsLoader::Save(m_userSettings); }
+
+        // The player's graphics quality (UserSettings::graphics, C# QualitySettings). Set stores
+        // them and applies them to the renderer at once (next frame); SaveUserSettings keeps them.
+        // The standalone game applies the saved ones at startup. The EDITOR does not - its Scene
+        // View panel owns the renderer's settings - but a script may still change them while
+        // testing an options menu in Play: Stop then puts the editor's own values back.
+        const GraphicsSettings& GetGraphicsSettings() const noexcept { return m_userSettings.graphics; }
+        void SetGraphicsSettings(const GraphicsSettings& settings);
 
         ScriptRuntime& GetScriptRuntime() const noexcept { return *m_scriptRuntime; }
 
@@ -190,6 +199,14 @@ namespace Crucible
 
         // Writes the window's current mode to UserSettings.json (for m_config.app).
         void SaveWindowState() const;
+
+        // UserSettings::graphics -> the renderer's PostSettings / ShadowSettings.
+        void ApplyGraphicsSettings();
+        // Editor only: the renderer's settings from before a script first changed them, put back
+        // at Stop (RestoreEditorRenderSettings). Empty while no script has changed them.
+        struct RenderSettingsSnapshot { PostSettings post; ShadowSettings shadows; bool vsync = true; };
+        std::optional<RenderSettingsSnapshot> m_editorRenderSnapshot;
+        void RestoreEditorRenderSettings();
 
         void CleanUp();
 

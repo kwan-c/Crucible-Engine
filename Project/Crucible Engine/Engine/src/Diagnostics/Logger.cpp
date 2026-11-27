@@ -26,7 +26,7 @@
 
 #include "LogSink.h"
 #include "LogTime.h"
-#include "Systems/ExecutablePath.h"
+#include "Systems/UserDataPath.h"
 
 #include <atomic>
 #include <cstdlib>
@@ -151,11 +151,12 @@ namespace Crucible::Debug
             state.logFilePath.clear();
             if (!config.logFile.empty())
             {
-                // Relative -> next to the .exe (see LogConfig::logFile).
+                // Relative -> in the program's data folder (see LogConfig::logFile).
                 std::filesystem::path path = config.logFile;
-                if (path.is_relative() && !ExecutableDirectory().empty())
+                const std::filesystem::path dataDir = UserDataDirectory();
+                if (path.is_relative() && !dataDir.empty())
                 {
-                    path = ExecutableDirectory() / path;
+                    path = dataDir / path;
                 }
 
                 auto file = std::make_unique<FileSink>(path);

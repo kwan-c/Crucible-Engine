@@ -58,6 +58,14 @@ namespace Crucible {
         void Recreate(VulkanContext& context);
 
         /*********************************************************************
+         rief  VSync on (FIFO) or off (MAILBOX, else IMMEDIATE, else FIFO
+                 when the GPU has neither). Takes effect at the next
+                 Recreate - Renderer::SetVSync asks for one.
+         *********************************************************************/
+        void SetVSync(bool on) { m_vsync = on; }
+        bool GetVSync() const { return m_vsync; }
+
+        /*********************************************************************
          \brief  Releases the depth image view, color image views, and the
                  swapchain itself.
          *********************************************************************/
@@ -153,6 +161,8 @@ namespace Crucible {
         VulkanImage                         m_depthImage;
         vk::raii::ImageView                 m_depthImageView = nullptr;
         vk::Format                          m_depthFormat = vk::Format::eUndefined;
+
+        bool                                m_vsync = true;
 
     };  // VULKAN SWAPCHAIN CLASS
 

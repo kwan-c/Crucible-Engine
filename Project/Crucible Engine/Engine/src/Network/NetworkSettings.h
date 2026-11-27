@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       2.0
+* \version       2.3
 * \brief
 *                What one engine instance should do about networking when
 *                Play starts: stay Offline, Host a session, or join one as
@@ -32,6 +32,10 @@
 *    -v2.0       configuration is internal only: environment and command-
 *                line parsing removed; FromEngineConfig, ParseNetMode;
 *                Validate checks IP addresses
+*    -v2.1       simulation: test latency and packet loss, set only from the
+*                editor's Network panel (Networking Phase 0)
+*    -v2.2       discoveryPort: the LAN lobby list (Networking C# lobby browser)
+*    -v2.3       lobbyDiscovery, lobbyServerAddress, lobbyServerPort (LAN connection server)
 *
 **************************************************************************/
 #pragma once
@@ -51,6 +55,17 @@ namespace Crucible
 	/// What this instance does when Play starts. (NetRole says what a RUNNING session is;
 	/// NetMode is what the user asked for.)
 	enum class NetMode : std::uint8_t { Offline, Host, Client };
+
+	/// How lobbies are found (and how a host is listed).
+	///   Auto:   the connection server when one is set and answers; LAN broadcast otherwise (a host
+	///           is listed both ways, so LAN browsers still find it).
+	///   Server: the connection server only (no broadcast).
+	///   Lan:    LAN broadcast only (the connection server is not used).
+	enum class LobbyDiscovery : std::uint8_t { Auto, Server, Lan };
+
+	/// "auto", "server" or "lan".
+	ENGINE_API const char* ToString(LobbyDiscovery mode) noexcept;
+	ENGINE_API bool ParseLobbyDiscovery(std::string_view text, LobbyDiscovery& out) noexcept;
 
 	/// "offline", "host" or "client".
 	ENGINE_API const char* ToString(NetMode mode) noexcept;
@@ -78,7 +93,25 @@ namespace Crucible
 		                                              // long for JoinRequest, a client for JoinAccepted
 		std::string        playerName = "Player";     // sent in JoinRequest (at most 32 bytes)
 		ConnectionTimeouts timeouts;                  // 0 = GNS defaults (10 s)
+
+		// Testing only: bad network conditions for this whole instance while its session runs
+		// (cleared when it stops). Never read from EngineConfig.json: only the editor's Network
+		// panel sets it, so a shipped game always plays on the real network.
+		NetworkSimulation  simulation;
+
+		// LAN lobby list (LanDiscovery.h): the UDP port a host answers "who is hosting?" on and a
+		// browser asks on. The same on every machine; 0 = not listed, no browsing.
+		std::uint16_t      discoveryPort = 27019;   // kDefaultDiscoveryPort
+
+		// The LAN connection server (ConnectionServer/): where hosts register and browsers ask
+		// for the lobby list. No default address: EngineConfig.json or the Network panel sets it.
+		LobbyDiscovery     lobbyDiscovery = LobbyDiscovery::Auto;
+		std::string        lobbyServerAddress;          // IPv4, e.g. "192.168.0.5"; "" = no server
+		std::uint16_t      lobbyServerPort = 27018;     // LobbyServer::kDefaultPort
 	};
+
+	/// "192.168.0.5": four numbers 0..255. (The connection server is reached over IPv4.)
+	ENGINE_API bool IsIpv4Address(std::string_view text) noexcept;
 
 	/// The shared defaults from EngineConfig.json. An unknown mode text becomes Offline and is
 	/// reported in `warning` (empty when everything was understood).

@@ -44,8 +44,8 @@ namespace Crucible
         private Prefab() {}
 
         // The guid crosses to C++ as two ints (no `long` in internal calls).
-        private int IdLow { get { return unchecked((int)(uint)assetId); } }
-        private int IdHigh { get { return unchecked((int)(uint)(assetId >> 32)); } }
+        internal int IdLow { get { return unchecked((int)(uint)assetId); } }
+        internal int IdHigh { get { return unchecked((int)(uint)(assetId >> 32)); } }
 
         /// <summary>The prefab's file name, e.g. "Bullet".</summary>
         public string Name

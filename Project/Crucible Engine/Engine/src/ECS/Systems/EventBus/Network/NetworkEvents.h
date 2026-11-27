@@ -3,12 +3,13 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          26 September 2026
-* \version       1.4
+* \version       1.8
 * \brief
 *                Session-level events on the network bus
 *                (Core::Events().network): a session started or ended, a
 *                player joined, became ready or left, a join was refused,
-*                the world arrived, a spawn failed.
+*                the world arrived, a spawn failed, a gameplay event or a
+*                client's command arrived.
 *
 * \details
 *                NetworkSession posts them (EventBus::Enqueue, main thread);
@@ -30,6 +31,11 @@
 *                JoinRefused
 *    -v1.3       PeerReady, WorldReady, SpawnFailed
 *    -v1.4       GameplayEventReceived: generic gameplay events
+*    -v1.5       PeerJoined, PeerReady and PeerLeft are posted on clients
+*                too (from the host's roster); CommandReceived
+*    -v1.6       GameplayEventReceived::target
+*    -v1.7       SceneChangeStarted, AllPeersReady (Networking C# Phase 9)
+*    -v1.8       OwnershipChanged
 *
 **************************************************************************/
 #pragma once
@@ -56,15 +62,20 @@ namespace Crucible::NetworkEvents
 		std::string reason;
 	};
 
-	/// Host: a client's JoinRequest was accepted.
+	/// Another player is in the session now. Host: a client's JoinRequest was accepted.
+	/// Client: the host's roster lists a player this machine did not know - including, right
+	/// after joining, everyone who was already there (the host is peer 0). Never posted for
+	/// the local player.
 	struct PeerJoined
 	{
 		Net::PeerId peer = Net::kInvalidPeer;
 		std::string name;
 	};
 
-	/// Host: a joined client left or was dropped. endReason is a CloseReason value or a GNS
-	/// code (3000-5999: connection problems such as a timeout).
+	/// Another player is gone. Host: a joined client left or was dropped; endReason is a
+	/// CloseReason value or a GNS code (3000-5999: connection problems such as a timeout).
+	/// Client: the host's roster no longer lists it (endReason 0, debug empty: only the host
+	/// knows why). Not posted when the whole session ends (SessionEnded says that).
 	struct PeerLeft
 	{
 		Net::PeerId peer = Net::kInvalidPeer;
@@ -80,8 +91,9 @@ namespace Crucible::NetworkEvents
 		std::string debug;
 	};
 
-	/// Host: a joining client has applied the whole world (its ClientReady arrived) and is now
-	/// in the game. The place to spawn its player.
+	/// Another player is in the game. Host: a joining client has applied the whole world (its
+	/// ClientReady arrived) - the place to spawn its player. Client: the host's roster says so
+	/// (for a player who was already playing when this machine joined, right after PeerJoined).
 	struct PeerReady
 	{
 		Net::PeerId peer = Net::kInvalidPeer;
@@ -112,6 +124,49 @@ namespace Crucible::NetworkEvents
 	{
 		std::uint16_t          kind = 0;      // non-zero; defined by the game
 		std::vector<std::byte> payload;       // the game's own format, at most kMaxGameplayEventPayload bytes
+		bool                   local = false; // posted on the machine that sent it (host, or offline)
+		Net::NetworkId         target = Net::kInvalidNetworkId;   // the object it is about, or none
+	};
+
+	/// Host and clients: the session moves to another scene (Networking C# Phase 9). Posted when
+	/// the change begins - on the host before its scene is replaced, on a client when the host's
+	/// SceneChange arrives (it loads the scene next frame). Entities of the old scene, networked
+	/// or not, are gone after the load; only DontDestroyOnLoad ones hear this and the rest.
+	struct SceneChangeStarted
+	{
+		std::uint64_t sceneAsset = 0;   // the scene being loaded
+		std::uint32_t transition = 0;   // its number in this session (1, 2, ...)
+	};
+
+	/// Host: every client in the session has loaded the scene of the latest change and has its
+	/// world (or none was connected). The moment to start a round.
+	struct AllPeersReady
+	{
+		std::uint32_t transition = 0;
+	};
+
+	/// Every machine: network object `id` has a new owner. The host posts it
+	/// when it applies the change, each client when the OwnerChange arrives. Its owner-only
+	/// components have already been switched for the new owner.
+	struct OwnershipChanged
+	{
+		Net::NetworkId id = Net::kInvalidNetworkId;
+		Net::PeerId    previous = Net::kServerPeer;
+		Net::PeerId    owner = Net::kServerPeer;
+	};
+
+	/// Host (or offline): a gameplay request arrived (NetworkSession::SendCommand) - from a
+	/// client in the game, or the machine's own. `sender` comes from the connection, never from
+	/// the packet, so it can be trusted; nothing else can: check that this player may ask for
+	/// this (does it own `target`? is it close enough?) before acting. `target` named a live
+	/// network object when the command arrived; by delivery time it may be gone: look it up.
+	struct CommandReceived
+	{
+		Net::PeerId            sender = Net::kServerPeer;   // 0: the host itself (or offline)
+		std::uint16_t          kind = 0;      // non-zero; defined by the game
+		Net::NetworkId         target = Net::kInvalidNetworkId;   // the object it is about, or none
+		std::vector<std::byte> payload;       // the game's own format, at most kMaxCommandPayload bytes
+		std::uint32_t          sequence = 0;  // the client's command number (0 for a local one)
 		bool                   local = false; // posted on the machine that sent it (host, or offline)
 	};
 }

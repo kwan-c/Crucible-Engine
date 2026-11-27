@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.2
+* \version       1.3
 * \brief
 *                GnsTransport on GameNetworkingSockets v1.6.1: the only
 *                file in the engine that includes GNS headers.
@@ -13,6 +13,7 @@
 *    -v1.1       review fixes: ownership checks on every connection-
 *                specific call, safe Accept, geometric Receive growth
 *    -v1.2       IsIpAddress
+*    -v1.3       SetSimulation (Networking Phase 0)
 *
 **************************************************************************/
 #include "Network/GnsTransport.h"
@@ -466,6 +467,27 @@ namespace Crucible
 		const std::string copy(text);   // ParseString needs a terminated string
 		SteamNetworkingIPAddr address;
 		return address.ParseString(copy.c_str()) && address.m_port == 0;   // the same rule as ParseIp
+	}
+
+	bool GnsTransport::SetSimulation(const NetworkSimulation& simulation, std::string& error)
+	{
+		if (!g_libraryInitialized) { error = "GNS is not initialized (GnsTransport::InitLibrary)"; return false; }
+		ISteamNetworkingUtils* utils = SteamNetworkingUtils();
+		// The round trip is split between the two directions; loss applies to each direction.
+		const auto sendLag = static_cast<int32>(simulation.extraRoundTripMs / 2);
+		const auto recvLag = static_cast<int32>(simulation.extraRoundTripMs - simulation.extraRoundTripMs / 2);
+		const float loss = std::clamp(simulation.packetLossPercent, 0.f, 100.f);
+		const char* refused = nullptr;
+		if (!utils->SetGlobalConfigValueInt32(k_ESteamNetworkingConfig_FakePacketLag_Send, sendLag))       refused = "FakePacketLag_Send";
+		else if (!utils->SetGlobalConfigValueInt32(k_ESteamNetworkingConfig_FakePacketLag_Recv, recvLag))  refused = "FakePacketLag_Recv";
+		else if (!utils->SetGlobalConfigValueFloat(k_ESteamNetworkingConfig_FakePacketLoss_Send, loss))    refused = "FakePacketLoss_Send";
+		else if (!utils->SetGlobalConfigValueFloat(k_ESteamNetworkingConfig_FakePacketLoss_Recv, loss))    refused = "FakePacketLoss_Recv";
+		if (refused != nullptr)
+		{
+			error = std::string("GNS refused ") + refused;
+			return false;
+		}
+		return true;
 	}
 
 	bool GnsTransport::Status(NetConnection connection, ConnectionStatus& out) const

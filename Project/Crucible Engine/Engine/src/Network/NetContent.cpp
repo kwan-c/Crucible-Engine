@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.2
+* \version       1.3
 * \brief
 *                NetContent (see the header).
 *
@@ -12,12 +12,16 @@
 *    -v1.1       discovery of authored network prefabs (Networking Phase
 *                14.2)
 *    -v1.2       scene profiles (Networking Phase 14.7)
+*    -v1.3       animator signature (Networking C# Phase 7)
 *
 **************************************************************************/
 #include "Network/NetContent.h"
 
+#include <algorithm>
 #include <format>
+#include <memory>
 
+#include "Animation/AnimatorController.h"
 #include "AssetPipe/Assetmanager.h"
 #include "Diagnostics/Logger.h"
 #include "ECS/World.h"
@@ -64,6 +68,17 @@ namespace Crucible
 		// Every prefab of the project, read fresh (its current content hash). One that cannot be read
 		// is skipped with a warning: if it was a network prefab, the content hash differs from a peer
 		// that could read it, and the join is refused.
+		// Every animator controller's parameter list (Phase 7: what replicated Animator slots mean).
+		{
+			std::vector<std::shared_ptr<const AnimatorController>> pinned;
+			std::vector<AnimatorSignatureEntry> controllers;
+			for (const AssetEntry* entry : assets.GetByType(AssetType::AnimatorController))
+			{
+				pinned.push_back(resources.GetAnimatorController(entry->guid.m_Value));
+				controllers.push_back({ .guid = entry->guid.m_Value, .controller = pinned.back().get() });
+			}
+			m_animatorSignature = AnimatorSignature(controllers);
+		}
 		std::vector<NetPrefabSource> sources;
 		for (const AssetEntry* entry : assets.GetByType(AssetType::Prefab))
 		{
@@ -112,6 +127,32 @@ namespace Crucible
 		hash.U64(NetworkSession::DefaultContentHash());   // protocol version, tick rate, snapshot interval
 		m_serializers.HashInto(hash);
 		m_prefabs.HashInto(hash, components);
+		if (m_animatorSignature != 0)
+		{
+			hash.Str("animators");
+			hash.U64(m_animatorSignature);
+		}
+		return hash.Value();
+	}
+
+	std::uint64_t NetContent::AnimatorSignature(std::span<const AnimatorSignatureEntry> controllers)
+	{
+		std::vector<AnimatorSignatureEntry> sorted(controllers.begin(), controllers.end());
+		std::ranges::sort(sorted, {}, &AnimatorSignatureEntry::guid);
+		CanonicalHash hash;
+		hash.Str("animator signature");
+		hash.U32(static_cast<std::uint32_t>(sorted.size()));
+		for (const AnimatorSignatureEntry& entry : sorted)
+		{
+			hash.U64(entry.guid);
+			if (entry.controller == nullptr) { hash.Str("unreadable"); continue; }
+			hash.U32(static_cast<std::uint32_t>(entry.controller->parameters.size()));
+			for (const AnimatorParameter& parameter : entry.controller->parameters)
+			{
+				hash.Str(parameter.name);
+				hash.U8(static_cast<std::uint8_t>(parameter.type));
+			}
+		}
 		return hash.Value();
 	}
 }

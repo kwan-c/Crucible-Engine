@@ -18,11 +18,13 @@
 #include "ImGui/Panels/ImGuiPanel_BehaviorGraph.h"
 #include "ImGui/Panels/ImGuiPanel_StateGraph.h"
 #include "ImGui/Panels/ImGuiPanel_ShaderGraph.h"
+#include "ImGui/Panels/ImGuiPanel_Network.h"
 #include "ImGui/EditorTheme.h"
 #include "ImGui/Panels/ImGuiPanel_GameView.h"
 #include "ImGui/Panels/ImGuiPanel_FontImporter.h"
 #include "ImGui/Panels/ImGuiPanel_TextureImporter.h"
 #include "ImGui/Panels/ImGuiPanel_PackageGame.h"
+#include "ImGui/Panels/ImGuiPanel_Network.h"
 #include "Configuration/EngineConfigLoader.h"
 #include "Cook.h"   // Tools/Cook
 #include "Assets/BuildProblems.h"
@@ -260,6 +262,11 @@ void Crucible::Menu::Update(float) {
 					if (shaders->IsOpen()) { shaders->SetOpen(false); } else { shaders->Show(); }
 				}
 			}
+			if (auto network = EditorManager::GetInstance().GetPanel<NetworkPanel>(ImguiPanels::NETWORK)) {
+				if (ImGui::MenuItem("Network", nullptr, network->IsOpen())) {
+					if (network->IsOpen()) { network->SetOpen(false); } else { network->Show(); }
+				}
+			}
 			// The third argument is a bool* that MenuItem toggles for us (shows a tick).
 			ImGui::MenuItem("ImGui Demo Window", nullptr, &m_showDemoWindow);
 			ImGui::MenuItem("FPS Counter", nullptr, &m_showFps);
@@ -291,6 +298,26 @@ void Crucible::Menu::Update(float) {
 				}
 			}
 			ImGui::EndMenu();
+		}
+
+		// ---------------- Network ----------------
+		// Multiplayer: the Network window (settings, the LAN connection server, debug numbers),
+		// and the connection server on this PC without opening it (ImGuiPanel_Network.h).
+		if (auto network = EditorManager::GetInstance().GetPanel<NetworkPanel>(ImguiPanels::NETWORK))
+		{
+			if (ImGui::BeginMenu("Network"))
+			{
+				if (ImGui::MenuItem("Network Window", nullptr, network->IsOpen())) {
+					if (network->IsOpen()) { network->SetOpen(false); } else { network->Show(NetworkPanel::Tab::Session); }
+				}
+				ImGui::Separator();
+				if (ImGui::MenuItem("Start Connection Server", nullptr, false, network->CanStartServer())) { network->StartServer(); }
+				if (ImGui::MenuItem("Stop Connection Server", nullptr, false, network->ServerRunning())) { network->StopServer(); }
+				if (ImGui::MenuItem("Connection Server...")) { network->Show(NetworkPanel::Tab::ConnectionServer); }
+				ImGui::Separator();
+				if (ImGui::MenuItem("Debug...")) { network->Show(NetworkPanel::Tab::Debug); }
+				ImGui::EndMenu();
+			}
 		}
 
 		// ---------------- Help ----------------

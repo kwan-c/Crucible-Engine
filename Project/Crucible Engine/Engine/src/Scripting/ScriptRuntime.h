@@ -386,6 +386,21 @@ namespace Crucible
 		                          float impactSpeed);
 
 		/*********************************************************************
+		 \brief  Hands one network event to an entity script. `kind` is
+		         ScriptNetEvent::Kind (Bindings/NetworkContext.h): 0
+		         OnNetworkStarted, 1 OnNetworkStopped (text = why), 2
+		         OnPeerJoined, 3 OnPeerReady, 4 OnPeerLeft (peer = that
+		         player), 5 OnNetworkCommand (peer = the sender, code = the
+		         command's kind, serial = names its payload), 6 OnNetworkEvent
+		         (code = the event's kind, serial), 7 OnNetVarChanged (code =
+		         the slot), 8 OnNetworkSceneLoading, 9 OnAllPeersReady. Same rules as
+		         DispatchUIEvent (skipped if not overridden / not running; a
+		         throwing callback faults the script and returns false).
+		 *********************************************************************/
+		bool DispatchNetworkEvent(ScriptInstanceHandle instance, int32_t kind, int32_t peer, int32_t code,
+		                          int32_t serial, const std::string& text);
+
+		/*********************************************************************
 		 \brief  Reads the current public field values of a live entity script
 		         (shown in the Inspector during Play).
 		 *********************************************************************/

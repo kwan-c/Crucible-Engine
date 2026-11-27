@@ -329,6 +329,11 @@ namespace Crucible::ScriptBindings
 		loggedEditorIgnore = false;
 	}
 
+	Core* CurrentCore()
+	{
+		return core;
+	}
+
 	void RegisterScreenBindings()
 	{
 		Add("Crucible.Screen::GetModeInternal", &ManagedScreenGetMode);

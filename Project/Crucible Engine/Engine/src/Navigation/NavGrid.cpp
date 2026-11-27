@@ -5,7 +5,7 @@
 * \par:          Email: jeandavidvidal.c@digipen.edu,
 *                Email: low.h@digipen.edu
 * \date          31 October 2026
-* \version       1.7
+* \version       1.9
 * \brief
 *                NavGrid's bake and its cell maths.
 *
@@ -32,6 +32,12 @@
 *                ground with one layer the same cells as before
 *    -v1.7       IsWalkable, IsPathClear (from ECSNavigationSystem), by
 *                layers and links; a path must end on the layer at its end
+*    -v1.8       cave V4a: cave floors as layers (BuildLayers), steep ones
+*                closed as walls (Bake); not linked yet
+*    -v1.9       cave V4b: BuildLinks follows each cave floor (the floor
+*                nearest its height that a walkable slope reaches), so the
+*                climb and drop rules link cave floors to each other and to
+*                the ground outside the cave
 *
 **************************************************************************/
 #include "NavGrid.h"
@@ -40,9 +46,11 @@
 #include <algorithm>    // std::clamp, std::max, std::min, std::sort
 #include <cmath>        // std::ceil, std::floor
 #include <limits>       // infinity: nothing above a layer
+#include <unordered_map> // BuildLinks: cave floors per point
 
 // Crucible engine
 #include "Diagnostics/Logger.h"
+#include "Math/TerrainVolume.h"     // kFloorNormalY: the cave's walkable slope
 #include "Navigation/NavTerrain.h"
 
 namespace Crucible {
@@ -189,6 +197,15 @@ namespace Crucible {
             }
         }
 
+        // 3. Cave floors too steep to walk: walls, like cliffs.
+        int caveNodes = 0, caveCells = 0, caveWalls = 0, lastCaveCell = -1;
+        for (std::size_t node = 0; node < m_nodeCell.size(); ++node) {
+            if (m_nodeSource[node] != kCaveSource) continue;
+            ++caveNodes;
+            if (m_nodeCell[node] != lastCaveCell) { ++caveCells; lastCaveCell = m_nodeCell[node]; }   // a cell's nodes are together
+            if (m_nodeSteep[node] && !IsBlockedIndex(node)) { m_static[node] = 1; ++caveWalls; }
+        }
+
         m_baked = true;
 
         std::size_t blocked = 0;
@@ -197,6 +214,9 @@ namespace Crucible {
         }
         CRU_INFO("NavGrid baked: {} x {} cells of {} m, {} blocked ({} of {} obstacles inside the height band, {} terrain wall cells)",
                  m_cols, m_rows, cellSize, blocked, counted, obstacles.size(), wallCells);
+        if (caveNodes > 0) {
+            CRU_INFO("NavGrid cave: {} floor layer(s) over {} cells, {} too steep to walk (walls)", caveNodes, caveCells, caveWalls);
+        }
 
         // Only with Walkable boxes, so a scene without them logs as before.
         if (!walkables.empty()) {
@@ -405,13 +425,16 @@ namespace Crucible {
         m_nodeHeight.clear();
         m_nodeHeadroom.clear();
         m_nodeSource.clear();
+        m_nodeSteep.clear();
         m_nodeSource.reserve(cellCount);
+        m_nodeSteep.reserve(cellCount);
         m_nodeCell.reserve(cellCount);
         m_nodeHeight.reserve(cellCount);
         m_nodeHeadroom.reserve(cellCount);
 
-        struct Surface { float height; float headroom; int source; };   // source: -1 the ground, else the box
-        std::vector<Surface> surfaces;
+        struct Surface { float height; float headroom; int source; bool steep; };   // source: as m_nodeSource
+        std::vector<Surface>  surfaces;
+        std::vector<NavFloor> floors;          // a cave column's floors
         int         overCap      = 0;          // cells that had more surfaces than maxLayersPerCell
         Math::vec3  firstOverCap(0.0f);
         std::size_t next = 0;                  // the next stretch in `stretches`
@@ -420,7 +443,21 @@ namespace Crucible {
 
             const NavCell    at{ static_cast<int>(cell) % m_cols, static_cast<int>(cell) / m_cols };
             const Math::vec3 centre = CellToWorldCenter(at);
-            const float      ground = terrain.GroundHeight(centre);
+
+            // In a cave the floors are the ground (the lowest one under
+            // Walkable boxes' tops); elsewhere the terrain's one height.
+            const bool  cave   = terrain.Floors(centre, floors) && !floors.empty();
+            const float ground = cave ? floors.front().height : terrain.GroundHeight(centre);
+
+            // In a cave, the room above a height before the rock: up to the
+            // ceiling of the floor it is over, none inside the rock.
+            const auto rockRoom = [&](float height) {
+                if (!cave) return infinity;
+                for (const NavFloor& floor : floors) {
+                    if (height >= floor.height - kSameHeight && height < floor.height + floor.headroom) return floor.height + floor.headroom - height;
+                }
+                return 0.0f;
+            };
 
             // This cell's solid stretches.
             const std::size_t first = next;
@@ -429,7 +466,7 @@ namespace Crucible {
             // Headroom above a surface: up to the lowest stretch above it;
             // none if the surface is inside a stretch.
             const auto headroomAt = [&](float height) {
-                float room = infinity;
+                float room = rockRoom(height);
                 for (std::size_t i = first; i < next; ++i) {
                     if (stretches[i].top <= height + kSameHeight) continue;          // below it (or its own top)
                     if (stretches[i].bottom <= height + kSameHeight) return 0.0f;    // the surface is inside this box
@@ -439,9 +476,10 @@ namespace Crucible {
             };
 
             surfaces.clear();
-            surfaces.push_back({ ground, headroomAt(ground), -1 });
+            if (cave) for (const NavFloor& floor : floors) surfaces.push_back({ floor.height, headroomAt(floor.height), kCaveSource, floor.steep });
+            else      surfaces.push_back({ ground, headroomAt(ground), kGroundSource, false });
             for (std::size_t i = first; i < next; ++i) {
-                if (stretches[i].top > ground + kSameHeight) surfaces.push_back({ stretches[i].top, headroomAt(stretches[i].top), stretches[i].box });
+                if (stretches[i].top > ground + kSameHeight) surfaces.push_back({ stretches[i].top, headroomAt(stretches[i].top), stretches[i].box, false });
             }
             std::sort(surfaces.begin(), surfaces.end(), [](const Surface& a, const Surface& b) { return a.height < b.height; });
 
@@ -455,11 +493,12 @@ namespace Crucible {
                     if (overCap++ == 0) firstOverCap = centre;
                     break;
                 }
-                if (surface.source < 0) m_groundNode[cell] = static_cast<int>(m_nodeCell.size());
+                if (surface.source == kGroundSource) m_groundNode[cell] = static_cast<int>(m_nodeCell.size());
                 m_nodeCell.push_back(static_cast<int>(cell));
                 m_nodeHeight.push_back(surface.height);
                 m_nodeHeadroom.push_back(surface.headroom);
                 m_nodeSource.push_back(surface.source);
+                m_nodeSteep.push_back(surface.steep ? 1 : 0);
                 lastHeight = surface.height;
                 ++kept;
             }
@@ -484,7 +523,9 @@ namespace Crucible {
         The rules, per neighbour layer:
           - the same surface (both the ground, or the same Walkable box):
             always - the ground's own walls come from the generator, and a
-            Walkable surface is walkable along its whole top (the tag);
+            Walkable surface is walkable along its whole top (the tag).
+            Not cave floors: a column can hold several, so each is followed
+            (below) and judged by the climb and drop rules like any other;
           - a climb, two-way: somewhere on the line between the two cells'
             centres, both surfaces are there and within stepHeight of each
             other. Anywhere, not only at the centres or the shared edge: a
@@ -498,6 +539,12 @@ namespace Crucible {
           - otherwise: no link.
         Of several that qualify the same surface wins, then the closest in
         height. One link per direction (Recast's model).
+
+        A cave floor at another point is the floor there nearest its own
+        height that a walkable slope (TerrainVolume::kFloorNormalY, about 35
+        degrees) plus a step could reach from its cell's centre - none if no
+        floor is that close (a wall, a ledge, another tunnel). Outside the
+        cave it carries on as the ground, so it meets the ground there.
     */
     void NavGrid::BuildLinks(const NavTerrain& terrain, const std::vector<NavWalkable>& walkables) {
 
@@ -507,10 +554,39 @@ namespace Crucible {
         toLocal.reserve(walkables.size());
         for (const NavWalkable& box : walkables) toLocal.push_back(glm::inverse(box.world));
 
+        // The cave's floors at (x, z) - or the ground there, outside the cave.
+        // Remembered: the climb test asks about the same points from both sides.
+        std::unordered_map<std::uint64_t, std::vector<float>> floorsByPoint;
+        std::vector<NavFloor> scratch;
+        const auto floorsAt = [&](float x, float z) -> const std::vector<float>& {
+            const std::uint64_t key = (static_cast<std::uint64_t>(static_cast<std::uint32_t>(std::lround(x * 1000.0f))) << 32)
+                                    | static_cast<std::uint32_t>(std::lround(z * 1000.0f));
+            const auto found = floorsByPoint.find(key);
+            if (found != floorsByPoint.end()) return found->second;
+            std::vector<float> heights;
+            if (terrain.Floors({ x, 0.0f, z }, scratch)) for (const NavFloor& floor : scratch) heights.push_back(floor.height);
+            else                                         heights.push_back(terrain.GroundHeight({ x, 0.0f, z }));
+            return floorsByPoint.emplace(key, std::move(heights)).first->second;
+        };
+
+        // A cave node's floor at (x, z): see the header comment above. NaN if none.
+        const float slope = std::sqrt(1.0f - TerrainVolume::kFloorNormalY * TerrainVolume::kFloorNormalY) / TerrainVolume::kFloorNormalY;
+        const auto caveFloorAt = [&](int node, float x, float z) {
+            const Math::vec3 centre = CellToWorldCenter(NodeCell(node));
+            const float      own    = m_nodeHeight[static_cast<std::size_t>(node)];
+            float best = std::numeric_limits<float>::quiet_NaN();
+            float gap  = m_settings.stepHeight + slope * std::hypot(x - centre.x, z - centre.z);   // the furthest it may be
+            for (const float floor : floorsAt(x, z)) {
+                if (std::abs(floor - own) <= gap) { best = floor; gap = std::abs(floor - own); }
+            }
+            return best;
+        };
+
         // A node's surface height at (x, z), or NaN where its box isn't (the
         // ground is everywhere).
         const auto surfaceIfThere = [&](int node, float x, float z) {
             const int source = m_nodeSource[static_cast<std::size_t>(node)];
+            if (source == kCaveSource) return caveFloorAt(node, x, z);
             if (source < 0) return terrain.GroundHeight({ x, 0.0f, z });
             float bottom = 0.0f, top = 0.0f;
             if (ThroughBox(walkables[static_cast<std::size_t>(source)], toLocal[static_cast<std::size_t>(source)], x, z, bottom, top)) return top;
@@ -519,8 +595,13 @@ namespace Crucible {
 
         // A node's surface height at (x, z), or at the furthest point towards
         // it that its box still covers. Its own cell's centre is always covered.
+        // A cave floor that doesn't reach it is measured at its own height.
         const auto surfaceAt = [&](int node, const Math::vec3& centre, float x, float z) {
             const int source = m_nodeSource[static_cast<std::size_t>(node)];
+            if (source == kCaveSource) {
+                const float floor = caveFloorAt(node, x, z);
+                return std::isnan(floor) ? m_nodeHeight[static_cast<std::size_t>(node)] : floor;
+            }
             if (source < 0) return terrain.GroundHeight({ x, 0.0f, z });
             const NavWalkable& box   = walkables[static_cast<std::size_t>(source)];
             const Math::mat4&  local = toLocal[static_cast<std::size_t>(source)];
@@ -564,7 +645,7 @@ namespace Crucible {
                     const int other = m_layerStart[static_cast<std::size_t>(Index(next))] + layer;
                     const int otherSource = m_nodeSource[static_cast<std::size_t>(other)];
 
-                    if (otherSource == source) { best = layer; break; }   // the same surface: always, and best
+                    if (otherSource == source && source != kCaveSource) { best = layer; break; }   // the same surface: always, and best
 
                     // A climb: the closest the two surfaces come along the
                     // line between the centres (9 points), where both are there.

@@ -41,6 +41,7 @@
 #include "Network/Systems/LocalPlayerInputSystem.h"
 #include "Network/Systems/NetInputSystem.h"
 #include "Network/Systems/NetInterpolationSystem.h"
+#include "Network/Systems/NetAnimatorSystem.h"
 
 // STL
 #include <algorithm>
@@ -111,6 +112,11 @@ namespace Crucible {
         // Play mode drives the always-on systems too, so it is built once every member exists.
         m_playMode = std::make_unique<PlayMode>(*m_world, *m_scenes, m_events, m_systems);
 
+        // The player's graphics quality. Only the game starts with it: in the editor the Scene
+        // View panel owns the renderer's settings, and a script's changes are undone at Stop.
+        if (m_config.app == AppKind::Game) { ApplyGraphicsSettings(); }
+        m_playMode->OnBeforeStop([this] { RestoreEditorRenderSettings(); });
+
         // Layers draw inside the renderer's open render pass via OnRender().
         m_renderer->SetOverlayCallback([this] {
             for (auto& layer : m_layers) layer->OnRender();
@@ -147,6 +153,59 @@ namespace Crucible {
     }
 
     std::vector<WindowResolution> Core::GetScreenResolutions() const { return m_window->GetResolutions(); }
+
+    void Core::SetGraphicsSettings(const GraphicsSettings& settings) {
+        // First change in the editor: remember the Scene View panel's values for Stop.
+        if (m_config.app == AppKind::Editor && !m_editorRenderSnapshot) {
+            m_editorRenderSnapshot = RenderSettingsSnapshot{ m_renderer->GetPostSettings(), m_renderer->GetShadowSettings(), m_renderer->GetVSync() };
+        }
+        m_userSettings.graphics = settings;
+        m_userSettings.graphics.quality = MatchQualityLevel(settings);
+        ApplyGraphicsSettings();
+    }
+
+    void Core::ApplyGraphicsSettings() {
+        const GraphicsSettings& g = m_userSettings.graphics;
+
+        // Only the fields the player controls; the rest (bloom threshold, toon shading, ...) are
+        // left as they are. The renderer clamps MSAA to the GPU and rebuilds its targets itself.
+        PostSettings& post = m_renderer->GetPostSettings();
+        post.fxaa          = g.antiAliasing != AntiAliasing::Off;
+        post.msaaSamples   = g.antiAliasing == AntiAliasing::MSAA4x ? 4u
+                           : g.antiAliasing == AntiAliasing::MSAA2x ? 2u : 1u;
+        post.ao            = g.ambientOcclusion;
+        post.bloom         = g.bloom;
+        post.volumetricFog = g.volumetricFog;
+        post.brightness          = ClampBrightness(g.brightness);
+        post.fovOffset           = ClampFovOffset(g.fovOffset);
+        post.vignette            = g.vignette;
+        post.filmGrain           = g.filmGrain;
+        post.chromaticAberration = g.chromaticAberration;
+
+        // Cascades are the cost (each re-renders the casters); distance trades reach for
+        // sharpness. High = the ShadowSettings defaults.
+        ShadowSettings& shadows = m_renderer->GetShadowSettings();
+        shadows.enabled = g.shadowQuality != ShadowQuality::Off;
+        switch (g.shadowQuality) {
+        case ShadowQuality::Off:    break;
+        case ShadowQuality::Low:    shadows.cascadeCount = 1; shadows.distance = 40.0f;  break;
+        case ShadowQuality::Medium: shadows.cascadeCount = 2; shadows.distance = 60.0f;  break;
+        case ShadowQuality::High:   shadows.cascadeCount = 3; shadows.distance = 80.0f;  break;
+        case ShadowQuality::Ultra:  shadows.cascadeCount = std::min(4u, kMaxShadowCascades); shadows.distance = 120.0f; break;
+        }
+
+        // Rebuilds the swapchain only if it changed. The frame-rate limit is read by
+        // Run's frame cap every frame.
+        m_renderer->SetVSync(g.vsync);
+    }
+
+    void Core::RestoreEditorRenderSettings() {
+        if (!m_editorRenderSnapshot) { return; }
+        m_renderer->GetPostSettings()   = m_editorRenderSnapshot->post;
+        m_renderer->GetShadowSettings() = m_editorRenderSnapshot->shadows;
+        m_renderer->SetVSync(m_editorRenderSnapshot->vsync);
+        m_editorRenderSnapshot.reset();
+    }
 
     void Core::SaveWindowState() const {
         SavedWindowState state;
@@ -188,18 +247,6 @@ namespace Crucible {
             SceneManager::Snapshot snapshot;
             if (m_scenes->CaptureSnapshot(snapshot)) { m_resources->UnloadUnused(snapshot.scene.document); }
         });
-
-        // ======== asset debugging (Removable) ==========
-        // On the shared index. A second AssetManager here used to run its own reconcile -
-        // writing .meta files a second time on every launch - before m_assets even existed.
-        //{
-        //    std::cout << "\n\n";
-        //    m_assets->PrintIndex();
-
-        //    auto tex = m_assets->Load("Textures/Orange_Milk.jpg");
-        //    m_assets->PrintLoaded();
-        //}
-        // ===========================================
 
         // Startup scene, from EngineConfig.json ("project": { "startupScene" }) so the Editor
         // and the Game open the same one. Empty = start with no scene.
@@ -253,26 +300,28 @@ namespace Crucible {
         // tearing down the play world announces nothing to the other players. Before a Host or
         // Client start, the prefab files are read and validated again and the content hash is
         // recomputed: an invalid table refuses the start (the editor's Network panel shows why).
-        m_networkPlayState = m_events.engine.Subscribe<EngineEvents::PlayStateChanged>([this, netRegistrationError](const EngineEvents::PlayStateChanged& e) {
+        const auto prepareNetContent = [this, netRegistrationError] {
+            std::string contentError = netRegistrationError;
+            if (contentError.empty() && m_netContent->Prepare(*m_world, *m_assets, *m_resources, contentError))
+                m_network->SetContentHash(m_netContent->Hash());
+            m_network->SetContentError(contentError);
+        };
+        m_network->SetContentPreparer(prepareNetContent);   // a session a script starts mid-Play (Network.StartHost / Join)
+        m_networkPlayState = m_events.engine.Subscribe<EngineEvents::PlayStateChanged>([this, prepareNetContent](const EngineEvents::PlayStateChanged& e) {
             if (e.from == PlayState::Edit && e.to == PlayState::Playing)
             {
-                if (m_network->Settings().mode != NetMode::Offline)
-                {
-                    std::string contentError = netRegistrationError;
-                    if (contentError.empty() && m_netContent->Prepare(*m_world, *m_assets, *m_resources, contentError))
-                        m_network->SetContentHash(m_netContent->Hash());
-                    m_network->SetContentError(contentError);
-                }
+                if (m_network->Settings().mode != NetMode::Offline) prepareNetContent();
                 std::string error;
                 if (!m_network->Start(error)) CRU_ERROR("[Net] could not start the {} session: {}", ToString(m_network->Settings().mode), error);
             }
         });
         m_playMode->OnBeforeStop([this] { m_network->Stop("Play stopped"); });
 
-        // v1 rule: a scene change during a session ends it (clients cannot follow a level switch
-        // yet). This runs inside SceneManager::ApplyPending, before any system of the frame.
+        // A scene change during a session ends it - unless the session made it itself (the host's
+        // Network.LoadScene, and the client following it): then it carries on in the new scene.
+        // This runs inside SceneManager::ApplyPending, before any system of the frame.
         m_scenes->OnSceneChanged([this] {
-            if (m_network->IsActive()) m_network->Stop("the scene changed during the session");
+            if (m_network->IsActive() && !m_network->AcceptSceneChange()) m_network->Stop("the scene changed during the session");
         });
 
         RegisterEngineSystems();
@@ -300,7 +349,11 @@ namespace Crucible {
         // can draw, which pins the GPU at 100% whatever the scene costs.
         const FrameTimerResolution timerResolution;
         const auto frameCap = [this](bool minimized) -> uint32_t {
-            const uint32_t target = m_config.graphics.targetFPS;
+            // The player's limit (options menu) wins over the team's targetFPS when set.
+            // The editor only uses it while a script has changed the settings in Play.
+            const bool playerLimit = m_config.app == AppKind::Game || m_editorRenderSnapshot.has_value();
+            const int32_t limit = playerLimit ? m_userSettings.graphics.frameRateLimit : kFrameRateDefault;
+            const uint32_t target = limit == kFrameRateDefault ? m_config.graphics.targetFPS : static_cast<uint32_t>(limit);
             const bool background = minimized || !m_window->IsFocused();
             const bool networked  = m_network && m_network->IsActive();
             uint32_t cap = target;
@@ -336,7 +389,20 @@ namespace Crucible {
             // The safe point: nothing is iterating the world yet this frame. Scene swaps
             // destroy every entity, and play-mode transitions snapshot, restore and start or
             // end the simulation. The scene request goes first, so Play captures the scene just loaded.
+            // Networking first: a session a script asked for starts here, and a host's scene change
+            // is turned into the load below (the session forgets the old scene's objects first, so
+            // destroying them announces nothing).
+            if (m_network->HasStartRequest() && m_playMode->InSession()) m_network->ApplyStartRequest();
+            if (std::uint64_t sceneAsset = 0; m_network->TakeSceneChangeRequest(sceneAsset))
+            {
+                if (m_scenes->RequestLoadAsset(sceneAsset, true))   // past any loading screen: the clients are told now
+                {
+                    m_network->BeginSceneTransition(sceneAsset);
+                    m_network->NoteSceneLoadIssued();
+                }
+            }
             m_scenes->ApplyPending();
+            m_network->CheckSceneLoad();   // a load the session issued that did not happen ends it
             m_playMode->ApplyRequests();
 
             // S3 instances follow Core lifetime. This tick excludes entity-owned
@@ -422,6 +488,10 @@ namespace Crucible {
         m_systems.RegisterSystem<NetInterpolationSystem>(*m_network);   // PreRender, before the hierarchy, client only: proxies drawn 100 ms behind the host, between snapshots
         m_systems.RegisterSystem<HierarchyTransformSystem>();   // after CPU poses/socket preparation: fills WorldTransform
         auto& animator = m_systems.RegisterSystem<AnimatedModelSystem>(*m_resources, *m_playMode, m_world.get());
+        // PreRender, before the animation system: C# Animator calls go through its binding (the host's writes on a
+        // network object that syncs "Animator" are recorded and sent); on a client it hands the host's values to the animator.
+        auto& netAnimator = m_systems.RegisterSystem<NetAnimatorSystem>(*m_network, animator, *m_world,
+            [resources = m_resources.get()](std::uint64_t id) { return resources->GetAnimatorController(id); });
         m_systems.RegisterSystem<SocketAttachmentSystem>(*m_resources);
         m_systems.RegisterSystem<ECSRagdollSystem>(*m_resources, *m_playMode);   // PreRender, after the animation's pose, before sockets read it: ragdolls (Hugo)
         m_systems.RegisterSystem<ECSTerrainSystem>(*m_renderer);                          // PreRender, Edit too, before RenderExtract: each Terrain's mesh onto its MeshRenderer (rebuilt only when its grid changes)
@@ -438,7 +508,7 @@ namespace Crucible {
         if (m_scriptRuntime->IsRunning()) {
             auto* physics = m_systems.FindSystem<ECSPhysicsSystem>();
             m_scriptRuntime->ConnectEngine({
-                .animator     = &animator,                                   // C# Animator
+                .animator     = &netAnimator.Binding(),                      // C# Animator (through the network: NetAnimatorSystem)
                 .world        = m_world.get(),                               // Transform, Entity, Prefab, components
                 .play         = m_playMode.get(),
                 .scenes       = m_scenes.get(),

@@ -31,7 +31,7 @@ crucible_deploy_mono(Game)
 
 # Set output name and Visual Studio debugging directory
 set_target_properties(Game PROPERTIES
-    OUTPUT_NAME "Mekanomachia"
+    OUTPUT_NAME "${CRUCIBLE_GAME_NAME}"   # set in the top-level CMakeLists.txt
     VS_DEBUGGER_WORKING_DIRECTORY "$<TARGET_FILE_DIR:Game>"
 )
 
@@ -78,7 +78,7 @@ add_dependencies(Game
 # Puts everything the game needs into one folder, with Resources beside the .exe (where
 # AssetPaths looks for it when there is no Assets folder):
 #
-#   Mekanomachia.exe, Engine.dll, the third-party DLLs, the Mono runtime,
+#   <game name>.exe, Engine.dll, the third-party DLLs, the Mono runtime,
 #   Managed/ (C# scripts) and Resources/ (cooked assets)
 #
 # All of it is in the "Game" component. Third-party libraries (Jolt, glfw, ...) add install

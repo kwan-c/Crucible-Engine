@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          6 November 2026
-* \version       1.1
+* \version       1.2
 * \brief
 *                From authored settings to replication profiles: turns an
 *                object's NetworkObjectAuthoring into a NetPrefabDesc, and
@@ -62,6 +62,7 @@
 *    -v1.1       AuthoringOptions and CheckAuthoring: what the Inspector may
 *                offer for an object, and what is wrong with its settings
 *                (Networking Phase 14.3)
+*    -v1.2       AuthoringComponentOption::belowRoot
 *
 **************************************************************************/
 #pragma once
@@ -120,6 +121,7 @@ namespace Crucible
 	{
 		std::string              name;              // its registry name: what the authoring lists store
 		bool                     onRoot = false;    // on the object's root (replicated, enabledReplicated need it)
+		bool                     belowRoot = false; // on an entity below the root (childEnabledReplicated needs it on a synced child)
 		bool                     toggleable = false;
 		std::vector<std::string> serializers;       // registered serializers for it: the variants
 		std::string              noReplication;     // why it cannot be Replicated (empty: it can)

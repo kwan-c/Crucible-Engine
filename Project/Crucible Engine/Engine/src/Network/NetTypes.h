@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.0
+* \version       1.1
 * \brief
 *                The small value types every networking file shares:
 *                network ids, prefab ids, peer ids, ticks, and the
@@ -22,6 +22,7 @@
 *
 * \history
 *    -v1.0       ids, constants and NetRole
+*    -v1.1       kMaxPlayers
 *
 **************************************************************************/
 #pragma once
@@ -49,6 +50,7 @@ namespace Crucible::Net
 	inline constexpr PeerId        kServerPeer       = 0;
 	inline constexpr PeerId        kInvalidPeer      = 0xFF;
 	inline constexpr std::uint32_t kMaxClients       = 3;   // 4 players = the hosting player + 3 clients
+	inline constexpr std::uint32_t kMaxPlayers       = kMaxClients + 1;   // PeerIds 0..kMaxPlayers-1
 
 	// Server: the authoritative World (a listen server: the hosting player's own game).
 	// Client: proxies only. Offline: single player, nothing networked.

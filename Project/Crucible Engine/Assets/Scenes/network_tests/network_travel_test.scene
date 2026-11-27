@@ -1,9 +1,9 @@
 {
     "version": 1,
-    "name": "Network_Test",
+    "name": "network_travel_test",
     "entities": [
         {
-            "id": "1484B8DE91A4C043",
+            "id": "7A84B8DE91A4C043",
             "components": {
                 "Transform": {
                     "positions": {
@@ -74,8 +74,8 @@
             }
         },
         {
-            "id": "4484B8DE91EC4047",
-            "parent": "A484B8DE91EC4045",
+            "id": "7A84B8DE91EC4047",
+            "parent": "7A84B8DE91EC4045",
             "siblingIndex": 0,
             "components": {
                 "Transform": {
@@ -117,8 +117,8 @@
             }
         },
         {
-            "id": "4C84B8DE90F68037",
-            "parent": "8484B8DE90F68033",
+            "id": "7A84B8DE90F68037",
+            "parent": "7A84B8DE90F68033",
             "siblingIndex": 0,
             "components": {
                 "Transform": {
@@ -160,8 +160,8 @@
             }
         },
         {
-            "id": "6C84B8DE90F6803B",
-            "parent": "4C84B8DE90F68037",
+            "id": "7A84B8DE90F6803B",
+            "parent": "7A84B8DE90F68037",
             "siblingIndex": 0,
             "components": {
                 "Transform": {
@@ -202,7 +202,7 @@
             }
         },
         {
-            "id": "8484B8DE90F68033",
+            "id": "7A84B8DE90F68033",
             "components": {
                 "Transform": {
                     "positions": {
@@ -285,8 +285,8 @@
             }
         },
         {
-            "id": "9484B8DE91EC4049",
-            "parent": "4484B8DE91EC4047",
+            "id": "7A84B8DE91EC4049",
+            "parent": "7A84B8DE91EC4047",
             "siblingIndex": 0,
             "components": {
                 "Transform": {
@@ -327,7 +327,7 @@
             }
         },
         {
-            "id": "A484B8DE91A4C03D",
+            "id": "7A84B8DE91A4C03D",
             "components": {
                 "Transform": {
                     "positions": {
@@ -336,9 +336,9 @@
                         "z": 15.319527626037598
                     },
                     "rotation": {
-                        "x": -4.2146845657953236e-7,
+                        "x": -4.2146845657953236e-07,
                         "y": 0.7071067690849304,
-                        "z": 4.2146845657953236e-7,
+                        "z": 4.2146845657953236e-07,
                         "w": 0.7071067690849304
                     },
                     "scale": {
@@ -400,7 +400,7 @@
             }
         },
         {
-            "id": "A484B8DE91A4C041",
+            "id": "7A84B8DE91A4C041",
             "components": {
                 "Transform": {
                     "positions": {
@@ -471,7 +471,7 @@
             }
         },
         {
-            "id": "A484B8DE91EC4045",
+            "id": "7A84B8DE91EC4045",
             "components": {
                 "Transform": {
                     "positions": {
@@ -554,102 +554,8 @@
             }
         },
         {
-            "id": "B484B8DE8FCDC013",
-            "components": {
-                "Transform": {
-                    "positions": {
-                        "x": 2.999563217163086,
-                        "y": 0.9516667127609253,
-                        "z": 0.07221397757530212
-                    },
-                    "rotation": {
-                        "x": 0.0,
-                        "y": 0.0,
-                        "z": 0.0,
-                        "w": 1.0
-                    },
-                    "scale": {
-                        "x": 1.0,
-                        "y": 1.0,
-                        "z": 1.0
-                    }
-                },
-                "RigidBody": {
-                    "velocity": {
-                        "x": 0.0,
-                        "y": 0.0,
-                        "z": 0.0
-                    },
-                    "mass": 1.0,
-                    "useGravity": true,
-                    "drag": 0.0,
-                    "angularDrag": 0.05000000074505806,
-                    "isKinematic": false,
-                    "constraints": {
-                        "freezePositionX": false,
-                        "freezePositionY": false,
-                        "freezePositionZ": false,
-                        "freezeRotationX": false,
-                        "freezeRotationY": false,
-                        "freezeRotationZ": false
-                    }
-                },
-                "MeshRenderer": {
-                    "visible": true,
-                    "modelAsset": 0,
-                    "modelRoot": 4294967295,
-                    "materialOverrides": [],
-                    "colour": {
-                        "x": 0.5,
-                        "y": 0.5,
-                        "z": 0.5,
-                        "w": 0.5
-                    },
-                    "meshAsset": 8362592118289502741,
-                    "materialAsset": 0
-                },
-                "Collider": {
-                    "type": "Sphere",
-                    "size": {
-                        "x": 1.0,
-                        "y": 1.0,
-                        "z": 1.0
-                    },
-                    "radius": 0.5,
-                    "height": 2.0,
-                    "center": {
-                        "x": 0.0,
-                        "y": 0.0,
-                        "z": 0.0
-                    },
-                    "friction": 0.20000000298023224,
-                    "bounciness": 1.0,
-                    "layer": "Moving",
-                    "isTrigger": false
-                },
-                "EntityName": {
-                    "name": "Sphere"
-                },
-                "NetworkObjectAuthoring": {
-                    "replicated": [
-                        "Transform/Full"
-                    ],
-                    "serverOnly": [
-                        "Collider",
-                        "RigidBody"
-                    ],
-                    "ownerLocalOnly": [],
-                    "enabledReplicated": [],
-                    "sendPriority": 1.0,
-                    "critical": false,
-                    "allowScenePlacement": true,
-                    "spawnPerPlayer": false
-                }
-            }
-        },
-        {
-            "id": "B484B8DE90F68039",
-            "parent": "EC84B8DE90F68035",
+            "id": "7A84B8DE90F68039",
+            "parent": "7A84B8DE90F68035",
             "siblingIndex": 0,
             "components": {
                 "Transform": {
@@ -690,7 +596,7 @@
             }
         },
         {
-            "id": "BC84B8DE8F310003",
+            "id": "7A84B8DE8F310003",
             "components": {
                 "Transform": {
                     "positions": {
@@ -730,7 +636,7 @@
             }
         },
         {
-            "id": "D484B8DE8F310001",
+            "id": "7A84B8DE8F310001",
             "components": {
                 "Transform": {
                     "positions": {
@@ -756,10 +662,10 @@
                     "modelRoot": 4294967295,
                     "materialOverrides": [],
                     "colour": {
-                        "x": 0.5,
+                        "x": 0.3,
                         "y": 0.5,
-                        "z": 0.5,
-                        "w": 0.5
+                        "z": 0.32,
+                        "w": 1.0
                     },
                     "meshAsset": 3578055278504480029,
                     "materialAsset": 0
@@ -789,7 +695,7 @@
             }
         },
         {
-            "id": "DC84B8DE91A4C03F",
+            "id": "7A84B8DE91A4C03F",
             "components": {
                 "Transform": {
                     "positions": {
@@ -860,8 +766,8 @@
             }
         },
         {
-            "id": "EC84B8DE90F68035",
-            "parent": "F484B8DE90F68031",
+            "id": "7A84B8DE90F68035",
+            "parent": "7A84B8DE90F68031",
             "siblingIndex": 0,
             "components": {
                 "Transform": {
@@ -903,7 +809,7 @@
             }
         },
         {
-            "id": "F484B8DE90F68031",
+            "id": "7A84B8DE90F68031",
             "components": {
                 "Transform": {
                     "positions": {
@@ -986,7 +892,7 @@
             }
         },
         {
-            "id": "7D0494DBA1D07671",
+            "id": "7A0494DBA1D07671",
             "components": {
                 "Transform": {
                     "positions": {
@@ -1029,6 +935,343 @@
                 },
                 "EntityName": {
                     "name": "Cursor Lock"
+                }
+            }
+        },
+        {
+            "id": "7A65744F76657231",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 24.0,
+                        "z": 26.0
+                    },
+                    "rotation": {
+                        "x": -0.3420201433256687,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.9396926207859084
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "Camera": {
+                    "enabled": true,
+                    "fovY": 60.0,
+                    "nearZ": 0.10000000149011612,
+                    "farZ": 1000.0,
+                    "priority": 0
+                },
+                "EntityName": {
+                    "name": "Arena Overview Camera"
+                }
+            }
+        },
+        {
+            "id": "7A72617644656D01",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 9.797174393178826e-18,
+                        "y": 2.2,
+                        "z": 2.92
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 1.0,
+                        "z": 0.0,
+                        "w": 6.123233995736766e-17
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "WorldText": {
+                    "text": "",
+                    "colour": {
+                        "x": 0.85,
+                        "y": 0.8,
+                        "z": 1.0,
+                        "w": 1.0
+                    },
+                    "fontAsset": 0,
+                    "fontSize": 0.24,
+                    "size": {
+                        "x": 6.5,
+                        "y": 2.0
+                    },
+                    "pivot": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "billboard": "Off",
+                    "alwaysOnTop": false,
+                    "doubleSided": false,
+                    "intensity": 1.0,
+                    "fade": false,
+                    "fadeStart": 25.0,
+                    "fadeEnd": 40.0,
+                    "horizontalAlign": "Left",
+                    "verticalAlign": "Top",
+                    "wrap": false,
+                    "overflow": "Overflow",
+                    "lineSpacing": 1.0,
+                    "characterSpacing": 0.0,
+                    "richText": false,
+                    "bold": true,
+                    "underline": false,
+                    "bestFit": false,
+                    "minFontSize": 0.1,
+                    "maxFontSize": 1.0,
+                    "outline": false,
+                    "outlineColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "outlineWidth": 0.02,
+                    "glow": false,
+                    "glowColour": {
+                        "x": 1.0,
+                        "y": 0.85,
+                        "z": 0.4,
+                        "w": 0.8
+                    },
+                    "glowWidth": 0.03,
+                    "glowSoftness": 0.5,
+                    "shadow": true,
+                    "shadowColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.6
+                    },
+                    "shadowOffset": {
+                        "x": 0.02,
+                        "y": 0.02
+                    },
+                    "shadowSoftness": 0.0
+                },
+                "ScriptComponent": {
+                    "scripts": [
+                        {
+                            "enabled": true,
+                            "assembly": "Managed/Crucible.Scripts.dll",
+                            "namespace": "Crucible.Scripts",
+                            "class": "TravelDemo",
+                            "fields": [
+                                {
+                                    "declaringType": "Crucible.Scripts.TravelDemo",
+                                    "name": "travelCase",
+                                    "type": "Prefab",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 6085033207095456613
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.TravelDemo",
+                                    "name": "inTravelScene",
+                                    "type": "Boolean",
+                                    "boolean": true,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0
+                                }
+                            ]
+                        }
+                    ]
+                },
+                "EntityName": {
+                    "name": "Travel Demo"
+                }
+            }
+        },
+        {
+            "id": "7A6F617264003001",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 3.4,
+                        "z": -14.6
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 14.0,
+                        "y": 4.2,
+                        "z": 0.1
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.05,
+                        "y": 0.06,
+                        "z": 0.08,
+                        "w": 1.0
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 0
+                },
+                "EntityName": {
+                    "name": "Wall 3 Board"
+                }
+            }
+        },
+        {
+            "id": "7A6F617264003002",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 3.4,
+                        "z": -14.52
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "WorldText": {
+                    "text": "TRAVEL SCENE  (README 8.30)\nYou arrived with the same player, and the Travel Case if the Host spawned one.\nCheck on both machines: same case number, same items, 'scene changes' went up by one,\nand each player's number is the one it had in the arena.\nU  (Host) travels back to the arena, keeping them again.    I  (Host) adds an item.",
+                    "colour": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0,
+                        "w": 1.0
+                    },
+                    "fontAsset": 0,
+                    "fontSize": 0.3,
+                    "size": {
+                        "x": 13.4,
+                        "y": 3.8
+                    },
+                    "pivot": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "billboard": "Off",
+                    "alwaysOnTop": false,
+                    "doubleSided": false,
+                    "intensity": 1.0,
+                    "fade": false,
+                    "fadeStart": 25.0,
+                    "fadeEnd": 40.0,
+                    "horizontalAlign": "Left",
+                    "verticalAlign": "Top",
+                    "wrap": false,
+                    "overflow": "Overflow",
+                    "lineSpacing": 1.0,
+                    "characterSpacing": 0.0,
+                    "richText": false,
+                    "bold": true,
+                    "underline": false,
+                    "bestFit": false,
+                    "minFontSize": 0.1,
+                    "maxFontSize": 1.0,
+                    "outline": false,
+                    "outlineColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "outlineWidth": 0.02,
+                    "glow": false,
+                    "glowColour": {
+                        "x": 1.0,
+                        "y": 0.85,
+                        "z": 0.4,
+                        "w": 0.8
+                    },
+                    "glowWidth": 0.03,
+                    "glowSoftness": 0.5,
+                    "shadow": true,
+                    "shadowColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.6
+                    },
+                    "shadowOffset": {
+                        "x": 0.02,
+                        "y": 0.02
+                    },
+                    "shadowSoftness": 0.0
+                },
+                "EntityName": {
+                    "name": "Wall 3 Board Text"
+                }
+            }
+        },
+        {
+            "id": "7A616E656C000000",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 2.2,
+                        "z": 3.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 1.0,
+                        "z": 0.0,
+                        "w": 6.123233995736766e-17
+                    },
+                    "scale": {
+                        "x": 7.0,
+                        "y": 2.4,
+                        "z": 0.1
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.05,
+                        "y": 0.06,
+                        "z": 0.08,
+                        "w": 1.0
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 0
+                },
+                "EntityName": {
+                    "name": "Travel Demo Panel"
                 }
             }
         }

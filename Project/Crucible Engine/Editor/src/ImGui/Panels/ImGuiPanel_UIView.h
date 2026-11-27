@@ -86,7 +86,7 @@ namespace Crucible {
 		// Gizmo
 		GizmoFrame  MakeGizmoFrame(UI::LayoutItem const& item) const;
 		GizmoHandle HitTestGizmo(UI::LayoutItem const& item, ImVec2 mouse) const;
-		void        ApplyDrag(ImVec2 mouse);               // m_dragEntity's UIRect = start values + the drag so far
+		void        ApplyDrag(ImVec2 mouse);               // every mover's UIRect = start values + the drag so far
 		void        DrawGizmo(ImDrawList* drawList, UI::LayoutItem const& item) const;
 
 		// Little quad helper for the preview's own draw list.
@@ -118,13 +118,34 @@ namespace Crucible {
 		// Everything is computed from the values at the start of the drag plus the total mouse
 		// movement, so Ctrl-snapping never drifts. The undo snapshot is taken on the first frame
 		// of movement, so a plain click never pushes an empty undo step.
+		//
+		// Multi-selection (like the Scene view's gizmo): m_dragEntity is the LEAD - the element the
+		// gizmo / click is on, which sets the snapping and the rotate pivot. Every selected element
+		// whose ancestor is not also selected is a mover and gets the same change; a child of a
+		// selected element is carried along by its parent instead. The whole drag is one undo step.
+		struct DragMover {
+			Entity      entity{};
+			UIRect      startRect{};
+			glm::vec2   startPivot{ 0.0f };            // its pivot at the start, canvas pixels
+			glm::mat2   canvasToParent{ 1.0f };        // inverse of its parent's (possibly turned) space -> canvas
+			float       scale = 1.0f;                  // its canvas's reference -> canvas scale
+			std::string before;                        // EntityState snapshot, taken on the first movement
+		};
+		void BeginDrag(Entity lead, GizmoHandle handle);
+		void EndDrag();
+
 		Entity      m_dragEntity{};
 		GizmoHandle m_dragHandle = GizmoHandle::None;
 		bool        m_dragMoved = false;
-		std::string m_dragBefore;
 		Entity      m_contextEntity{};   // the element the right-click menu is about (null: empty page)
 		ImVec2      m_dragStartMouse{ 0.0f, 0.0f };
-		UIRect      m_dragStartRect{};
+		UIRect      m_dragStartRect{};               // the lead's UIRect at the start
+		glm::vec2   m_dragStartPivot{ 0.0f };        // the lead's pivot at the start, canvas pixels
+		std::vector<DragMover> m_dragMovers;
+		// A plain click on an element that was already part of a multi-selection keeps the selection
+		// (so the whole group can be dragged); if the mouse is released without moving, the selection
+		// becomes just that element - the Scene view / Unity behaviour.
+		Entity      m_clickCollapseTo{};
 
 		Entity      m_frameRequest{};   // FrameEntity(): applied in HandleFrameRequest
 

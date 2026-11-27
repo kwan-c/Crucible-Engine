@@ -3,7 +3,7 @@
 * \author:       Jean David Vidal Cruzado
 * \par:          Email: jeandavidvidal.c@digipen.edu
 * \date          10 November 2026
-* \version       1.0
+* \version       1.1
 * \brief
 *                Draws every Terrain: keeps the mesh on its MeshRenderer in
 *                step with the ground a script last built.
@@ -28,6 +28,8 @@
 *
 * \history
 *    -v1.0       first version
+*    -v1.1       Record keeps the whole palette (one colour per region),
+*                not three fixed colours
 *
 **************************************************************************/
 #pragma once
@@ -44,7 +46,7 @@
 #include "ECS/Systems/Query.h"
 #include "EngineExport.h"
 #include "Graphics/MeshHandle.h"
-#include "Math/Math.h"
+#include "Terrain/TerrainMesh.h"         // TerrainPalette
 
 namespace Crucible {
 
@@ -82,7 +84,7 @@ namespace Crucible {
             std::uint32_t                      generation = 0;    // of the entity this belongs to
             std::uint64_t                      seenFrame  = 0;
             std::shared_ptr<const TerrainGrid> grid;              // what the mesh was built from
-            Math::vec3                         colours[3]{};      // and with (ground, cliff, road)
+            TerrainPalette                     palette{};         // and with these region colours
             MeshHandle                         mesh;
             bool                               warnedAsset = false;
         };

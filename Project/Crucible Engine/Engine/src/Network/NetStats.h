@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.11
+* \version       1.18
 * \brief
 *                Counters the networking code measures itself, per session
 *                (reset by every Start).
@@ -29,6 +29,15 @@
 *    -v1.9       scene object counters (Networking Phase 14.5)
 *    -v1.10      scenePlayersPlaced (Networking Phase 14.6)
 *    -v1.11      sceneProfiles (Networking Phase 14.7)
+*    -v1.12      kMessageTypes 14: PeerRoster and Command; roster and command
+*                counters
+*    -v1.13      gameplayEventsNoTarget, spawnsImmediate
+*    -v1.14      kMessageTypes 15: UnreliableEvent, and its counters
+*    -v1.15      kMessageTypes 17: SceneChange, SceneLoaded; scene change counters
+*    -v1.16      kMessageTypes 18: OwnerChange; ownerChanges, ownerChangesRefused,
+*                unknownOwnerChanges
+*    -v1.17      kMessageTypes 19: PeerPings; pingsSent, pingsReceived
+*    -v1.18      playersKept, keptRebound, keptDropped (protocol 12)
 *
 **************************************************************************/
 #pragma once
@@ -87,6 +96,15 @@ namespace Crucible
 		std::uint32_t proxiesDestroyed = 0;    // client: by a DespawnBatch
 		std::uint32_t duplicateSpawns = 0;     // client: spawn for an id it already has (ignored)
 		std::uint32_t unknownDespawns = 0;     // client: despawn for an id it does not have (ignored)
+		std::uint32_t ownerChanges = 0;        // every role: ownership changes applied
+		std::uint32_t ownerChangesRefused = 0; // host: requests refused (a player, gone, an unknown peer)
+		std::uint32_t unknownOwnerChanges = 0; // client: an OwnerChange for an id it does not have (ignored)
+		std::uint32_t pingsSent = 0;           // host: PeerPings messages GNS accepted (one per client per second)
+		std::uint32_t pingsReceived = 0;       // client: PeerPings applied
+		std::uint32_t peersKicked = 0;         // host: clients removed with Kick
+		std::uint32_t playersKept = 0;         // host: players kept through a scene change (not spawned again)
+		std::uint32_t keptRebound = 0;         // client: kept objects the new world named again
+		std::uint32_t keptDropped = 0;         // client: kept objects the new world did not name
 
 		// Snapshots and acknowledgements
 		std::uint64_t snapshotsSent = 0;       // server: snapshot messages GNS accepted, all clients
@@ -120,6 +138,16 @@ namespace Crucible
 		std::uint32_t gameplayEventsRefused = 0;    // SendGameplayEvent said no (see its rules)
 		std::uint32_t gameplayEventsSkipped = 0;    // server: not sent to a client receiving the world that frame
 		std::uint64_t gameplayEventsReceived = 0;   // client
+		std::uint32_t gameplayEventsNoTarget = 0;   // client: about an object it no longer has (not delivered)
+		std::uint64_t unreliableEventsSent = 0;     // server: unreliable event messages GNS accepted, all clients
+		std::uint32_t unreliableEventsNotSent = 0;  // server: not accepted by GNS (lost, as any of them may be)
+		std::uint64_t unreliableEventsReceived = 0; // client: arrived and delivered
+
+		// Scene changes (Networking C# Phase 9)
+		std::uint32_t sceneChanges = 0;             // scene changes this machine went through in the session
+		std::uint32_t sceneLoadTimeouts = 0;        // host: peers closed for not loading in time
+		std::uint32_t staleSceneMessages = 0;       // host: SceneLoaded / ClientReady / commands from before a change
+		std::uint32_t spawnsImmediate = 0;          // server: spawns performed at once (BeginSpawn), of spawnsPerformed
 
 		// Interpolation and responsiveness (client)
 		std::uint64_t interpolationSamples = 0;     // snapshot states buffered instead of written
@@ -153,7 +181,7 @@ namespace Crucible
 
 		// Bytes of our messages by MessageType (index = the type's value), both directions; GNS's
 		// own headers, encryption and acks are not included (GnsTransport::Status has those).
-		static constexpr std::size_t kMessageTypes = 12;   // MessageType::Count (checked in NetworkSession.cpp)
+		static constexpr std::size_t kMessageTypes = 19;   // MessageType::Count (checked in NetworkSession.cpp)
 		std::array<std::uint64_t, kMessageTypes> bytesSentByType{};
 		std::array<std::uint64_t, kMessageTypes> bytesReceivedByType{};
 
@@ -171,5 +199,18 @@ namespace Crucible
 		std::uint32_t sceneMismatches = 0;          // client: refused, its scene is not the host's
 		std::uint32_t scenePlayersPlaced = 0;       // placed players removed as spawn points (Phase 14.6)
 		std::uint32_t sceneProfiles = 0;            // scene profiles registered (Phase 14.7)
+
+		// The roster (who is in the session)
+		std::uint32_t rostersSent = 0;              // host: PeerRoster messages sent, all clients
+		std::uint32_t rostersApplied = 0;           // client: PeerRoster messages applied
+
+		// Commands (client to host gameplay requests)
+		std::uint64_t commandMessagesSent = 0;      // client: Command messages GNS accepted
+		std::uint32_t commandSendFailed = 0;        // client: not accepted by GNS (the caller was told)
+		std::uint64_t commandMessagesReceived = 0;  // host: accepted from clients and posted
+		std::uint64_t commandsLocal = 0;            // host or offline: its own, posted without the network
+		std::uint32_t commandsRefused = 0;          // SendCommand said no (see its rules)
+		std::uint64_t commandsMissed = 0;           // host: sequence numbers skipped (dropped by a client's quota)
+		std::uint32_t commandsNoTarget = 0;         // host: aimed at an object that no longer exists (dropped)
 	};
 }

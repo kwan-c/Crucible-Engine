@@ -1,0 +1,1103 @@
+{
+    "version": 1,
+    "name": "Network_Test",
+    "entities": [
+        {
+            "id": "1484B8DE91A4C043",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 14.452857971191406,
+                        "y": 0.7211616039276123,
+                        "z": -0.18589746952056885
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 29.299999237060547
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 0
+                },
+                "Collider": {
+                    "type": "Box",
+                    "size": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "radius": 0.5,
+                    "height": 2.0,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "friction": 0.20000000298023224,
+                    "bounciness": 0.0,
+                    "layer": "NonMoving",
+                    "isTrigger": false
+                },
+                "EntityName": {
+                    "name": "Wall 4"
+                },
+                "NetworkObjectAuthoring": {
+                    "replicated": [],
+                    "serverOnly": [
+                        "Collider"
+                    ],
+                    "ownerLocalOnly": [],
+                    "enabledReplicated": [],
+                    "sendPriority": 1.0,
+                    "critical": false,
+                    "allowScenePlacement": true,
+                    "spawnPerPlayer": false
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
+            "id": "4484B8DE91EC4047",
+            "parent": "A484B8DE91EC4045",
+            "siblingIndex": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 1.5,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "CameraOrbit": {
+                    "sensitivity": 0.10000000149011612,
+                    "stickSpeed": 180.0,
+                    "minPitch": -30.0,
+                    "maxPitch": 70.0,
+                    "yaw": 0.0,
+                    "pitch": 0.0
+                },
+                "EntityName": {
+                    "name": "Camera Pivot"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 13007724889799262249,
+                    "fileId": 3784352852944486437,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
+            "id": "4C84B8DE90F68037",
+            "parent": "8484B8DE90F68033",
+            "siblingIndex": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 1.5,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "CameraOrbit": {
+                    "sensitivity": 0.10000000149011612,
+                    "stickSpeed": 180.0,
+                    "minPitch": -30.0,
+                    "maxPitch": 70.0,
+                    "yaw": 0.0,
+                    "pitch": 0.0
+                },
+                "EntityName": {
+                    "name": "Camera Pivot"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 13007724889799262249,
+                    "fileId": 3784352852944486437,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
+            "id": "6C84B8DE90F6803B",
+            "parent": "4C84B8DE90F68037",
+            "siblingIndex": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 5.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "Camera": {
+                    "enabled": true,
+                    "fovY": 60.0,
+                    "nearZ": 0.10000000149011612,
+                    "farZ": 1000.0,
+                    "priority": 1
+                },
+                "EntityName": {
+                    "name": "Player Camera"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 13007724889799262249,
+                    "fileId": 2631431348337639463,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
+            "id": "7D0494DBA1D07671",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Cursor Lock"
+                },
+                "ScriptComponent": {
+                    "scripts": [
+                        {
+                            "enabled": true,
+                            "assembly": "Managed/Crucible.Scripts.dll",
+                            "namespace": "Crucible.Scripts",
+                            "class": "CursorLock",
+                            "fields": [
+                                {
+                                    "declaringType": "Crucible.Scripts.CursorLock",
+                                    "name": "locked",
+                                    "type": "Bool",
+                                    "boolean": true,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0
+                                }
+                            ]
+                        }
+                    ]
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
+            "id": "8484B8DE90F68033",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": -0.8703573942184448,
+                        "y": 1.178094744682312,
+                        "z": 11.54850959777832
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 5067099792209742713,
+                    "materialAsset": 0
+                },
+                "CharacterController": {
+                    "height": 2.0,
+                    "radius": 0.5,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "slopeLimit": 45.0,
+                    "stepOffset": 0.30000001192092896,
+                    "pushStrength": 100.0,
+                    "layer": "Player"
+                },
+                "PlayerController": {
+                    "moveSpeed": 6.0,
+                    "jumpHeight": 1.5,
+                    "faceCamera": true
+                },
+                "EntityName": {
+                    "name": "Player Spwanpoint 2"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 13007724889799262249,
+                    "fileId": 3207892100641062947,
+                    "isRoot": true,
+                    "prefabHash": 5299553253888536589,
+                    "overrides": []
+                },
+                "NetworkObjectAuthoring": {
+                    "replicated": [
+                        "Transform/Full"
+                    ],
+                    "serverOnly": [
+                        "CharacterController",
+                        "PlayerController"
+                    ],
+                    "ownerLocalOnly": [
+                        "CameraOrbit",
+                        "Camera"
+                    ],
+                    "enabledReplicated": [],
+                    "sendPriority": 1.0,
+                    "critical": true,
+                    "allowScenePlacement": true,
+                    "spawnPerPlayer": true
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
+            "id": "9484B8DE91EC4049",
+            "parent": "4484B8DE91EC4047",
+            "siblingIndex": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 5.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "Camera": {
+                    "enabled": true,
+                    "fovY": 60.0,
+                    "nearZ": 0.10000000149011612,
+                    "farZ": 1000.0,
+                    "priority": 1
+                },
+                "EntityName": {
+                    "name": "Player Camera"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 13007724889799262249,
+                    "fileId": 2631431348337639463,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
+            "id": "A484B8DE91A4C03D",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": -0.07767963409423828,
+                        "y": 0.7062951326370239,
+                        "z": 15.319527626037598
+                    },
+                    "rotation": {
+                        "x": -4.2146845657953236e-7,
+                        "y": 0.7071067690849304,
+                        "z": 4.2146845657953236e-7,
+                        "w": 0.7071067690849304
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 30.25
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 0
+                },
+                "Collider": {
+                    "type": "Box",
+                    "size": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "radius": 0.5,
+                    "height": 2.0,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "friction": 0.20000000298023224,
+                    "bounciness": 0.0,
+                    "layer": "NonMoving",
+                    "isTrigger": false
+                },
+                "EntityName": {
+                    "name": "Wall 2"
+                },
+                "NetworkObjectAuthoring": {
+                    "replicated": [
+                        "Transform/Full"
+                    ],
+                    "serverOnly": [
+                        "Collider"
+                    ],
+                    "ownerLocalOnly": [],
+                    "enabledReplicated": [],
+                    "sendPriority": 1.0,
+                    "critical": false,
+                    "allowScenePlacement": true,
+                    "spawnPerPlayer": false
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
+            "id": "A484B8DE91A4C041",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": -0.13608551025390625,
+                        "y": 0.7086528539657593,
+                        "z": -14.62765884399414
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.7071067690849304,
+                        "z": 0.0,
+                        "w": 0.7071067690849304
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 29.299999237060547
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 0
+                },
+                "Collider": {
+                    "type": "Box",
+                    "size": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "radius": 0.5,
+                    "height": 2.0,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "friction": 0.20000000298023224,
+                    "bounciness": 0.0,
+                    "layer": "NonMoving",
+                    "isTrigger": false
+                },
+                "EntityName": {
+                    "name": "Wall 3"
+                },
+                "NetworkObjectAuthoring": {
+                    "replicated": [],
+                    "serverOnly": [
+                        "Collider"
+                    ],
+                    "ownerLocalOnly": [],
+                    "enabledReplicated": [],
+                    "sendPriority": 1.0,
+                    "critical": false,
+                    "allowScenePlacement": true,
+                    "spawnPerPlayer": false
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
+            "id": "A484B8DE91EC4045",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 8.798883438110352,
+                        "y": 1.3622276782989502,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 5067099792209742713,
+                    "materialAsset": 0
+                },
+                "CharacterController": {
+                    "height": 2.0,
+                    "radius": 0.5,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "slopeLimit": 45.0,
+                    "stepOffset": 0.30000001192092896,
+                    "pushStrength": 100.0,
+                    "layer": "Player"
+                },
+                "PlayerController": {
+                    "moveSpeed": 6.0,
+                    "jumpHeight": 1.5,
+                    "faceCamera": true
+                },
+                "EntityName": {
+                    "name": "Player SpawnPoint 3"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 13007724889799262249,
+                    "fileId": 3207892100641062947,
+                    "isRoot": true,
+                    "prefabHash": 5299553253888536589,
+                    "overrides": []
+                },
+                "NetworkObjectAuthoring": {
+                    "replicated": [
+                        "Transform/Full"
+                    ],
+                    "serverOnly": [
+                        "CharacterController",
+                        "PlayerController"
+                    ],
+                    "ownerLocalOnly": [
+                        "CameraOrbit",
+                        "Camera"
+                    ],
+                    "enabledReplicated": [],
+                    "sendPriority": 1.0,
+                    "critical": true,
+                    "allowScenePlacement": true,
+                    "spawnPerPlayer": true
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
+            "id": "B484B8DE8FCDC013",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 2.999563217163086,
+                        "y": 0.9516667127609253,
+                        "z": 0.07221397757530212
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "RigidBody": {
+                    "velocity": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "mass": 1.0,
+                    "useGravity": true,
+                    "drag": 0.0,
+                    "angularDrag": 0.05000000074505806,
+                    "isKinematic": false,
+                    "constraints": {
+                        "freezePositionX": false,
+                        "freezePositionY": false,
+                        "freezePositionZ": false,
+                        "freezeRotationX": false,
+                        "freezeRotationY": false,
+                        "freezeRotationZ": false
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 8362592118289502741,
+                    "materialAsset": 0
+                },
+                "Collider": {
+                    "type": "Sphere",
+                    "size": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "radius": 0.5,
+                    "height": 2.0,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "friction": 0.20000000298023224,
+                    "bounciness": 1.0,
+                    "layer": "Moving",
+                    "isTrigger": false
+                },
+                "EntityName": {
+                    "name": "Sphere"
+                },
+                "ScriptComponent": {
+                    "scripts": [
+                        {
+                            "enabled": true,
+                            "assembly": "Managed/Crucible.Scripts.dll",
+                            "namespace": "Crucible.Scripts",
+                            "class": "TEMP_NetworkTest",
+                            "fields": []
+                        }
+                    ]
+                },
+                "NetworkObjectAuthoring": {
+                    "replicated": [
+                        "Transform/Full",
+                        "NetVariables"
+                    ],
+                    "serverOnly": [
+                        "Collider",
+                        "RigidBody"
+                    ],
+                    "ownerLocalOnly": [],
+                    "enabledReplicated": [],
+                    "sendPriority": 1.0,
+                    "critical": false,
+                    "allowScenePlacement": true,
+                    "spawnPerPlayer": false
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
+            "id": "B484B8DE90F68039",
+            "parent": "EC84B8DE90F68035",
+            "siblingIndex": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 5.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "Camera": {
+                    "enabled": true,
+                    "fovY": 60.0,
+                    "nearZ": 0.10000000149011612,
+                    "farZ": 1000.0,
+                    "priority": 1
+                },
+                "EntityName": {
+                    "name": "Player Camera"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 13007724889799262249,
+                    "fileId": 2631431348337639463,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
+            "id": "BC84B8DE8F310003",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 100.0,
+                        "y": 100.0,
+                        "z": 100.0
+                    },
+                    "rotation": {
+                        "x": -0.4226182699203491,
+                        "y": -0.0,
+                        "z": -0.0,
+                        "w": 0.9063077569007874
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "Light": {
+                    "type": "Directional",
+                    "colour": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "intensity": 1.0,
+                    "range": 10.0,
+                    "innerConeDeg": 20.0,
+                    "outerConeDeg": 30.0,
+                    "enabled": true,
+                    "castShadows": true
+                },
+                "EntityName": {
+                    "name": "Directional Light"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
+            "id": "D484B8DE8F310001",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 30.0,
+                        "y": 0.5,
+                        "z": 30.0
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 0
+                },
+                "Collider": {
+                    "type": "Box",
+                    "size": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "radius": 0.5,
+                    "height": 2.0,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "friction": 0.20000000298023224,
+                    "bounciness": 0.0,
+                    "layer": "NonMoving",
+                    "isTrigger": false
+                },
+                "EntityName": {
+                    "name": "Ground"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
+            "id": "DC84B8DE91A4C03F",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": -14.466184616088867,
+                        "y": 0.7538061141967773,
+                        "z": -0.0937313437461853
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 29.549999237060547
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 0
+                },
+                "Collider": {
+                    "type": "Box",
+                    "size": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "radius": 0.5,
+                    "height": 2.0,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "friction": 0.20000000298023224,
+                    "bounciness": 0.0,
+                    "layer": "NonMoving",
+                    "isTrigger": false
+                },
+                "EntityName": {
+                    "name": "Wall 1"
+                },
+                "NetworkObjectAuthoring": {
+                    "replicated": [],
+                    "serverOnly": [
+                        "Collider"
+                    ],
+                    "ownerLocalOnly": [],
+                    "enabledReplicated": [],
+                    "sendPriority": 1.0,
+                    "critical": false,
+                    "allowScenePlacement": true,
+                    "spawnPerPlayer": false
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
+            "id": "EC84B8DE90F68035",
+            "parent": "F484B8DE90F68031",
+            "siblingIndex": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 1.5,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "CameraOrbit": {
+                    "sensitivity": 0.10000000149011612,
+                    "stickSpeed": 180.0,
+                    "minPitch": -30.0,
+                    "maxPitch": 70.0,
+                    "yaw": 0.0,
+                    "pitch": 0.0
+                },
+                "EntityName": {
+                    "name": "Camera Pivot"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 13007724889799262249,
+                    "fileId": 3784352852944486437,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
+            "id": "F484B8DE90F68031",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0733419805765152,
+                        "y": 1.368292212486267,
+                        "z": -9.411938667297363
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 5067099792209742713,
+                    "materialAsset": 0
+                },
+                "CharacterController": {
+                    "height": 2.0,
+                    "radius": 0.5,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "slopeLimit": 45.0,
+                    "stepOffset": 0.30000001192092896,
+                    "pushStrength": 100.0,
+                    "layer": "Player"
+                },
+                "PlayerController": {
+                    "moveSpeed": 6.0,
+                    "jumpHeight": 1.5,
+                    "faceCamera": true
+                },
+                "EntityName": {
+                    "name": "Player Spawnpoint 1"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 13007724889799262249,
+                    "fileId": 3207892100641062947,
+                    "isRoot": true,
+                    "prefabHash": 5299553253888536589,
+                    "overrides": []
+                },
+                "NetworkObjectAuthoring": {
+                    "replicated": [
+                        "Transform/Full"
+                    ],
+                    "serverOnly": [
+                        "CharacterController",
+                        "PlayerController"
+                    ],
+                    "ownerLocalOnly": [
+                        "CameraOrbit",
+                        "Camera"
+                    ],
+                    "enabledReplicated": [],
+                    "sendPriority": 1.0,
+                    "critical": true,
+                    "allowScenePlacement": true,
+                    "spawnPerPlayer": true
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        }
+    ]
+}

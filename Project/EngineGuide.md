@@ -94,9 +94,12 @@ namespace Crucible.Scripts
 
 Rules:
 
-- **One script per entity** (one ScriptComponent). To give an entity several behaviours, compose
-  plain C# classes inside one script (see `MechPlayer` + `MechHealth` + `MechWeapon`), or put
-  scripts on child entities.
+- **Several scripts per entity** (as in Unity). Add Component appends a script to the end of the
+  list, and the Inspector order is the order OnCreate / OnUpdate run in. `GetComponent<T>()`
+  returns the first script that is a T, `GetComponents<T>()` all of them. Child entities are no
+  longer needed just to hold a second script; composing plain C# classes inside one script (see
+  `MechPlayer` + `MechHealth` + `MechWeapon`) still works. Details:
+  [ScriptingEntities](<Crucible Engine/Docs/ScriptingEntities.md>).
 - **Inspector field types:** `bool`, `int`, `float`, `double`, `string`, `Entity`, `Prefab`,
   `AudioClip`, `Texture`, `Font`, `Material`, `Model`. **Anything else (Color, Vector3, arrays,
   lists, enums, structs) is silently skipped**: it keeps its C# default and does not show in the
@@ -543,14 +546,16 @@ chunk (4-byte aligned), add a bufferView, then replace `images[i].uri` with `buf
 
 ## 12. Gotchas
 
-- **One script per entity.** A second behaviour needs a child entity or composition.
+- **Two scripts of the same class on one entity:** `GetComponent<T>()` returns only the first
+  (Inspector order). Use `GetComponents<T>()` to get all of them.
 - **A spawned prefab's scripts do not exist yet** right after `Prefab.Instantiate` (they are created
   later in the frame, "OnCreate deferred"), so `GetComponent<MyScript>()` returns null. Queue the data
   and let the script read it in its own OnCreate (`MechProjectile.Fire`).
 - **Unsupported field types are skipped without a warning** (Color, Vector3, arrays): they keep
   their C# defaults.
-- **`GetComponent<IInterface>()` and `GetComponent<AbstractBase>()` throw**: only concrete
-  component and script types work. Use a registry, like `MechCombatTargets`.
+- **`GetComponent<IInterface>()` throws**: only component types and script classes work. A base
+  class that derives from EntityScript (abstract or not) matches any script derived from it. For
+  interfaces, use a registry, like `MechCombatTargets`.
 - **`MeshRenderer.Model = x` resets `modelRoot`** to the whole model. To swap parts that need a
   part root, move entities around (`Transform.SetParent`) instead of swapping models.
 - **PlayerController plus your own movement script fight each other.** Remove PlayerController.

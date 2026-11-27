@@ -730,6 +730,19 @@ namespace Crucible {
          \brief  Bloom settings (see PostSettings). Changes apply next frame.
          *********************************************************************/
         PostSettings&             GetPostSettings() { return m_postSettings; }
+        const PostSettings&       GetPostSettings() const { return m_postSettings; }
+
+        /*********************************************************************
+         rief  VSync on (no tearing, frame rate follows the monitor) or
+                 off. A change rebuilds the swapchain after this frame, the
+                 same way a window resize does.
+         *********************************************************************/
+        void                      SetVSync(bool on) {
+            if (on == m_swapchain.GetVSync()) { return; }
+            m_swapchain.SetVSync(on);
+            m_window.m_framebufferResized = true;
+        }
+        bool                      GetVSync() const { return m_swapchain.GetVSync(); }
         /// Where the last frames' time went (CPU stages and GPU passes), smoothed.
         const RenderFrameStats&   GetFrameStats() const { return m_frameStats; }
         /// The built-in load test: set `count` above 0 to add that many extra objects.
