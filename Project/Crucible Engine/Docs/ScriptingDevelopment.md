@@ -230,8 +230,7 @@ checks `Assets/Scripts` twice a second. When a .cs file is added, removed or
 saved and then left alone for 0.4 s, `ScriptCompiler` runs the Mono SDK's
 `mono.exe mcs.exe` as a hidden background process over every .cs under
 Assets/Scripts plus ManagedScripts/AssemblyInfo.cs, with the same options as
-ManagedLibrary.cmake (minus `-sdk:4.5`, which only produced warning CS8001 with the
-vendored SDK). The SDK path comes from `CRUCIBLE_MONO_ROOT` (Editor/CMakeLists.txt
+ManagedLibrary.cmake. The SDK path comes from `CRUCIBLE_MONO_ROOT` (Editor/CMakeLists.txt
 defines `CRUCIBLE_MONO_SDK`); without it, `Extern/mono` is used. The Editor keeps
 running while it compiles.
 

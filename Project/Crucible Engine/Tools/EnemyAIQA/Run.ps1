@@ -66,7 +66,7 @@ if ($Probe -eq "WeaponPortSmoke") {
 $at = $contents.IndexOf('[', $contents.IndexOf('"entities"')) + 1
 [IO.File]::WriteAllText((Join-Path $assets $relative),$contents.Insert($at, $fixture + ','),$utf8)
 $rsp = Join-Path $qa "compile.rsp"
-$argsFile = @("-noconfig", "-sdk:4.5", "-langversion:7.2", "-target:library", "-debug", "-r:System.dll", "-r:System.Core.dll",
+$argsFile = @("-noconfig", "-langversion:7.2", "-target:library", "-debug", "-r:System.dll", "-r:System.Core.dll",
     ('-r:"' + $game + '/Managed/Crucible.ScriptCore.dll"'), ('-out:"' + $game + '/Managed/Crucible.Scripts.dll"'),
     ('"' + $root + '/ManagedScripts/AssemblyInfo.cs"'))
 $argsFile += Get-ChildItem "$root/Assets/Scripts" -Recurse -Filter *.cs | ForEach-Object { '"' + $_.FullName + '"' }

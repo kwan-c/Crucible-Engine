@@ -23,7 +23,10 @@ function(crucible_add_managed_library target)
     set(output_dir "${CMAKE_BINARY_DIR}/ManagedScripts/$<CONFIG>")
     set(output "${output_dir}/${library_ASSEMBLY}.dll")
     set(staged "${output_dir}/work/${library_ASSEMBLY}/${library_ASSEMBLY}.dll")
-    set(arguments "-noconfig\n-sdk:4.5\n-langversion:7.2\n-platform:anycpu\n-target:library\n-debug\n-r:System.dll\n-r:System.Core.dll\n$<IF:$<CONFIG:Debug>,-optimize-,-optimize+>\n-define:TRACE\n$<$<CONFIG:Debug>:-define:DEBUG>\n-out:\"${staged}\"\n")
+    # No -sdk option: mcs's default (4.x) resolves to lib/mono/4.5, the framework the runtime
+    # deploys. -sdk:4.5 asks for lib/mono/4.5-api, which the vendored SDK does not ship, so it
+    # printed warning CS8001 "SDK path could not be resolved" and fell back to lib/mono/4.5 anyway.
+    set(arguments "-noconfig\n-langversion:7.2\n-platform:anycpu\n-target:library\n-debug\n-r:System.dll\n-r:System.Core.dll\n$<IF:$<CONFIG:Debug>,-optimize-,-optimize+>\n-define:TRACE\n$<$<CONFIG:Debug>:-define:DEBUG>\n-out:\"${staged}\"\n")
     set(fallback_arguments "${arguments}")
     set(inputs)
     set(references)
