@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.25
+* \version       1.26
 * \brief
 *                One multiplayer session: hosting or joining, who is
 *                connected, the join handshake, refusals, receive limits
@@ -240,6 +240,7 @@
 *    -v1.24      keeping network objects across scene changes (protocol 12): SetKeptObjectsQuery,
 *                SetKeepPlayers, TakeKept, TakeUnboundKept; ClientReady after kReadyAfterFrames frames
 *    -v1.25      LagHistory, ViewTicks (lag compensation)
+*    -v1.26      ScenePlayerPrefab: a scene's player is the prefab it places
 *
 **************************************************************************/
 #pragma once
@@ -748,7 +749,14 @@ namespace Crucible
 
 		/// The placed players of the loaded scene, in scene-id order (removed when the session
 		/// started; NetInputSystem spawns players there). Empty: none placed.
-		void SetPlayerSpawnPoints(std::vector<PlayerSpawnPoint> points) { m_playerSpawnPoints = std::move(points); }
+		void SetPlayerSpawnPoints(std::vector<PlayerSpawnPoint> points, Net::NetPrefabId scenePlayer = Net::kInvalidNetPrefab)
+		{
+			m_playerSpawnPoints = std::move(points);
+			m_scenePlayerPrefab = scenePlayer;
+		}
+		/// The player prefab of the loaded scene (the one its placed players are instances of), or
+		/// kInvalidNetPrefab: the content's default player.
+		Net::NetPrefabId ScenePlayerPrefab() const noexcept { return m_scenePlayerPrefab; }
 		std::span<const PlayerSpawnPoint> PlayerSpawnPoints() const noexcept { return m_playerSpawnPoints; }
 
 		/// Server: the intent of an InGame peer's players from its newest command, consuming its
@@ -1235,6 +1243,7 @@ namespace Crucible
 		std::uint64_t                  m_sceneAsset = 0;
 		std::uint64_t                  m_sceneHash = 0;
 		std::vector<PlayerSpawnPoint>  m_playerSpawnPoints;   // Phase 14.6
+		Net::NetPrefabId               m_scenePlayerPrefab = Net::kInvalidNetPrefab;
 	};
 
 #ifdef _MSC_VER

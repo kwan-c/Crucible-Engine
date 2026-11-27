@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          7 November 2026
-* \version       1.0
+* \version       1.1
 * \brief
 *                Scene objects: the network objects a loaded scene already
 *                contains on every machine, and the hash that proves two
@@ -62,6 +62,7 @@
 *    -v1.0       Networking Phase 14.5
 *                placed players listed apart (Networking Phase 14.6)
 *                scene-only objects, per-instance profiles (Phase 14.7)
+*    -v1.1       the scene's player prefab: the one its placed players are instances of
 *
 **************************************************************************/
 #pragma once
@@ -99,7 +100,8 @@ namespace Crucible
 	struct SceneObjectScan
 	{
 		std::vector<SceneObject> objects;   // in scene-id order
-		std::vector<SceneObject> players;   // placed instances of the spawnPerPlayer prefab, in scene-id order
+		std::vector<SceneObject> players;   // placed instances of a spawnPerPlayer prefab, in scene-id order
+		Net::NetPrefabId         playerPrefab = Net::kInvalidNetPrefab;   // the prefab they are instances of (the scene's player)
 		std::vector<SceneProfile> profiles; // the scene profiles its objects use, in id order
 		std::uint64_t            hash = 0;  // over the objects and their subtrees (never 0)
 		std::vector<std::string> skipped;   // one line per NetworkObjectAuthoring left out, with why

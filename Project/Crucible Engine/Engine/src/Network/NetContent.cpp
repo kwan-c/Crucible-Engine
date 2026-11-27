@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.3
+* \version       1.4
 * \brief
 *                NetContent (see the header).
 *
@@ -13,6 +13,7 @@
 *                14.2)
 *    -v1.2       scene profiles (Networking Phase 14.7)
 *    -v1.3       animator signature (Networking C# Phase 7)
+*    -v1.4       keeps every player prefab (IsPlayerPrefab)
 *
 **************************************************************************/
 #include "Network/NetContent.h"
@@ -57,6 +58,7 @@ namespace Crucible
 		for (const Net::NetPrefabId id : m_discovered) m_prefabs.Remove(id);
 		m_discovered.clear();
 		m_playerPrefab = Net::kInvalidNetPrefab;
+		m_playerPrefabs.clear();
 	}
 
 	bool NetContent::Prepare(World& world, const AssetManager& assets, ResourceManager& resources, std::string& error)
@@ -103,13 +105,15 @@ namespace Crucible
 			return false;
 		}
 		m_playerPrefab = found.playerPrefab;
+		m_playerPrefabs = found.playerPrefabs;
 		if (!Recompute(components, error))
 		{
 			ForgetDiscovered();   // refused: nothing of it stays registered
 			return false;
 		}
 		CRU_INFO("[Net] {} network prefab(s) found among {} prefabs{}", m_discovered.size(), found.offered,
-			m_playerPrefab != Net::kInvalidNetPrefab ? std::format(" (player: '{}')", m_prefabs.Desc(m_playerPrefab)->name) : std::string());
+			m_playerPrefab != Net::kInvalidNetPrefab ? std::format(" (player: '{}'{})", m_prefabs.Desc(m_playerPrefab)->name,
+				m_playerPrefabs.size() > 1 ? std::format(", {} player prefabs: each scene uses the one it places", m_playerPrefabs.size()) : std::string()) : std::string());
 		return true;
 	}
 

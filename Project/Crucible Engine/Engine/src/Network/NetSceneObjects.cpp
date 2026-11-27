@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          7 November 2026
-* \version       1.0
+* \version       1.1
 * \brief
 *                ScanSceneObjects (see the header).
 *
@@ -11,6 +11,7 @@
 *    -v1.0       Networking Phase 14.5
 *                placed players listed apart (Networking Phase 14.6)
 *                scene-only objects, per-instance profiles (Phase 14.7)
+*    -v1.1       placed players of any spawnPerPlayer prefab; the scene's player prefab
 *
 **************************************************************************/
 #include "Network/NetSceneObjects.h"
@@ -57,7 +58,7 @@ namespace Crucible
 			if (world.HasComponent<NetworkIdentity>(e)) continue;   // already networked (a proxy, or adopted)
 			const PrefabInstance* instance = world.Read<PrefabInstance>(e);
 			const Net::NetPrefabId prefabProfile = instance != nullptr && instance->isRoot ? content.Prefabs().FindByGuid(instance->prefabAsset) : Net::kInvalidNetPrefab;
-			if (prefabProfile != Net::kInvalidNetPrefab && prefabProfile == content.PlayerPrefab())
+			if (content.IsPlayerPrefab(prefabProfile))
 			{
 				out.players.push_back(SceneObject{ .entity = e, .sceneId = scene.IdOf(e).m_Value, .profile = prefabProfile });   // a spawn point
 				continue;
@@ -112,6 +113,15 @@ namespace Crucible
 		}
 		std::ranges::sort(out.objects, {}, &SceneObject::sceneId);
 		std::ranges::sort(out.players, {}, &SceneObject::sceneId);
+		// The scene's player: the prefab of its first placed player. Placed players of another player
+		// prefab still mark spawn points, but are reported (one scene, one kind of player).
+		if (!out.players.empty())
+		{
+			out.playerPrefab = out.players.front().profile;
+			for (const SceneObject& p : out.players)
+				if (p.profile != out.playerPrefab)
+					out.skipped.push_back(std::format("a placed player of another player prefab ({}): the scene's player is {}", p.profile, out.playerPrefab));
+		}
 
 		// The authored data each machine keeps locally: every component of every entity of each
 		// object's subtree, as EntityIO writes it (runtime components never appear).
