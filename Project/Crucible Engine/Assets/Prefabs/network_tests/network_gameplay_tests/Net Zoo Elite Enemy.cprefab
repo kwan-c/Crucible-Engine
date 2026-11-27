@@ -1,0 +1,203 @@
+{
+    "version": 3,
+    "name": "Net Zoo Elite Enemy",
+    "entities": [
+        {
+            "id": "4E475A4500000001",
+            "parent": -1,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "RigidBody": {
+                    "velocity": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "mass": 1.0,
+                    "useGravity": false,
+                    "drag": 0.0,
+                    "angularDrag": 0.05,
+                    "isKinematic": true,
+                    "constraints": {
+                        "freezePositionX": false,
+                        "freezePositionY": false,
+                        "freezePositionZ": false,
+                        "freezeRotationX": false,
+                        "freezeRotationY": false,
+                        "freezeRotationZ": false
+                    }
+                },
+                "Collider": {
+                    "type": "Capsule",
+                    "size": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "radius": 0.975,
+                    "height": 3.25,
+                    "center": {
+                        "x": 0.0,
+                        "y": 1.625,
+                        "z": 0.0
+                    },
+                    "friction": 0.2,
+                    "bounciness": 0.0,
+                    "layer": "Moving",
+                    "isTrigger": false
+                },
+                "FlowFieldAgent": {
+                    "speed": 6.0,
+                    "acceleration": 20.0,
+                    "angularSpeed": 360.0,
+                    "baseOffset": 0.0,
+                    "startWith": "Nothing",
+                    "stoppingDistance": 2.2,
+                    "slowingDistance": 5.0,
+                    "neighbourRadius": 6.0,
+                    "separationRadius": 2.9250000000000003,
+                    "separationWeight": 1.5,
+                    "alignmentWeight": 0.4,
+                    "radius": 0.975,
+                    "avoidanceDistance": 3.0,
+                    "avoidanceWeight": 2.2
+                },
+                "ScriptComponent": {
+                    "enabled": true,
+                    "assembly": "Managed/Crucible.Scripts.dll",
+                    "namespace": "Crucible.Scripts.NetGameplay",
+                    "class": "NetZooEnemy",
+                    "fields": [
+                        {
+                            "declaringType": "Crucible.Scripts.NetGameplay.NetZooEnemy",
+                            "name": "maximumHealth",
+                            "type": "Single",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 320.0,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.NetGameplay.NetZooEnemy",
+                            "name": "fast",
+                            "type": "Boolean",
+                            "boolean": true,
+                            "integer": 0,
+                            "single": 0.0,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.NetGameplay.NetZooEnemy",
+                            "name": "attackDamage",
+                            "type": "Single",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 25.0,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        }
+                    ]
+                },
+                "EntityName": {
+                    "name": "Net Zoo Elite Enemy"
+                },
+                "NetworkObjectAuthoring": {
+                    "replicated": [
+                        "Transform/Full",
+                        "Animator"
+                    ],
+                    "serverOnly": [
+                        "RigidBody",
+                        "Collider",
+                        "FlowFieldAgent"
+                    ],
+                    "ownerLocalOnly": [],
+                    "enabledReplicated": [],
+                    "syncedChildren": [],
+                    "childEnabledReplicated": [],
+                    "sendPriority": 1.0,
+                    "critical": false,
+                    "allowScenePlacement": true,
+                    "spawnPerPlayer": false
+                }
+            }
+        },
+        {
+            "id": "4E475A4500000002",
+            "parent": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 1.0,
+                        "z": 0.0,
+                        "w": 6.123233995736766e-17
+                    },
+                    "scale": {
+                        "x": 1.3,
+                        "y": 1.3,
+                        "z": 1.3
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 8250815376162455559,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 0,
+                    "materialAsset": 6507507179800756249
+                },
+                "AnimatedModel": {
+                    "controllerAsset": 12182777730310598097,
+                    "clip": 8,
+                    "speed": 1.0,
+                    "loop": true,
+                    "previewInEditor": false,
+                    "playOnStart": true
+                },
+                "EntityName": {
+                    "name": "Visual"
+                }
+            }
+        }
+    ]
+}

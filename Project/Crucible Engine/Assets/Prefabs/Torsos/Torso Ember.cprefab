@@ -1,0 +1,53 @@
+{
+  "version": 3,
+  "name": "Torso Ember",
+  "entities": [
+    {
+      "id": "5452534100000002",
+      "parent": -1,
+      "components": {
+        "Transform": {
+          "positions": { "x": 0.0, "y": 0.0, "z": 0.0 },
+          "rotation": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 },
+          "scale": { "x": 1.0, "y": 1.0, "z": 1.0 }
+        },
+        "MeshRenderer": {
+          "visible": true,
+          "modelAsset": 12862501394589843471,
+          "modelRoot": 4294967295,
+          "materialOverrides": [],
+          "colour": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 0.0 },
+          "meshAsset": 0,
+          "materialAsset": 0
+        },
+        "MaterialParams": {
+          "emissiveScale": 1.0,
+          "custom": { "x": 1.0, "y": 0.55, "z": 0.3 }
+        },
+        "ScriptComponent": {
+          "enabled": true,
+          "assembly": "Managed/Crucible.Scripts.dll",
+          "namespace": "Crucible.Scripts",
+          "class": "TorsoSlot",
+          "fields": [
+            {
+              "declaringType": "Crucible.Scripts.TorsoSlot",
+              "name": "partId",
+              "type": "String",
+              "boolean": false,
+              "integer": 0,
+              "single": 0.0,
+              "real": 0.0,
+              "text": "golem_torso",
+              "stringIsNull": false,
+              "entityId": 0,
+              "assetId": 0
+            }
+          ]
+        },
+        "EntityName": { "name": "Torso Ember" },
+        "EntityTag": { "tag": "Untagged" }
+      }
+    }
+  ]
+}
