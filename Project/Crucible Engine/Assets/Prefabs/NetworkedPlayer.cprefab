@@ -24,20 +24,6 @@
                         "z": 1.0
                     }
                 },
-                "MeshRenderer": {
-                    "visible": true,
-                    "modelAsset": 0,
-                    "modelRoot": 4294967295,
-                    "materialOverrides": [],
-                    "colour": {
-                        "x": 0.5,
-                        "y": 0.5,
-                        "z": 0.5,
-                        "w": 0.5
-                    },
-                    "meshAsset": 5067099792209742713,
-                    "materialAsset": 0
-                },
                 "CharacterController": {
                     "height": 2.0,
                     "radius": 0.5,
@@ -59,9 +45,36 @@
                 "EntityName": {
                     "name": "Player"
                 },
+                "ScriptComponent": {
+                    "scripts": [
+                        {
+                            "enabled": true,
+                            "assembly": "Managed/Crucible.Scripts.dll",
+                            "namespace": "Crucible.Scripts",
+                            "class": "NetPlayerAnimation",
+                            "fields": [
+                                {
+                                    "declaringType": "Crucible.Scripts.NetPlayerAnimation",
+                                    "name": "legsEntityName",
+                                    "type": "String",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "Legs",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0
+                                }
+                            ]
+                        }
+                    ]
+                },
                 "NetworkObjectAuthoring": {
                     "replicated": [
-                        "Transform/Full"
+                        "Transform/Full",
+                        "Animator",
+                        "EnabledMask"
                     ],
                     "serverOnly": [
                         "CharacterController",
@@ -71,7 +84,9 @@
                         "CameraOrbit",
                         "Camera"
                     ],
-                    "enabledReplicated": [],
+                    "enabledReplicated": [
+                        "CharacterController"
+                    ],
                     "sendPriority": 1.0,
                     "critical": true,
                     "allowScenePlacement": true,
@@ -145,6 +160,454 @@
                 },
                 "EntityName": {
                     "name": "Player Camera"
+                }
+            }
+        },
+        {
+            "id": "4E65744D65636801",
+            "parent": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": -1.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 1.0,
+                        "z": 0.0,
+                        "w": 6.123233995736766e-17
+                    },
+                    "scale": {
+                        "x": 0.323529,
+                        "y": 0.323529,
+                        "z": 0.323529
+                    }
+                },
+                "EntityName": {
+                    "name": "Mech Visual"
+                }
+            }
+        },
+        {
+            "id": "4E65744D65636802",
+            "parent": 3,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 8250815376162455563,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 0,
+                    "materialAsset": 0
+                },
+                "AnimatedModel": {
+                    "controllerAsset": 5349696062991956255,
+                    "clip": 1,
+                    "speed": 1.0,
+                    "loop": true,
+                    "previewInEditor": false,
+                    "playOnStart": true
+                },
+                "EntityName": {
+                    "name": "Legs"
+                }
+            }
+        },
+        {
+            "id": "4E65744D65636803",
+            "parent": 4,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "SocketAttachment": {
+                    "enabled": true,
+                    "socketName": "Hip",
+                    "modelAsset": 8250815376162455563,
+                    "node": 2
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 12862501394589843471,
+                    "modelRoot": 31,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 0,
+                    "materialAsset": 0
+                },
+                "AnimatedModel": {
+                    "controllerAsset": 0,
+                    "clip": 2,
+                    "speed": 1.0,
+                    "loop": true,
+                    "previewInEditor": false,
+                    "playOnStart": true
+                },
+                "EntityName": {
+                    "name": "Torso"
+                }
+            }
+        },
+        {
+            "id": "4E65744D65636804",
+            "parent": 5,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "SocketAttachment": {
+                    "enabled": true,
+                    "socketName": "Head",
+                    "modelAsset": 12862501394589843471,
+                    "node": 2
+                },
+                "EntityName": {
+                    "name": "Mount Head"
+                }
+            }
+        },
+        {
+            "id": "4E65744D65636805",
+            "parent": 5,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "SocketAttachment": {
+                    "enabled": true,
+                    "socketName": "ShoulderL",
+                    "modelAsset": 12862501394589843471,
+                    "node": 16
+                },
+                "EntityName": {
+                    "name": "Mount ShoulderL"
+                }
+            }
+        },
+        {
+            "id": "4E65744D65636806",
+            "parent": 5,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "SocketAttachment": {
+                    "enabled": true,
+                    "socketName": "ShoulderR",
+                    "modelAsset": 12862501394589843471,
+                    "node": 27
+                },
+                "EntityName": {
+                    "name": "Mount ShoulderR"
+                }
+            }
+        },
+        {
+            "id": "4E65744D65636807",
+            "parent": 5,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "SocketAttachment": {
+                    "enabled": true,
+                    "socketName": "ArmL",
+                    "modelAsset": 12862501394589843471,
+                    "node": 9
+                },
+                "EntityName": {
+                    "name": "Mount ArmL"
+                }
+            }
+        },
+        {
+            "id": "4E65744D65636808",
+            "parent": 5,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "SocketAttachment": {
+                    "enabled": true,
+                    "socketName": "ArmR",
+                    "modelAsset": 12862501394589843471,
+                    "node": 20
+                },
+                "EntityName": {
+                    "name": "Mount ArmR"
+                }
+            }
+        },
+        {
+            "id": "4E65744D65636809",
+            "parent": 6,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Part Head"
+                }
+            }
+        },
+        {
+            "id": "4E65744D6563680A",
+            "parent": 9,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Part Sword"
+                }
+            }
+        },
+        {
+            "id": "4E65744D6563680B",
+            "parent": 11,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 7097893871555608585,
+                    "modelRoot": 7,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 0,
+                    "materialAsset": 0
+                },
+                "AnimatedModel": {
+                    "controllerAsset": 0,
+                    "clip": 0,
+                    "speed": 1.0,
+                    "loop": true,
+                    "previewInEditor": false,
+                    "playOnStart": true
+                },
+                "EntityName": {
+                    "name": "Model"
+                }
+            }
+        },
+        {
+            "id": "4E65744D6563680C",
+            "parent": 12,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 2.843831693614179,
+                        "y": 0.258564677118929,
+                        "z": -0.8868635100869189
+                    },
+                    "rotation": {
+                        "x": 0.5223868594212189,
+                        "y": -0.48136760299402476,
+                        "z": -0.5456447244900339,
+                        "w": -0.4445997791586377
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 11181561406948196535,
+                    "modelRoot": 31,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 0,
+                    "materialAsset": 0
+                },
+                "AnimatedModel": {
+                    "controllerAsset": 15044359590195862093,
+                    "clip": 0,
+                    "speed": 1.0,
+                    "loop": true,
+                    "previewInEditor": false,
+                    "playOnStart": true
+                },
+                "EntityName": {
+                    "name": "Model"
                 }
             }
         }

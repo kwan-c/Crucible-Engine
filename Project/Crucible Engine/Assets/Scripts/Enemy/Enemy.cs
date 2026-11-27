@@ -106,6 +106,11 @@ namespace Crucible.Scripts
 
         public override void OnUpdate(float deltaTime)
         {
+            if (!useHordeCoordination || (PressureTarget != null && EnemyHordeCoordinator.Active == null)) ClearPressure();
+            if (meleeHost != null && (!useHordeCoordination || meleeHost != EnemyHordeCoordinator.Active)) ReleaseMeleeAttack();
+            if (!useRangedPositioning && HasRangedPosition) ranged.Clear();
+            if (specialHost != null && (!useSpecialCoordinator || specialHost != EnemySpecialCoordinator.Active)) ReleaseSpecialAttack();
+            if (attacking && (brain == null || !Entity.IsEnabled<StateGraphAgent>())) CancelAttack();
             if (pushOverPending) PushOver();  // the death topple's kick, a frame after unlocking
             Twist(deltaTime);
             UpdatePush(deltaTime);            // a melee push's slide, or standing still in a hit stop (below)
@@ -156,6 +161,7 @@ namespace Crucible.Scripts
         // of the last session in it for the next.
         public override void OnDestroy()
         {
+            CancelAttack();
             All.Remove(this);
             MechCombatTargets.Unregister(Entity);
         }
@@ -331,6 +337,7 @@ namespace Crucible.Scripts
             velocity = new Vector3(velocity.X, 0f, velocity.Z);   // upright: a living golem isn't lifted
             // Only a dynamic body: its speed is what the slide sets.
             if (velocity.Length < 0.01f || !(seconds > 0f) || !HasComponent<RigidBody>() || RigidBody.IsKinematic) return;
+            if (movementHeld) CancelAttack();
 
             // A second hit adds to the slide and restarts the clock, capped at 22 m/s (Unity's cap).
             pushVelocity = pushVelocity + velocity;
@@ -382,10 +389,15 @@ namespace Crucible.Scripts
         void UpdateLegs()
         {
             if (agent == null || IsDead) return;
-            bool pause = pushLeft > 0f || IsFrozen;
+            bool pause = pushLeft > 0f || IsFrozen || movementHeld;
             if (pause == legsPaused) return;
+            if (pause)
+            {
+                if (!Entity.IsEnabled<FlowFieldAgent>()) return;
+                Entity.SetEnabled<FlowFieldAgent>(false);
+            }
+            else Entity.SetEnabled<FlowFieldAgent>(true);
             legsPaused = pause;
-            Entity.SetEnabled<FlowFieldAgent>(!pause);
         }
     }
 }

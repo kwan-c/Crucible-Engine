@@ -86,6 +86,10 @@ void Crucible::Hierarchy::Update(float dt) {
 	// The scene open at startup was loaded before the prefab hooks existed: check it once.
 	PrefabAuthoring::RunStartupCheck(m_world);
 
+	// Before Begin: a change made while this panel's tab is hidden is still revealed (m_reveal and
+	// m_scrollToEntity are only cleared once the tree has actually been drawn).
+	RevealSelectionIfChanged();
+
 	if (ImGui::Begin(m_panelName.c_str(), nullptr, m_flags)) {
 		if (ImGui::BeginMenuBar()) {
 			if (ImGui::BeginMenu("+")) {
@@ -211,7 +215,8 @@ void Crucible::Hierarchy::Update(float dt) {
 
 		// Shift+click ranges and click-on-release need every row, so they are settled here.
 		ResolveClicks();
-		m_revealEntity = kNullEntity;   // its rows were opened this frame (see DrawEntityNode)
+		m_reveal.clear();                  // their rows were opened this frame (see DrawEntityNode)
+		m_scrollToEntity = kNullEntity;    // scrolled to this frame, if it needed it
 
 		// Drop on the empty space below the tree: make the dragged entity a root again. A custom
 		// target over a plain rectangle (not an item), so right-clicking that space still opens the
@@ -299,6 +304,31 @@ void Crucible::Hierarchy::Update(float dt) {
 	ImGui::End();
 }
 
+void Crucible::Hierarchy::RevealSelectionIfChanged() {
+	auto inspector = EditorManager::GetInstance().GetPanel<Inspector>(ImguiPanels::INSPECTOR);
+	Entity const active = inspector ? inspector->GetSelectedEntity() : kNullEntity;
+	if (active == m_lastActive) { return; }
+	m_lastActive = active;
+	if (!active.IsValid() || !m_world.IsAlive(active)) { return; }
+
+	// Every selected entity's row opens (a Ctrl/Shift multi-selection in the Scene view), but only
+	// the active one is scrolled to.
+	for (Entity const e : inspector->GetSelection()) {
+		if (m_world.IsAlive(e)) { m_reveal.push_back(e); }
+	}
+	m_scrollToEntity = active;
+}
+
+bool Crucible::Hierarchy::IsRevealAncestor(Entity entity) const {
+	for (Entity const target : m_reveal) {
+		if (!m_world.IsAlive(target)) { continue; }
+		for (Entity p = m_world.GetParent(target); p.IsValid(); p = m_world.GetParent(p)) {
+			if (p == entity) { return true; }
+		}
+	}
+	return false;
+}
+
 void Crucible::Hierarchy::DrawEntityNode(Entity entity) {
 	std::uint32_t const childCount = m_world.ChildCount(entity);
 
@@ -324,6 +354,11 @@ void Crucible::Hierarchy::DrawEntityNode(Entity entity) {
 	ImVec4 rowColour = prefabTint ? prefabColour : ImGui::GetStyleColorVec4(ImGuiCol_Text);
 	if (sceneHidden) { rowColour.w *= 0.45f; }
 	bool const tinted = prefabTint || sceneHidden;
+	// Something to reveal (just created, or selected elsewhere) is under this row: open it once so
+	// that entity's row shows. Must come BEFORE TreeNodeEx - SetNextItemOpen applies to the next
+	// tree node drawn - so this row opens now and its children are drawn this same frame.
+	if (childCount > 0 && IsRevealAncestor(entity)) { ImGui::SetNextItemOpen(true); }
+
 	if (tinted) { ImGui::PushStyleColor(ImGuiCol_Text, rowColour); }
 	bool const open = ImGui::TreeNodeEx("##node", flags, "%s", label.c_str());
 	if (tinted) { ImGui::PopStyleColor(); }
@@ -331,10 +366,13 @@ void Crucible::Hierarchy::DrawEntityNode(Entity entity) {
 	// item" (clicks, drag and drop, the right-click menu) is done.
 	ImVec2 const rowMin = ImGui::GetItemRectMin();
 	ImVec2 const rowMax = ImGui::GetItemRectMax();
-	// A UI element was just created somewhere under this row: open it once, so the new entity shows.
-	if (childCount > 0 && m_revealEntity.IsValid()) {
-		for (Entity p = m_world.GetParent(m_revealEntity); p.IsValid(); p = m_world.GetParent(p)) {
-			if (p == entity) { ImGui::SetNextItemOpen(true); break; }
+
+	// Selected elsewhere (Scene view, UI Editor...): bring the row into view, centred - but only
+	// if it is not already fully visible, so a click in the Hierarchy itself never jumps the list.
+	if (entity == m_scrollToEntity) {
+		ImGuiWindow const* window = ImGui::GetCurrentWindow();
+		if (rowMin.y < window->InnerClipRect.Min.y || rowMax.y > window->InnerClipRect.Max.y) {
+			ImGui::SetScrollHereY(0.5f);
 		}
 	}
 
@@ -725,7 +763,7 @@ void Crucible::Hierarchy::RunPendingAction() {
 		// Selects the copy and records its own undo step (PrefabAuthoring::PlacePrefab).
 		Entity const placed = PrefabAuthoring::PlacePrefab(m_world, m_pendingPrefab, m_pendingParent);
 		if (m_world.IsAlive(placed)) {
-			m_revealEntity = placed;   // open its parent's rows so the new row is visible
+			m_reveal.push_back(placed);   // open its parent's rows so the new row is visible
 			m_rangeAnchor  = placed;
 		}
 		m_pendingPrefab.clear();
@@ -1244,7 +1282,7 @@ void Crucible::Hierarchy::CreatePlayerObject() {
 	// Select first, for the same history-ordering reason as CreateLightObject.
 	if (auto inspector = EditorManager::GetInstance().GetPanel<Inspector>(ImguiPanels::INSPECTOR))
 		inspector->SetSelectedEntity(player);
-	m_revealEntity = player;
+	m_reveal.push_back(player);
 
 	// Three entities in one undo step, the way a paste is recorded: a delete of the new
 	// subtree, run backwards. Undo removes the whole rig; redo rebuilds it, parents intact.
@@ -1320,7 +1358,7 @@ void Crucible::Hierarchy::CreateWorldCanvasObject() {
 	// Select first, for the same history-ordering reason as CreateLightObject.
 	if (auto inspector = EditorManager::GetInstance().GetPanel<Inspector>(ImguiPanels::INSPECTOR))
 		inspector->SetSelectedEntity(e);
-	m_revealEntity = e;
+	m_reveal.push_back(e);
 
 	UndoHistory& history = EditorManager::GetInstance().GetHistory();
 	history.Push(std::make_unique<CreateEntityCommand>(
@@ -1396,7 +1434,7 @@ void Crucible::Hierarchy::CreateUIElement(const std::string& kind, bool worldSpa
 	// Select first, for the same history-ordering reason as CreateLightObject.
 	if (inspector) { inspector->SetSelectedEntity(element); }
 	m_rangeAnchor = element;
-	m_revealEntity = element;
+	m_reveal.push_back(element);
 
 	// Recorded the way RecordCreated records a paste: a delete of the new subtree, run backwards.
 	// The delete remembers each entity's parent and sibling position, so a redo puts the element

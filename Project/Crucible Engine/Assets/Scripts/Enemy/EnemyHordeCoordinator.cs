@@ -1,98 +1,102 @@
 using System;
-using Crucible;
+using System.Collections.Generic;
 
 namespace Crucible.Scripts
 {
-    // Port of Gam3333's EnemyHordeCoordinator (with EnemyHordePressure and the pressure part of
-    // EnemyCoordinationMember): it shares where melee golems should stand round their target,
-    // never what they do - the graph still decides when to move and when to swing.
-    //
-    // Opt-in per level, as in Unity: put this script on one entity in the scene. With none,
-    // melee golems chase and Arrive as before. Unity only had one in its behaviour playtest
-    // scene; its mission scenes ran without, like ours do now.
-    //
-    // Continuous Pressure (Unity's default style, the only one so far): every melee golem
-    // within localRadius of its target heads for the point on the attack ring along its OWN
-    // bearing from the target - plus a small fixed sideways bias, different per golem - and
-    // walks there at full speed, slowing only in the last 1.6 m. Nobody hands out places:
-    // the surround falls out of every golem aiming at its own side of the player, and the
-    // bodies that meet on the ring sliding round each other. The point is re-planned every
-    // planningInterval, or at once when the target has moved a metre.
-    //
-    // Further out, or where the point is blocked (a wall, a ledge, no ground), it returns
-    // false and the golem chases on the flow field as usual.
-    //
-    // Still to come (step 4): Unity's other style, Reserved Positions - 4 attack and 8
-    // waiting slots round the target, with leases - and its melee attack pool.
+    // Shares destinations and, in the optional reserved mode, attack turns.
+    // EnemyController is the only class that sends those destinations to the agent.
     public sealed class EnemyHordeCoordinator : EntityScript
     {
-        public float localRadius = 10f;          // metres from the target where golems start taking a ring point
-        public float planningInterval = 0.2f;    // seconds a ring point is kept before it is worked out again
-
-        // Unity's position goal: full speed until this close, then slow to a stop.
+        public float localRadius = 10f;
+        public float planningInterval = .2f;
+        public float pressureSpacing = 1.8f;
+        public bool reservedPositions;
+        public int attackPositions = 4;
+        public int waitingPositions = 8;
+        public float waitingRadius = 5.2f;
+        public int maximumMeleeAttacks = 2;
+        public float meleeStartSpacing = .18f;
         public const float SlowingDistance = 1.6f;
-        public const float StoppingDistance = 0.15f;
+        public const float StoppingDistance = .15f;
+        static readonly float[] angles = { 0f, 28f, -28f, 55f, -55f, 85f, -85f, 120f, -120f, 180f };
+        readonly List<Vector3> neighbours = new List<Vector3>();
+        readonly EnemyAttackReservations pool = new EnemyAttackReservations(e => e.useHordeCoordination && e.melee);
+        static EnemyHordeCoordinator instance;
+        public static EnemyHordeCoordinator Active { get { return instance != null && instance.Entity.IsActive
+            && instance.Enabled && instance.Entity.IsEnabled<EntityScript>() ? instance : null; } }
 
-        // The one in the scene (Unity found it by FindAnyObjectByType). Null = no coordination.
-        public static EnemyHordeCoordinator Active { get; private set; }
-
-        public override void OnCreate()
+        public override void OnCreate() { if (instance == null || !instance.Entity.IsAlive) instance = this; }
+        public override void OnDestroy() { if (instance == this) instance = null; pool.Clear(); }
+        public override void OnUpdate(float dt)
         {
-            if (Active != null && Active != this)
-                Log.Warning("[EnemyHordeCoordinator] more than one in the scene - using " + Entity.Name);
-            Active = this;
+            if (reservedPositions) pool.Prune(Time.ElapsedTime);
+            else pool.Clear();
+        }
+        internal bool TryAdmit(Enemy e)
+        {
+            return !reservedPositions || e.DistanceToTarget > localRadius
+                || pool.TryAcquire(e, maximumMeleeAttacks, meleeStartSpacing, float.MaxValue);
+        }
+        internal void Release(Enemy e) { pool.Release(e); }
+        internal bool NeedsWaitingPosition(Enemy e)
+        {
+            return reservedPositions && !e.previewSpinnerWindup && e.DistanceToTarget <= localRadius
+                && pool.AtCapacity(e, maximumMeleeAttacks);
         }
 
-        // A static outlives Play: without this, the next session would start with a dead one.
-        public override void OnDestroy()
-        {
-            if (Active == this) Active = null;
-        }
-
-        // Unity's Eligible: a melee golem that is up, has noticed its target, and is within
-        // localRadius of it; and the target is still alive.
-        bool Eligible(Enemy member)
-        {
-            if (member == null || !member.IsReady || member.UsesRangedPositioning || !member.melee) return false;
-            if (!member.TargetDetected || ReferenceEquals(member.Target, null) || member.DistanceToTarget > localRadius) return false;
-            CombatHealth health = CombatHealth.Find(member.Target);
-            return health != null && !health.IsDead && health.Entity.IsActive;
-        }
-
-        // Unity's TryPressurePosition: where "member" should go to keep up the pressure.
         public bool TryPressurePosition(Enemy member, out Vector3 position)
         {
             position = Vector3.Zero;
-            if (!Eligible(member)) { member.ClearPressure(); return false; }
-
-            // Keep the last plan for planningInterval while the target hasn't moved a metre.
+            if (member == null) return false;
+            if (!member.useHordeCoordination || !member.melee || !member.TargetDetected || !member.IsReady
+                || member.Target == null || member.DistanceToTarget > localRadius || member.AttackInProgress)
+            { member.ClearPressure(); return false; }
             Vector3 target = member.Target.Transform.WorldPosition;
-            if (member.HasPressureGoal && member.PressureTarget == member.Target && Time.ElapsedTime < member.PressurePlanAt
-                && Flat(target - member.PressurePlannedTarget).Length < 1f)
+            bool waiting = NeedsWaitingPosition(member);
+            if (member.PressureTarget == member.Target && member.PressureWaiting == waiting
+                && Time.ElapsedTime < member.PressurePlanAt && Flat(target - member.PressurePlannedTarget).Length < 1f)
+            { position = member.PressureGoal; return member.HasPressureGoal; }
+
+            neighbours.Clear();
+            foreach (Enemy other in Enemy.All)
             {
-                position = member.PressureGoal;
-                return true;
+                if (other == member || !other.melee || !other.useHordeCoordination || other.Target != member.Target
+                    || !other.IsReady || other.DistanceToTarget > localRadius) continue;
+                neighbours.Add(other.HasPressureGoal && other.PressureTarget == member.Target
+                    && !other.AttackInProgress ? other.PressureGoal : other.Position);
             }
-
-            // Its own bearing from the target (straight in from where it is), and across it.
+            float radius = Math.Max(member.BodyRadius + .4f, member.attackRange - .12f);
             Vector3 radial = Flat(member.Position - target);
-            radial = radial.Length > 1e-3f ? radial.Normalized : member.Facing * -1f;
-            Vector3 tangent = Vector3.Cross(Vector3.Up, radial);
-
-            // On the ring at attack range - but never so close the bodies overlap - nudged
-            // sideways by this golem's own bias, so golems on the same bearing don't all
-            // aim at one point.
-            float ring = Math.Max(member.BodyRadius + 0.4f, member.attackRange - 0.12f);
-            Vector3 candidate = target + radial * ring + tangent * member.ApproachBias;
-
-            Vector3 goal;
-            if (!member.TryGoal(candidate, out goal)) { member.ClearPressure(); return false; }   // flow field instead
-
-            member.SetPressureGoal(goal, member.Target, target, Time.ElapsedTime + planningInterval);
-            position = goal;
-            return true;
+            radial = radial.Length > .01f ? radial.Normalized : member.Facing * -1f;
+            bool slots = reservedPositions && !member.previewSpinnerWindup;
+            bool found = false;
+            if (!waiting) found = FindSpot(member, target, radial, radius, slots ? attackPositions : 0, out position);
+            if (!found && slots) found = FindSpot(member, target, radial, Math.Max(radius + 1f, waitingRadius), waitingPositions, out position);
+            member.SetPressureGoal(position, member.Target, target, Time.ElapsedTime + Math.Max(.1f, planningInterval), found, waiting);
+            return found;
         }
 
+        bool FindSpot(Enemy member, Vector3 target, Vector3 radial, float radius, int slots, out Vector3 position)
+        {
+            position = Vector3.Zero;
+            int count = slots == 0 ? angles.Length : Math.Max(2, Math.Min(24, slots));
+            float step = 360f / count;
+            float nearest = (float)Math.Round(Math.Atan2(radial.X, radial.Z) * 180 / Math.PI / step) * step;
+            float sign = member.ApproachBias < 0f ? -1f : 1f;
+            for (int i = 0; i < count; i++)
+            {
+                float angle = slots == 0 ? angles[i] * sign + member.ApproachBias * 12f
+                    : nearest + ((i + 1) / 2) * (i % 2 == 0 ? -step : step);
+                Vector3 dir = Quaternion.AngleAxis(angle, Vector3.Up) * (slots == 0 ? radial : new Vector3(0, 0, 1));
+                Vector3 candidate = target + dir * radius;
+                bool occupied = false;
+                foreach (Vector3 other in neighbours)
+                    if (Flat(other - candidate).Length < pressureSpacing) { occupied = true; break; }
+                if (!occupied && member.TryGoal(candidate, out position)
+                    && (!member.previewSpinnerWindup || member.HasChargeLaneFrom(position))) return true;
+            }
+            return false;
+        }
         static Vector3 Flat(Vector3 v) { return new Vector3(v.X, 0f, v.Z); }
     }
 }

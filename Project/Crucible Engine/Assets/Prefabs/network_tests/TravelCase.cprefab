@@ -1,0 +1,168 @@
+{
+    "version": 3,
+    "name": "TravelCase",
+    "entities": [
+        {
+            "id": "5472617643617311",
+            "parent": -1,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 0.9,
+                        "y": 0.6,
+                        "z": 0.6
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.95,
+                        "y": 0.6,
+                        "z": 0.15,
+                        "w": 1.0
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 0
+                },
+                "EntityName": {
+                    "name": "Travel Case"
+                },
+                "ScriptComponent": {
+                    "scripts": [
+                        {
+                            "enabled": true,
+                            "assembly": "Managed/Crucible.Scripts.dll",
+                            "namespace": "Crucible.Scripts",
+                            "class": "TravelCase",
+                            "fields": []
+                        }
+                    ]
+                },
+                "NetworkObjectAuthoring": {
+                    "replicated": [
+                        "Transform/Full",
+                        "NetVariables",
+                        "NetData"
+                    ],
+                    "serverOnly": [],
+                    "ownerLocalOnly": [],
+                    "enabledReplicated": [],
+                    "syncedChildren": [],
+                    "childEnabledReplicated": [],
+                    "sendPriority": 1.0,
+                    "critical": false,
+                    "allowScenePlacement": true,
+                    "spawnPerPlayer": false
+                }
+            }
+        },
+        {
+            "id": "5472617643617312",
+            "parent": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 2.2,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.1111111111111112,
+                        "y": 1.6666666666666667,
+                        "z": 1.6666666666666667
+                    }
+                },
+                "WorldText": {
+                    "text": "Travel Case",
+                    "colour": {
+                        "x": 1.0,
+                        "y": 0.8,
+                        "z": 0.4,
+                        "w": 1.0
+                    },
+                    "fontAsset": 0,
+                    "fontSize": 0.26,
+                    "size": {
+                        "x": 4.0,
+                        "y": 1.4
+                    },
+                    "pivot": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "billboard": "FaceCamera",
+                    "alwaysOnTop": true,
+                    "doubleSided": true,
+                    "intensity": 1.0,
+                    "fade": false,
+                    "fadeStart": 25.0,
+                    "fadeEnd": 40.0,
+                    "horizontalAlign": "Center",
+                    "verticalAlign": "Middle",
+                    "wrap": false,
+                    "overflow": "Overflow",
+                    "lineSpacing": 1.0,
+                    "characterSpacing": 0.0,
+                    "richText": false,
+                    "bold": true,
+                    "underline": false,
+                    "bestFit": false,
+                    "minFontSize": 0.1,
+                    "maxFontSize": 1.0,
+                    "outline": false,
+                    "outlineColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "outlineWidth": 0.02,
+                    "glow": false,
+                    "glowColour": {
+                        "x": 1.0,
+                        "y": 0.85,
+                        "z": 0.4,
+                        "w": 0.8
+                    },
+                    "glowWidth": 0.03,
+                    "glowSoftness": 0.5,
+                    "shadow": true,
+                    "shadowColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.6
+                    },
+                    "shadowOffset": {
+                        "x": 0.02,
+                        "y": 0.02
+                    },
+                    "shadowSoftness": 0.0
+                },
+                "EntityName": {
+                    "name": "Case Label"
+                }
+            }
+        }
+    ]
+}

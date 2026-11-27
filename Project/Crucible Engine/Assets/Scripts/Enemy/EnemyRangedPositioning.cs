@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using Crucible;
 
 namespace Crucible.Scripts
@@ -27,6 +28,10 @@ namespace Crucible.Scripts
         Entity target;
         Vector3 plannedTarget;
         float planAt;
+        float checkCrowdAt;
+        bool crowded;
+        readonly List<Vector3> peerPositions = new List<Vector3>();
+        readonly List<Vector3> peerGoals = new List<Vector3>();
 
         public bool HasGoal { get; private set; }
         public Vector3 Goal { get; private set; }
@@ -36,17 +41,20 @@ namespace Crucible.Scripts
         public void Clear() { HasGoal = false; target = null; planAt = 0f; }
 
         // Another shooter after the same target closer than "spacing"?
-        public bool Crowded(float spacing)
+        public bool Crowded(float spacing, float interval)
         {
+            if (Time.ElapsedTime < checkCrowdAt) return crowded;
+            checkCrowdAt = Time.ElapsedTime + Math.Max(.1f, interval);
+            crowded = false;
             foreach (Enemy other in Enemy.All)
-                if (RangedPeer(other) && Flat(other.Position - owner.Position).Length < spacing) return true;
-            return false;
+                if (RangedPeer(other) && Flat(other.Position - owner.Position).Length < spacing) { crowded = true; break; }
+            return crowded;
         }
 
         bool RangedPeer(Enemy other)
         {
             return other != null && other != owner && other.Entity.IsActive && other.Target == owner.Target
-                && other.UsesRangedPositioning && other.IsReady;
+                && other.IsRanged && other.IsReady;
         }
 
         public bool TryGetGoal(float minimum, float interval, float spacing, out Vector3 position)
@@ -64,7 +72,15 @@ namespace Crucible.Scripts
             }
             target = current;
             plannedTarget = targetPosition;
-            planAt = Time.ElapsedTime + interval;
+            planAt = Time.ElapsedTime + Math.Max(.1f, interval);
+            peerPositions.Clear();
+            peerGoals.Clear();
+            foreach (Enemy other in Enemy.All)
+            {
+                if (!RangedPeer(other)) continue;
+                peerPositions.Add(other.Position);
+                if (other.HasRangedPosition) peerGoals.Add(other.RangedPosition);
+            }
 
             float maximum = owner.attackRange - 0.25f;
             float near = Math.Min(minimum + 0.65f, maximum);
@@ -87,12 +103,8 @@ namespace Crucible.Scripts
                     if (!owner.TryGoal(candidate, out spot) || !owner.HasClearRangedPathFrom(spot)) continue;
 
                     float score = Flat(spot - owner.Position).Length + Math.Abs(radius - preferred) * 0.4f;
-                    foreach (Enemy other in Enemy.All)
-                    {
-                        if (!RangedPeer(other)) continue;
-                        score += Math.Max(0f, spacing - Flat(other.Position - spot).Length) * 4f;
-                        if (other.HasRangedPosition) score += Math.Max(0f, spacing - Flat(other.RangedPosition - spot).Length) * 2f;
-                    }
+                    foreach (Vector3 peer in peerPositions) score += Math.Max(0f, spacing - Flat(peer - spot).Length) * 4f;
+                    foreach (Vector3 goal in peerGoals) score += Math.Max(0f, spacing - Flat(goal - spot).Length) * 2f;
                     if (HasGoal && Flat(spot - Goal).Length < 0.7f) score -= 0.8f;   // stick with the plan unless clearly better
                     if (score >= bestScore) continue;
                     bestScore = score;

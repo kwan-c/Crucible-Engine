@@ -1,0 +1,3003 @@
+{
+    "version": 1,
+    "name": "network_sync_test",
+    "entities": [
+        {
+            "id": "1484B8DE91A4C043",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 14.452857971191406,
+                        "y": 0.7211616039276123,
+                        "z": -0.18589746952056885
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 29.299999237060547
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 0
+                },
+                "Collider": {
+                    "type": "Box",
+                    "size": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "radius": 0.5,
+                    "height": 2.0,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "friction": 0.20000000298023224,
+                    "bounciness": 0.0,
+                    "layer": "NonMoving",
+                    "isTrigger": false
+                },
+                "EntityName": {
+                    "name": "Wall 4"
+                },
+                "NetworkObjectAuthoring": {
+                    "replicated": [],
+                    "serverOnly": [
+                        "Collider"
+                    ],
+                    "ownerLocalOnly": [],
+                    "enabledReplicated": [],
+                    "sendPriority": 1.0,
+                    "critical": false,
+                    "allowScenePlacement": true,
+                    "spawnPerPlayer": false
+                }
+            }
+        },
+        {
+            "id": "4484B8DE91EC4047",
+            "parent": "A484B8DE91EC4045",
+            "siblingIndex": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 1.5,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "CameraOrbit": {
+                    "sensitivity": 0.10000000149011612,
+                    "stickSpeed": 180.0,
+                    "minPitch": -30.0,
+                    "maxPitch": 70.0,
+                    "yaw": 0.0,
+                    "pitch": 0.0
+                },
+                "EntityName": {
+                    "name": "Camera Pivot"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 13007724889799262249,
+                    "fileId": 3784352852944486437,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
+                }
+            }
+        },
+        {
+            "id": "4C84B8DE90F68037",
+            "parent": "8484B8DE90F68033",
+            "siblingIndex": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 1.5,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "CameraOrbit": {
+                    "sensitivity": 0.10000000149011612,
+                    "stickSpeed": 180.0,
+                    "minPitch": -30.0,
+                    "maxPitch": 70.0,
+                    "yaw": 0.0,
+                    "pitch": 0.0
+                },
+                "EntityName": {
+                    "name": "Camera Pivot"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 13007724889799262249,
+                    "fileId": 3784352852944486437,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
+                }
+            }
+        },
+        {
+            "id": "6C84B8DE90F6803B",
+            "parent": "4C84B8DE90F68037",
+            "siblingIndex": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 5.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "Camera": {
+                    "enabled": true,
+                    "fovY": 60.0,
+                    "nearZ": 0.10000000149011612,
+                    "farZ": 1000.0,
+                    "priority": 1
+                },
+                "EntityName": {
+                    "name": "Player Camera"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 13007724889799262249,
+                    "fileId": 2631431348337639463,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
+                }
+            }
+        },
+        {
+            "id": "8484B8DE90F68033",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": -0.8703573942184448,
+                        "y": 1.178094744682312,
+                        "z": 11.54850959777832
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 5067099792209742713,
+                    "materialAsset": 0
+                },
+                "CharacterController": {
+                    "height": 2.0,
+                    "radius": 0.5,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "slopeLimit": 45.0,
+                    "stepOffset": 0.30000001192092896,
+                    "pushStrength": 100.0,
+                    "layer": "Player"
+                },
+                "PlayerController": {
+                    "moveSpeed": 6.0,
+                    "jumpHeight": 1.5,
+                    "faceCamera": true
+                },
+                "EntityName": {
+                    "name": "Player Spwanpoint 2"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 13007724889799262249,
+                    "fileId": 3207892100641062947,
+                    "isRoot": true,
+                    "prefabHash": 5299553253888536589,
+                    "overrides": []
+                },
+                "NetworkObjectAuthoring": {
+                    "replicated": [
+                        "Transform/Full"
+                    ],
+                    "serverOnly": [
+                        "CharacterController",
+                        "PlayerController"
+                    ],
+                    "ownerLocalOnly": [
+                        "CameraOrbit",
+                        "Camera"
+                    ],
+                    "enabledReplicated": [],
+                    "sendPriority": 1.0,
+                    "critical": true,
+                    "allowScenePlacement": true,
+                    "spawnPerPlayer": true
+                }
+            }
+        },
+        {
+            "id": "9484B8DE91EC4049",
+            "parent": "4484B8DE91EC4047",
+            "siblingIndex": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 5.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "Camera": {
+                    "enabled": true,
+                    "fovY": 60.0,
+                    "nearZ": 0.10000000149011612,
+                    "farZ": 1000.0,
+                    "priority": 1
+                },
+                "EntityName": {
+                    "name": "Player Camera"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 13007724889799262249,
+                    "fileId": 2631431348337639463,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
+                }
+            }
+        },
+        {
+            "id": "A484B8DE91A4C03D",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": -0.07767963409423828,
+                        "y": 0.7062951326370239,
+                        "z": 15.319527626037598
+                    },
+                    "rotation": {
+                        "x": -4.2146845657953236e-07,
+                        "y": 0.7071067690849304,
+                        "z": 4.2146845657953236e-07,
+                        "w": 0.7071067690849304
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 30.25
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 0
+                },
+                "Collider": {
+                    "type": "Box",
+                    "size": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "radius": 0.5,
+                    "height": 2.0,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "friction": 0.20000000298023224,
+                    "bounciness": 0.0,
+                    "layer": "NonMoving",
+                    "isTrigger": false
+                },
+                "EntityName": {
+                    "name": "Wall 2"
+                },
+                "NetworkObjectAuthoring": {
+                    "replicated": [
+                        "Transform/Full"
+                    ],
+                    "serverOnly": [
+                        "Collider"
+                    ],
+                    "ownerLocalOnly": [],
+                    "enabledReplicated": [],
+                    "sendPriority": 1.0,
+                    "critical": false,
+                    "allowScenePlacement": true,
+                    "spawnPerPlayer": false
+                }
+            }
+        },
+        {
+            "id": "A484B8DE91A4C041",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": -0.13608551025390625,
+                        "y": 0.7086528539657593,
+                        "z": -14.62765884399414
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.7071067690849304,
+                        "z": 0.0,
+                        "w": 0.7071067690849304
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 29.299999237060547
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 0
+                },
+                "Collider": {
+                    "type": "Box",
+                    "size": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "radius": 0.5,
+                    "height": 2.0,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "friction": 0.20000000298023224,
+                    "bounciness": 0.0,
+                    "layer": "NonMoving",
+                    "isTrigger": false
+                },
+                "EntityName": {
+                    "name": "Wall 3"
+                },
+                "NetworkObjectAuthoring": {
+                    "replicated": [],
+                    "serverOnly": [
+                        "Collider"
+                    ],
+                    "ownerLocalOnly": [],
+                    "enabledReplicated": [],
+                    "sendPriority": 1.0,
+                    "critical": false,
+                    "allowScenePlacement": true,
+                    "spawnPerPlayer": false
+                }
+            }
+        },
+        {
+            "id": "A484B8DE91EC4045",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 8.798883438110352,
+                        "y": 1.3622276782989502,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 5067099792209742713,
+                    "materialAsset": 0
+                },
+                "CharacterController": {
+                    "height": 2.0,
+                    "radius": 0.5,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "slopeLimit": 45.0,
+                    "stepOffset": 0.30000001192092896,
+                    "pushStrength": 100.0,
+                    "layer": "Player"
+                },
+                "PlayerController": {
+                    "moveSpeed": 6.0,
+                    "jumpHeight": 1.5,
+                    "faceCamera": true
+                },
+                "EntityName": {
+                    "name": "Player SpawnPoint 3"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 13007724889799262249,
+                    "fileId": 3207892100641062947,
+                    "isRoot": true,
+                    "prefabHash": 5299553253888536589,
+                    "overrides": []
+                },
+                "NetworkObjectAuthoring": {
+                    "replicated": [
+                        "Transform/Full"
+                    ],
+                    "serverOnly": [
+                        "CharacterController",
+                        "PlayerController"
+                    ],
+                    "ownerLocalOnly": [
+                        "CameraOrbit",
+                        "Camera"
+                    ],
+                    "enabledReplicated": [],
+                    "sendPriority": 1.0,
+                    "critical": true,
+                    "allowScenePlacement": true,
+                    "spawnPerPlayer": true
+                }
+            }
+        },
+        {
+            "id": "B484B8DE8FCDC013",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 2.999563217163086,
+                        "y": 0.9516667127609253,
+                        "z": 0.07221397757530212
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "RigidBody": {
+                    "velocity": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "mass": 1.0,
+                    "useGravity": true,
+                    "drag": 0.0,
+                    "angularDrag": 0.05000000074505806,
+                    "isKinematic": false,
+                    "constraints": {
+                        "freezePositionX": false,
+                        "freezePositionY": false,
+                        "freezePositionZ": false,
+                        "freezeRotationX": false,
+                        "freezeRotationY": false,
+                        "freezeRotationZ": false
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 8362592118289502741,
+                    "materialAsset": 0
+                },
+                "Collider": {
+                    "type": "Sphere",
+                    "size": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "radius": 0.5,
+                    "height": 2.0,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "friction": 0.20000000298023224,
+                    "bounciness": 1.0,
+                    "layer": "Moving",
+                    "isTrigger": false
+                },
+                "EntityName": {
+                    "name": "Sphere"
+                },
+                "NetworkObjectAuthoring": {
+                    "replicated": [
+                        "Transform/Full"
+                    ],
+                    "serverOnly": [
+                        "Collider",
+                        "RigidBody"
+                    ],
+                    "ownerLocalOnly": [],
+                    "enabledReplicated": [],
+                    "sendPriority": 1.0,
+                    "critical": false,
+                    "allowScenePlacement": true,
+                    "spawnPerPlayer": false
+                }
+            }
+        },
+        {
+            "id": "B484B8DE90F68039",
+            "parent": "EC84B8DE90F68035",
+            "siblingIndex": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 5.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "Camera": {
+                    "enabled": true,
+                    "fovY": 60.0,
+                    "nearZ": 0.10000000149011612,
+                    "farZ": 1000.0,
+                    "priority": 1
+                },
+                "EntityName": {
+                    "name": "Player Camera"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 13007724889799262249,
+                    "fileId": 2631431348337639463,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
+                }
+            }
+        },
+        {
+            "id": "BC84B8DE8F310003",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 100.0,
+                        "y": 100.0,
+                        "z": 100.0
+                    },
+                    "rotation": {
+                        "x": -0.4226182699203491,
+                        "y": -0.0,
+                        "z": -0.0,
+                        "w": 0.9063077569007874
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "Light": {
+                    "type": "Directional",
+                    "colour": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "intensity": 1.0,
+                    "range": 10.0,
+                    "innerConeDeg": 20.0,
+                    "outerConeDeg": 30.0,
+                    "enabled": true,
+                    "castShadows": true
+                },
+                "EntityName": {
+                    "name": "Directional Light"
+                }
+            }
+        },
+        {
+            "id": "D484B8DE8F310001",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 30.0,
+                        "y": 0.5,
+                        "z": 30.0
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 0
+                },
+                "Collider": {
+                    "type": "Box",
+                    "size": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "radius": 0.5,
+                    "height": 2.0,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "friction": 0.20000000298023224,
+                    "bounciness": 0.0,
+                    "layer": "NonMoving",
+                    "isTrigger": false
+                },
+                "EntityName": {
+                    "name": "Ground"
+                }
+            }
+        },
+        {
+            "id": "DC84B8DE91A4C03F",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": -14.466184616088867,
+                        "y": 0.7538061141967773,
+                        "z": -0.0937313437461853
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 29.549999237060547
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 0
+                },
+                "Collider": {
+                    "type": "Box",
+                    "size": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "radius": 0.5,
+                    "height": 2.0,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "friction": 0.20000000298023224,
+                    "bounciness": 0.0,
+                    "layer": "NonMoving",
+                    "isTrigger": false
+                },
+                "EntityName": {
+                    "name": "Wall 1"
+                },
+                "NetworkObjectAuthoring": {
+                    "replicated": [],
+                    "serverOnly": [
+                        "Collider"
+                    ],
+                    "ownerLocalOnly": [],
+                    "enabledReplicated": [],
+                    "sendPriority": 1.0,
+                    "critical": false,
+                    "allowScenePlacement": true,
+                    "spawnPerPlayer": false
+                }
+            }
+        },
+        {
+            "id": "EC84B8DE90F68035",
+            "parent": "F484B8DE90F68031",
+            "siblingIndex": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 1.5,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "CameraOrbit": {
+                    "sensitivity": 0.10000000149011612,
+                    "stickSpeed": 180.0,
+                    "minPitch": -30.0,
+                    "maxPitch": 70.0,
+                    "yaw": 0.0,
+                    "pitch": 0.0
+                },
+                "EntityName": {
+                    "name": "Camera Pivot"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 13007724889799262249,
+                    "fileId": 3784352852944486437,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
+                }
+            }
+        },
+        {
+            "id": "F484B8DE90F68031",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0733419805765152,
+                        "y": 1.368292212486267,
+                        "z": -9.411938667297363
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 5067099792209742713,
+                    "materialAsset": 0
+                },
+                "CharacterController": {
+                    "height": 2.0,
+                    "radius": 0.5,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "slopeLimit": 45.0,
+                    "stepOffset": 0.30000001192092896,
+                    "pushStrength": 100.0,
+                    "layer": "Player"
+                },
+                "PlayerController": {
+                    "moveSpeed": 6.0,
+                    "jumpHeight": 1.5,
+                    "faceCamera": true
+                },
+                "EntityName": {
+                    "name": "Player Spawnpoint 1"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 13007724889799262249,
+                    "fileId": 3207892100641062947,
+                    "isRoot": true,
+                    "prefabHash": 5299553253888536589,
+                    "overrides": []
+                },
+                "NetworkObjectAuthoring": {
+                    "replicated": [
+                        "Transform/Full"
+                    ],
+                    "serverOnly": [
+                        "CharacterController",
+                        "PlayerController"
+                    ],
+                    "ownerLocalOnly": [
+                        "CameraOrbit",
+                        "Camera"
+                    ],
+                    "enabledReplicated": [],
+                    "sendPriority": 1.0,
+                    "critical": true,
+                    "allowScenePlacement": true,
+                    "spawnPerPlayer": true
+                }
+            }
+        },
+        {
+            "id": "7D0494DBA1D07671",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "ScriptComponent": {
+                    "enabled": true,
+                    "assembly": "Managed/Crucible.Scripts.dll",
+                    "namespace": "Crucible.Scripts",
+                    "class": "CursorLock",
+                    "fields": [
+                        {
+                            "declaringType": "Crucible.Scripts.CursorLock",
+                            "name": "locked",
+                            "type": "Boolean",
+                            "boolean": true,
+                            "integer": 0,
+                            "single": 0.0,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        }
+                    ]
+                },
+                "EntityName": {
+                    "name": "Cursor Lock"
+                }
+            }
+        },
+        {
+            "id": "4E65744F76657231",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 24.0,
+                        "z": 26.0
+                    },
+                    "rotation": {
+                        "x": -0.3420201433256687,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.9396926207859084
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "Camera": {
+                    "enabled": true,
+                    "fovY": 60.0,
+                    "nearZ": 0.10000000149011612,
+                    "farZ": 1000.0,
+                    "priority": 0
+                },
+                "EntityName": {
+                    "name": "Arena Overview Camera"
+                }
+            }
+        },
+        {
+            "id": "53796E634D656301",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0,
+                        "y": 1.2,
+                        "z": 6
+                    },
+                    "rotation": {
+                        "x": 0,
+                        "y": 0,
+                        "z": 0,
+                        "w": 1
+                    },
+                    "scale": {
+                        "x": 1,
+                        "y": 1,
+                        "z": 1
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.7,
+                        "y": 0.7,
+                        "z": 0.75,
+                        "w": 1.0
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 3049588827540701185
+                },
+                "MaterialParams": {
+                    "emissiveScale": 1.0,
+                    "custom": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    }
+                },
+                "CharacterController": {
+                    "height": 2.0,
+                    "radius": 0.5,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "slopeLimit": 45.0,
+                    "stepOffset": 0.30000001192092896,
+                    "pushStrength": 100.0,
+                    "layer": "Player"
+                },
+                "NetworkObjectAuthoring": {
+                    "replicated": [
+                        "Transform/Full+Scale",
+                        "CharacterController/Size",
+                        "Children/Rotation",
+                        "Renderers",
+                        "Children/OnOff"
+                    ],
+                    "serverOnly": [
+                        "CharacterController"
+                    ],
+                    "ownerLocalOnly": [],
+                    "enabledReplicated": [],
+                    "syncedChildren": [
+                        "Body/Torso",
+                        "Body/Torso/Gun"
+                    ],
+                    "childEnabledReplicated": [
+                        "MeshRenderer"
+                    ],
+                    "sendPriority": 1.0,
+                    "critical": false,
+                    "allowScenePlacement": true,
+                    "spawnPerPlayer": false
+                },
+                "EntityName": {
+                    "name": "Sync Mech"
+                }
+            }
+        },
+        {
+            "id": "53796E634D656302",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0,
+                        "y": 0.8,
+                        "z": 0
+                    },
+                    "rotation": {
+                        "x": 0,
+                        "y": 0,
+                        "z": 0,
+                        "w": 1
+                    },
+                    "scale": {
+                        "x": 1,
+                        "y": 1,
+                        "z": 1
+                    }
+                },
+                "EntityName": {
+                    "name": "Body"
+                }
+            },
+            "parent": "53796E634D656301"
+        },
+        {
+            "id": "53796E634D656303",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0,
+                        "y": 0,
+                        "z": 0
+                    },
+                    "rotation": {
+                        "x": 0,
+                        "y": 0,
+                        "z": 0,
+                        "w": 1
+                    },
+                    "scale": {
+                        "x": 0.8,
+                        "y": 0.5,
+                        "z": 0.6
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.3,
+                        "y": 0.5,
+                        "z": 0.9,
+                        "w": 1.0
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 0
+                },
+                "EntityName": {
+                    "name": "Torso"
+                }
+            },
+            "parent": "53796E634D656302"
+        },
+        {
+            "id": "53796E634D656304",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0,
+                        "y": 0,
+                        "z": 1.0
+                    },
+                    "rotation": {
+                        "x": 0,
+                        "y": 0,
+                        "z": 0,
+                        "w": 1
+                    },
+                    "scale": {
+                        "x": 0.25,
+                        "y": 0.4,
+                        "z": 1.4
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.15,
+                        "y": 0.15,
+                        "z": 0.15,
+                        "w": 1.0
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 0
+                },
+                "EntityName": {
+                    "name": "Gun"
+                }
+            },
+            "parent": "53796E634D656303"
+        },
+        {
+            "id": "53796E634D656305",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": -0.9,
+                        "y": 0,
+                        "z": 0
+                    },
+                    "rotation": {
+                        "x": 0,
+                        "y": 0,
+                        "z": 0,
+                        "w": 1
+                    },
+                    "scale": {
+                        "x": 1,
+                        "y": 1,
+                        "z": 1
+                    }
+                },
+                "EntityName": {
+                    "name": "Mount L"
+                }
+            },
+            "parent": "53796E634D656302"
+        },
+        {
+            "id": "53796E634D656306",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.9,
+                        "y": 0,
+                        "z": 0
+                    },
+                    "rotation": {
+                        "x": 0,
+                        "y": 0,
+                        "z": 0,
+                        "w": 1
+                    },
+                    "scale": {
+                        "x": 1,
+                        "y": 1,
+                        "z": 1
+                    }
+                },
+                "EntityName": {
+                    "name": "Mount R"
+                }
+            },
+            "parent": "53796E634D656302"
+        },
+        {
+            "id": "53796E6350617201",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 3,
+                        "y": 1,
+                        "z": 6
+                    },
+                    "rotation": {
+                        "x": 0,
+                        "y": 0,
+                        "z": 0,
+                        "w": 1
+                    },
+                    "scale": {
+                        "x": 0.3,
+                        "y": 0.3,
+                        "z": 0.6
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.9,
+                        "y": 0.6,
+                        "z": 0.1,
+                        "w": 1.0
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 0
+                },
+                "NetworkObjectAuthoring": {
+                    "replicated": [
+                        "Transform/Full+Scale",
+                        "Attachment",
+                        "Renderers"
+                    ],
+                    "serverOnly": [],
+                    "ownerLocalOnly": [],
+                    "enabledReplicated": [],
+                    "syncedChildren": [],
+                    "childEnabledReplicated": [],
+                    "sendPriority": 1.0,
+                    "critical": false,
+                    "allowScenePlacement": true,
+                    "spawnPerPlayer": false
+                },
+                "EntityName": {
+                    "name": "Sync Part"
+                }
+            }
+        },
+        {
+            "id": "53796E6343726101",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": -3,
+                        "y": 0.75,
+                        "z": 6
+                    },
+                    "rotation": {
+                        "x": 0,
+                        "y": 0,
+                        "z": 0,
+                        "w": 1
+                    },
+                    "scale": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.35,
+                        "z": 0.2,
+                        "w": 1.0
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 0
+                },
+                "Light": {
+                    "type": "Point",
+                    "colour": {
+                        "x": 1.0,
+                        "y": 0.85,
+                        "z": 0.3
+                    },
+                    "intensity": 4.0,
+                    "range": 5.0,
+                    "innerConeDeg": 20.0,
+                    "outerConeDeg": 30.0,
+                    "enabled": true,
+                    "castShadows": false
+                },
+                "ScriptComponent": {
+                    "scripts": [
+                        {
+                            "enabled": true,
+                            "assembly": "Managed/Crucible.Scripts.dll",
+                            "namespace": "Crucible.Scripts",
+                            "class": "SyncOwnerProbe",
+                            "fields": []
+                        }
+                    ]
+                },
+                "NetworkObjectAuthoring": {
+                    "replicated": [
+                        "Transform/Full"
+                    ],
+                    "serverOnly": [],
+                    "ownerLocalOnly": [
+                        "Light"
+                    ],
+                    "enabledReplicated": [],
+                    "syncedChildren": [],
+                    "childEnabledReplicated": [],
+                    "sendPriority": 1.0,
+                    "critical": false,
+                    "allowScenePlacement": true,
+                    "spawnPerPlayer": false
+                },
+                "EntityName": {
+                    "name": "Sync Crate"
+                }
+            }
+        },
+        {
+            "id": "53796E6344656D01",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 9.797174393178826e-18,
+                        "y": 2.2,
+                        "z": 10.42
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 1.0,
+                        "z": 0.0,
+                        "w": 6.123233995736766e-17
+                    },
+                    "scale": {
+                        "x": 1,
+                        "y": 1,
+                        "z": 1
+                    }
+                },
+                "WorldText": {
+                    "text": "",
+                    "colour": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0,
+                        "w": 1.0
+                    },
+                    "fontAsset": 0,
+                    "fontSize": 0.24,
+                    "size": {
+                        "x": 7.0,
+                        "y": 2.6
+                    },
+                    "pivot": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "billboard": "Off",
+                    "alwaysOnTop": false,
+                    "doubleSided": false,
+                    "intensity": 1.0,
+                    "fade": false,
+                    "fadeStart": 25.0,
+                    "fadeEnd": 40.0,
+                    "horizontalAlign": "Left",
+                    "verticalAlign": "Top",
+                    "wrap": false,
+                    "overflow": "Overflow",
+                    "lineSpacing": 1.0,
+                    "characterSpacing": 0.0,
+                    "richText": false,
+                    "bold": true,
+                    "underline": false,
+                    "bestFit": false,
+                    "minFontSize": 0.1,
+                    "maxFontSize": 1.0,
+                    "outline": false,
+                    "outlineColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "outlineWidth": 0.02,
+                    "glow": false,
+                    "glowColour": {
+                        "x": 1.0,
+                        "y": 0.85,
+                        "z": 0.4,
+                        "w": 0.8
+                    },
+                    "glowWidth": 0.03,
+                    "glowSoftness": 0.5,
+                    "shadow": true,
+                    "shadowColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.6
+                    },
+                    "shadowOffset": {
+                        "x": 0.02,
+                        "y": 0.02
+                    },
+                    "shadowSoftness": 0.0
+                },
+                "ScriptComponent": {
+                    "scripts": [
+                        {
+                            "enabled": true,
+                            "assembly": "Managed/Crucible.Scripts.dll",
+                            "namespace": "Crucible.Scripts",
+                            "class": "SyncDemo",
+                            "fields": [
+                                {
+                                    "declaringType": "Crucible.Scripts.SyncDemo",
+                                    "name": "materialA",
+                                    "type": "Material",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 3049588827540701185
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.SyncDemo",
+                                    "name": "materialB",
+                                    "type": "Material",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 16347548646000803841
+                                }
+                            ]
+                        }
+                    ]
+                },
+                "EntityName": {
+                    "name": "Sync Demo"
+                }
+            }
+        },
+        {
+            "id": "41706944656D6F01",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": -8.0,
+                        "y": 2.2,
+                        "z": 10.42
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 1.0,
+                        "z": 0.0,
+                        "w": 6.123233995736766e-17
+                    },
+                    "scale": {
+                        "x": 1,
+                        "y": 1,
+                        "z": 1
+                    }
+                },
+                "WorldText": {
+                    "text": "",
+                    "colour": {
+                        "x": 0.75,
+                        "y": 0.95,
+                        "z": 1.0,
+                        "w": 1.0
+                    },
+                    "fontAsset": 0,
+                    "fontSize": 0.24,
+                    "size": {
+                        "x": 7.0,
+                        "y": 2.6
+                    },
+                    "pivot": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "billboard": "Off",
+                    "alwaysOnTop": false,
+                    "doubleSided": false,
+                    "intensity": 1.0,
+                    "fade": false,
+                    "fadeStart": 25.0,
+                    "fadeEnd": 40.0,
+                    "horizontalAlign": "Left",
+                    "verticalAlign": "Top",
+                    "wrap": false,
+                    "overflow": "Overflow",
+                    "lineSpacing": 1.0,
+                    "characterSpacing": 0.0,
+                    "richText": false,
+                    "bold": true,
+                    "underline": false,
+                    "bestFit": false,
+                    "minFontSize": 0.1,
+                    "maxFontSize": 1.0,
+                    "outline": false,
+                    "outlineColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "outlineWidth": 0.02,
+                    "glow": false,
+                    "glowColour": {
+                        "x": 1.0,
+                        "y": 0.85,
+                        "z": 0.4,
+                        "w": 0.8
+                    },
+                    "glowWidth": 0.03,
+                    "glowSoftness": 0.5,
+                    "shadow": true,
+                    "shadowColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.6
+                    },
+                    "shadowOffset": {
+                        "x": 0.02,
+                        "y": 0.02
+                    },
+                    "shadowSoftness": 0.0
+                },
+                "ScriptComponent": {
+                    "scripts": [
+                        {
+                            "enabled": true,
+                            "assembly": "Managed/Crucible.Scripts.dll",
+                            "namespace": "Crucible.Scripts",
+                            "class": "ApiDemo",
+                            "fields": []
+                        }
+                    ]
+                },
+                "NetworkObjectAuthoring": {
+                    "replicated": [
+                        "NetVariables",
+                        "NetData"
+                    ],
+                    "serverOnly": [],
+                    "ownerLocalOnly": [],
+                    "enabledReplicated": [],
+                    "syncedChildren": [],
+                    "childEnabledReplicated": [],
+                    "sendPriority": 1.0,
+                    "critical": false,
+                    "allowScenePlacement": true,
+                    "spawnPerPlayer": false
+                },
+                "EntityName": {
+                    "name": "Api Demo"
+                }
+            }
+        },
+        {
+            "id": "4B697444656D6F01",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 8.0,
+                        "y": 2.2,
+                        "z": 10.42
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 1.0,
+                        "z": 0.0,
+                        "w": 6.123233995736766e-17
+                    },
+                    "scale": {
+                        "x": 1,
+                        "y": 1,
+                        "z": 1
+                    }
+                },
+                "WorldText": {
+                    "text": "",
+                    "colour": {
+                        "x": 0.8,
+                        "y": 1.0,
+                        "z": 0.75,
+                        "w": 1.0
+                    },
+                    "fontAsset": 0,
+                    "fontSize": 0.24,
+                    "size": {
+                        "x": 7.0,
+                        "y": 2.6
+                    },
+                    "pivot": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "billboard": "Off",
+                    "alwaysOnTop": false,
+                    "doubleSided": false,
+                    "intensity": 1.0,
+                    "fade": false,
+                    "fadeStart": 25.0,
+                    "fadeEnd": 40.0,
+                    "horizontalAlign": "Left",
+                    "verticalAlign": "Top",
+                    "wrap": false,
+                    "overflow": "Overflow",
+                    "lineSpacing": 1.0,
+                    "characterSpacing": 0.0,
+                    "richText": false,
+                    "bold": true,
+                    "underline": false,
+                    "bestFit": false,
+                    "minFontSize": 0.1,
+                    "maxFontSize": 1.0,
+                    "outline": false,
+                    "outlineColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "outlineWidth": 0.02,
+                    "glow": false,
+                    "glowColour": {
+                        "x": 1.0,
+                        "y": 0.85,
+                        "z": 0.4,
+                        "w": 0.8
+                    },
+                    "glowWidth": 0.03,
+                    "glowSoftness": 0.5,
+                    "shadow": true,
+                    "shadowColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.6
+                    },
+                    "shadowOffset": {
+                        "x": 0.02,
+                        "y": 0.02
+                    },
+                    "shadowSoftness": 0.0
+                },
+                "ScriptComponent": {
+                    "scripts": [
+                        {
+                            "enabled": true,
+                            "assembly": "Managed/Crucible.Scripts.dll",
+                            "namespace": "Crucible.Scripts",
+                            "class": "KitDemo",
+                            "fields": []
+                        }
+                    ]
+                },
+                "NetworkObjectAuthoring": {
+                    "replicated": [
+                        "NetVariables"
+                    ],
+                    "serverOnly": [],
+                    "ownerLocalOnly": [],
+                    "enabledReplicated": [],
+                    "syncedChildren": [],
+                    "childEnabledReplicated": [],
+                    "sendPriority": 1.0,
+                    "critical": false,
+                    "allowScenePlacement": true,
+                    "spawnPerPlayer": false
+                },
+                "EntityName": {
+                    "name": "Kit Demo"
+                }
+            }
+        },
+        {
+            "id": "4B69745374617401",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0,
+                        "y": 0,
+                        "z": 30
+                    },
+                    "rotation": {
+                        "x": 0,
+                        "y": 0,
+                        "z": 0,
+                        "w": 1
+                    },
+                    "scale": {
+                        "x": 1,
+                        "y": 1,
+                        "z": 1
+                    }
+                },
+                "ScriptComponent": {
+                    "scripts": [
+                        {
+                            "enabled": true,
+                            "assembly": "Managed/Crucible.Scripts.dll",
+                            "namespace": "Crucible.Scripts",
+                            "class": "KitState",
+                            "fields": []
+                        }
+                    ]
+                },
+                "NetworkObjectAuthoring": {
+                    "replicated": [
+                        "NetVariables"
+                    ],
+                    "serverOnly": [],
+                    "ownerLocalOnly": [],
+                    "enabledReplicated": [],
+                    "syncedChildren": [],
+                    "childEnabledReplicated": [],
+                    "sendPriority": 1.0,
+                    "critical": false,
+                    "allowScenePlacement": true,
+                    "spawnPerPlayer": false
+                },
+                "EntityName": {
+                    "name": "Kit State"
+                }
+            }
+        },
+        {
+            "id": "426F617264000001",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 3.4,
+                        "z": 15.3
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 1.0,
+                        "z": 0.0,
+                        "w": 6.123233995736766e-17
+                    },
+                    "scale": {
+                        "x": 14.0,
+                        "y": 4.2,
+                        "z": 0.1
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.05,
+                        "y": 0.06,
+                        "z": 0.08,
+                        "w": 1.0
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 0
+                },
+                "EntityName": {
+                    "name": "Wall 2 Board"
+                }
+            }
+        },
+        {
+            "id": "426F617264000002",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 9.797174393178826e-18,
+                        "y": 3.4,
+                        "z": 15.22
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 1.0,
+                        "z": 0.0,
+                        "w": 6.123233995736766e-17
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "WorldText": {
+                    "text": "SYNC DEMO  (README 8.22)  -  the HOST presses, both screens must match\n1 scale     2 capsule height     3 torso turn     4 material     5 tint\n6 gun on/off     7 part: mount L / mount R / drop     8 crate owner\n9 mech hidden     0 everything back to the start\nPLAYER INPUT  (8.23)  -  any machine holds J, K or L\nthe Host's text shows every player's keys and counts each press once",
+                    "colour": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0,
+                        "w": 1.0
+                    },
+                    "fontAsset": 0,
+                    "fontSize": 0.3,
+                    "size": {
+                        "x": 13.4,
+                        "y": 3.8
+                    },
+                    "pivot": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "billboard": "Off",
+                    "alwaysOnTop": false,
+                    "doubleSided": false,
+                    "intensity": 1.0,
+                    "fade": false,
+                    "fadeStart": 25.0,
+                    "fadeEnd": 40.0,
+                    "horizontalAlign": "Left",
+                    "verticalAlign": "Top",
+                    "wrap": false,
+                    "overflow": "Overflow",
+                    "lineSpacing": 1.0,
+                    "characterSpacing": 0.0,
+                    "richText": false,
+                    "bold": true,
+                    "underline": false,
+                    "bestFit": false,
+                    "minFontSize": 0.1,
+                    "maxFontSize": 1.0,
+                    "outline": false,
+                    "outlineColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "outlineWidth": 0.02,
+                    "glow": false,
+                    "glowColour": {
+                        "x": 1.0,
+                        "y": 0.85,
+                        "z": 0.4,
+                        "w": 0.8
+                    },
+                    "glowWidth": 0.03,
+                    "glowSoftness": 0.5,
+                    "shadow": true,
+                    "shadowColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.6
+                    },
+                    "shadowOffset": {
+                        "x": 0.02,
+                        "y": 0.02
+                    },
+                    "shadowSoftness": 0.0
+                },
+                "EntityName": {
+                    "name": "Wall 2 Board Text"
+                }
+            }
+        },
+        {
+            "id": "426F617264001001",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": -14.5,
+                        "y": 3.4,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.7071067811865476,
+                        "z": 0.0,
+                        "w": 0.7071067811865476
+                    },
+                    "scale": {
+                        "x": 14.0,
+                        "y": 4.2,
+                        "z": 0.1
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.05,
+                        "y": 0.06,
+                        "z": 0.08,
+                        "w": 1.0
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 0
+                },
+                "EntityName": {
+                    "name": "Wall 1 Board"
+                }
+            }
+        },
+        {
+            "id": "426F617264001002",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": -14.42,
+                        "y": 3.4,
+                        "z": 4.898587196589413e-18
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.7071067811865476,
+                        "z": 0.0,
+                        "w": 0.7071067811865476
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "WorldText": {
+                    "text": "API DEMO  (8.27)  -  the HOST presses\nT 10 s countdown    V slot 63 +1    B add item    N empty list    X kick newest client\nKIT DEMO  (8.29)\nM  Host: named event  /  Client: named command        F  Host: health -10, 3 s cooldown\nR  any machine: effect on every screen        P  any machine: +1 score\nG  Host: next phase        H  Host: 30 s match timer",
+                    "colour": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0,
+                        "w": 1.0
+                    },
+                    "fontAsset": 0,
+                    "fontSize": 0.3,
+                    "size": {
+                        "x": 13.4,
+                        "y": 3.8
+                    },
+                    "pivot": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "billboard": "Off",
+                    "alwaysOnTop": false,
+                    "doubleSided": false,
+                    "intensity": 1.0,
+                    "fade": false,
+                    "fadeStart": 25.0,
+                    "fadeEnd": 40.0,
+                    "horizontalAlign": "Left",
+                    "verticalAlign": "Top",
+                    "wrap": false,
+                    "overflow": "Overflow",
+                    "lineSpacing": 1.0,
+                    "characterSpacing": 0.0,
+                    "richText": false,
+                    "bold": true,
+                    "underline": false,
+                    "bestFit": false,
+                    "minFontSize": 0.1,
+                    "maxFontSize": 1.0,
+                    "outline": false,
+                    "outlineColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "outlineWidth": 0.02,
+                    "glow": false,
+                    "glowColour": {
+                        "x": 1.0,
+                        "y": 0.85,
+                        "z": 0.4,
+                        "w": 0.8
+                    },
+                    "glowWidth": 0.03,
+                    "glowSoftness": 0.5,
+                    "shadow": true,
+                    "shadowColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.6
+                    },
+                    "shadowOffset": {
+                        "x": 0.02,
+                        "y": 0.02
+                    },
+                    "shadowSoftness": 0.0
+                },
+                "EntityName": {
+                    "name": "Wall 1 Board Text"
+                }
+            }
+        },
+        {
+            "id": "426F617264002001",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 14.5,
+                        "y": 3.4,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": -0.7071067811865476,
+                        "z": 0.0,
+                        "w": 0.7071067811865476
+                    },
+                    "scale": {
+                        "x": 14.0,
+                        "y": 4.2,
+                        "z": 0.1
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.05,
+                        "y": 0.06,
+                        "z": 0.08,
+                        "w": 1.0
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 0
+                },
+                "EntityName": {
+                    "name": "Wall 4 Board"
+                }
+            }
+        },
+        {
+            "id": "426F617264002002",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 14.42,
+                        "y": 3.4,
+                        "z": 4.898587196589413e-18
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": -0.7071067811865476,
+                        "z": 0.0,
+                        "w": 0.7071067811865476
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "WorldText": {
+                    "text": "LAG DEMO  (8.31)  -  set +200 ms latency in the Network window first\nZ  fire along the yellow line as the target crosses it ON YOUR SCREEN\nthe Host tests every shot twice: rewound to what you saw, and at the present\nTRAVEL DEMO  (8.30)  -  the HOST presses\nY spawn the Travel Case     I add an item to it\nU travel to the other scene, keeping both players and the case",
+                    "colour": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0,
+                        "w": 1.0
+                    },
+                    "fontAsset": 0,
+                    "fontSize": 0.3,
+                    "size": {
+                        "x": 13.4,
+                        "y": 3.8
+                    },
+                    "pivot": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "billboard": "Off",
+                    "alwaysOnTop": false,
+                    "doubleSided": false,
+                    "intensity": 1.0,
+                    "fade": false,
+                    "fadeStart": 25.0,
+                    "fadeEnd": 40.0,
+                    "horizontalAlign": "Left",
+                    "verticalAlign": "Top",
+                    "wrap": false,
+                    "overflow": "Overflow",
+                    "lineSpacing": 1.0,
+                    "characterSpacing": 0.0,
+                    "richText": false,
+                    "bold": true,
+                    "underline": false,
+                    "bestFit": false,
+                    "minFontSize": 0.1,
+                    "maxFontSize": 1.0,
+                    "outline": false,
+                    "outlineColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "outlineWidth": 0.02,
+                    "glow": false,
+                    "glowColour": {
+                        "x": 1.0,
+                        "y": 0.85,
+                        "z": 0.4,
+                        "w": 0.8
+                    },
+                    "glowWidth": 0.03,
+                    "glowSoftness": 0.5,
+                    "shadow": true,
+                    "shadowColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.6
+                    },
+                    "shadowOffset": {
+                        "x": 0.02,
+                        "y": 0.02
+                    },
+                    "shadowSoftness": 0.0
+                },
+                "EntityName": {
+                    "name": "Wall 4 Board Text"
+                }
+            }
+        },
+        {
+            "id": "426F617264003001",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 3.4,
+                        "z": -14.6
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 14.0,
+                        "y": 4.2,
+                        "z": 0.1
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.05,
+                        "y": 0.06,
+                        "z": 0.08,
+                        "w": 1.0
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 0
+                },
+                "EntityName": {
+                    "name": "Wall 3 Board"
+                }
+            }
+        },
+        {
+            "id": "426F617264003002",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 3.4,
+                        "z": -14.52
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "WorldText": {
+                    "text": "NETWORK TEST ARENA\nOpen this scene in two Editors. Network window: Host in one, Client (127.0.0.1)\nin the other, then press Play in both (README section 3).\nPress keys in the Game view of the machine each board names.\nBoards: Sync + Input / Api + Kit / Lag + Travel.   README sections 8.22 to 8.32",
+                    "colour": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0,
+                        "w": 1.0
+                    },
+                    "fontAsset": 0,
+                    "fontSize": 0.3,
+                    "size": {
+                        "x": 13.4,
+                        "y": 3.8
+                    },
+                    "pivot": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "billboard": "Off",
+                    "alwaysOnTop": false,
+                    "doubleSided": false,
+                    "intensity": 1.0,
+                    "fade": false,
+                    "fadeStart": 25.0,
+                    "fadeEnd": 40.0,
+                    "horizontalAlign": "Left",
+                    "verticalAlign": "Top",
+                    "wrap": false,
+                    "overflow": "Overflow",
+                    "lineSpacing": 1.0,
+                    "characterSpacing": 0.0,
+                    "richText": false,
+                    "bold": true,
+                    "underline": false,
+                    "bestFit": false,
+                    "minFontSize": 0.1,
+                    "maxFontSize": 1.0,
+                    "outline": false,
+                    "outlineColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "outlineWidth": 0.02,
+                    "glow": false,
+                    "glowColour": {
+                        "x": 1.0,
+                        "y": 0.85,
+                        "z": 0.4,
+                        "w": 0.8
+                    },
+                    "glowWidth": 0.03,
+                    "glowSoftness": 0.5,
+                    "shadow": true,
+                    "shadowColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.6
+                    },
+                    "shadowOffset": {
+                        "x": 0.02,
+                        "y": 0.02
+                    },
+                    "shadowSoftness": 0.0
+                },
+                "EntityName": {
+                    "name": "Wall 3 Board Text"
+                }
+            }
+        },
+        {
+            "id": "4C61675461726701",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 4.0,
+                        "y": 0.75,
+                        "z": -7.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.9,
+                        "y": 0.25,
+                        "z": 0.2,
+                        "w": 1.0
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 0
+                },
+                "RigidBody": {
+                    "velocity": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "mass": 1.0,
+                    "useGravity": false,
+                    "drag": 0.0,
+                    "angularDrag": 0.05,
+                    "isKinematic": true,
+                    "constraints": {
+                        "freezePositionX": false,
+                        "freezePositionY": false,
+                        "freezePositionZ": false,
+                        "freezeRotationX": false,
+                        "freezeRotationY": false,
+                        "freezeRotationZ": false
+                    }
+                },
+                "Collider": {
+                    "type": "Box",
+                    "size": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "radius": 0.5,
+                    "height": 2.0,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "friction": 0.2,
+                    "bounciness": 0.0,
+                    "layer": "Moving",
+                    "isTrigger": false
+                },
+                "ScriptComponent": {
+                    "scripts": [
+                        {
+                            "enabled": true,
+                            "assembly": "Managed/Crucible.Scripts.dll",
+                            "namespace": "Crucible.Scripts",
+                            "class": "LagTarget",
+                            "fields": []
+                        }
+                    ]
+                },
+                "NetworkObjectAuthoring": {
+                    "replicated": [
+                        "Transform/Full"
+                    ],
+                    "serverOnly": [
+                        "Collider",
+                        "RigidBody",
+                        "ScriptComponent"
+                    ],
+                    "ownerLocalOnly": [],
+                    "enabledReplicated": [],
+                    "syncedChildren": [],
+                    "childEnabledReplicated": [],
+                    "sendPriority": 1.0,
+                    "critical": false,
+                    "allowScenePlacement": true,
+                    "spawnPerPlayer": false
+                },
+                "EntityName": {
+                    "name": "Lag Target"
+                }
+            }
+        },
+        {
+            "id": "4C61674C696E6501",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 8.0,
+                        "y": 0.8,
+                        "z": -7.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 0.06,
+                        "y": 0.06,
+                        "z": 13.0
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 1.0,
+                        "y": 0.85,
+                        "z": 0.1,
+                        "w": 1.0
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 0
+                },
+                "EntityName": {
+                    "name": "Lag Firing Line"
+                }
+            }
+        },
+        {
+            "id": "4C616744656D6F01",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 8.0,
+                        "y": 2.2,
+                        "z": -2.58
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 1.0,
+                        "z": 0.0,
+                        "w": 6.123233995736766e-17
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "WorldText": {
+                    "text": "",
+                    "colour": {
+                        "x": 1.0,
+                        "y": 0.85,
+                        "z": 0.75,
+                        "w": 1.0
+                    },
+                    "fontAsset": 0,
+                    "fontSize": 0.24,
+                    "size": {
+                        "x": 6.5,
+                        "y": 2.0
+                    },
+                    "pivot": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "billboard": "Off",
+                    "alwaysOnTop": false,
+                    "doubleSided": false,
+                    "intensity": 1.0,
+                    "fade": false,
+                    "fadeStart": 25.0,
+                    "fadeEnd": 40.0,
+                    "horizontalAlign": "Left",
+                    "verticalAlign": "Top",
+                    "wrap": false,
+                    "overflow": "Overflow",
+                    "lineSpacing": 1.0,
+                    "characterSpacing": 0.0,
+                    "richText": false,
+                    "bold": true,
+                    "underline": false,
+                    "bestFit": false,
+                    "minFontSize": 0.1,
+                    "maxFontSize": 1.0,
+                    "outline": false,
+                    "outlineColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "outlineWidth": 0.02,
+                    "glow": false,
+                    "glowColour": {
+                        "x": 1.0,
+                        "y": 0.85,
+                        "z": 0.4,
+                        "w": 0.8
+                    },
+                    "glowWidth": 0.03,
+                    "glowSoftness": 0.5,
+                    "shadow": true,
+                    "shadowColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.6
+                    },
+                    "shadowOffset": {
+                        "x": 0.02,
+                        "y": 0.02
+                    },
+                    "shadowSoftness": 0.0
+                },
+                "ScriptComponent": {
+                    "scripts": [
+                        {
+                            "enabled": true,
+                            "assembly": "Managed/Crucible.Scripts.dll",
+                            "namespace": "Crucible.Scripts",
+                            "class": "LagDemo",
+                            "fields": []
+                        }
+                    ]
+                },
+                "NetworkObjectAuthoring": {
+                    "replicated": [
+                        "NetVariables"
+                    ],
+                    "serverOnly": [],
+                    "ownerLocalOnly": [],
+                    "enabledReplicated": [],
+                    "syncedChildren": [],
+                    "childEnabledReplicated": [],
+                    "sendPriority": 1.0,
+                    "critical": false,
+                    "allowScenePlacement": true,
+                    "spawnPerPlayer": false
+                },
+                "EntityName": {
+                    "name": "Lag Demo"
+                }
+            }
+        },
+        {
+            "id": "5472617644656D01",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": -8.0,
+                        "y": 2.2,
+                        "z": -2.58
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 1.0,
+                        "z": 0.0,
+                        "w": 6.123233995736766e-17
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "WorldText": {
+                    "text": "",
+                    "colour": {
+                        "x": 0.85,
+                        "y": 0.8,
+                        "z": 1.0,
+                        "w": 1.0
+                    },
+                    "fontAsset": 0,
+                    "fontSize": 0.24,
+                    "size": {
+                        "x": 6.5,
+                        "y": 2.0
+                    },
+                    "pivot": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "billboard": "Off",
+                    "alwaysOnTop": false,
+                    "doubleSided": false,
+                    "intensity": 1.0,
+                    "fade": false,
+                    "fadeStart": 25.0,
+                    "fadeEnd": 40.0,
+                    "horizontalAlign": "Left",
+                    "verticalAlign": "Top",
+                    "wrap": false,
+                    "overflow": "Overflow",
+                    "lineSpacing": 1.0,
+                    "characterSpacing": 0.0,
+                    "richText": false,
+                    "bold": true,
+                    "underline": false,
+                    "bestFit": false,
+                    "minFontSize": 0.1,
+                    "maxFontSize": 1.0,
+                    "outline": false,
+                    "outlineColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "outlineWidth": 0.02,
+                    "glow": false,
+                    "glowColour": {
+                        "x": 1.0,
+                        "y": 0.85,
+                        "z": 0.4,
+                        "w": 0.8
+                    },
+                    "glowWidth": 0.03,
+                    "glowSoftness": 0.5,
+                    "shadow": true,
+                    "shadowColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.6
+                    },
+                    "shadowOffset": {
+                        "x": 0.02,
+                        "y": 0.02
+                    },
+                    "shadowSoftness": 0.0
+                },
+                "ScriptComponent": {
+                    "scripts": [
+                        {
+                            "enabled": true,
+                            "assembly": "Managed/Crucible.Scripts.dll",
+                            "namespace": "Crucible.Scripts",
+                            "class": "TravelDemo",
+                            "fields": [
+                                {
+                                    "declaringType": "Crucible.Scripts.TravelDemo",
+                                    "name": "travelCase",
+                                    "type": "Prefab",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 6085033207095456613
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.TravelDemo",
+                                    "name": "inTravelScene",
+                                    "type": "Boolean",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0
+                                }
+                            ]
+                        }
+                    ]
+                },
+                "EntityName": {
+                    "name": "Travel Demo"
+                }
+            }
+        },
+        {
+            "id": "50616E656C000000",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": -8.0,
+                        "y": 2.2,
+                        "z": 10.5
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 1.0,
+                        "z": 0.0,
+                        "w": 6.123233995736766e-17
+                    },
+                    "scale": {
+                        "x": 7.5,
+                        "y": 3.0,
+                        "z": 0.1
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.05,
+                        "y": 0.06,
+                        "z": 0.08,
+                        "w": 1.0
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 0
+                },
+                "EntityName": {
+                    "name": "Api Demo Panel"
+                }
+            }
+        },
+        {
+            "id": "50616E656C000001",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 2.2,
+                        "z": 10.5
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 1.0,
+                        "z": 0.0,
+                        "w": 6.123233995736766e-17
+                    },
+                    "scale": {
+                        "x": 7.5,
+                        "y": 3.0,
+                        "z": 0.1
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.05,
+                        "y": 0.06,
+                        "z": 0.08,
+                        "w": 1.0
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 0
+                },
+                "EntityName": {
+                    "name": "Sync Demo Panel"
+                }
+            }
+        },
+        {
+            "id": "50616E656C000002",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 8.0,
+                        "y": 2.2,
+                        "z": 10.5
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 1.0,
+                        "z": 0.0,
+                        "w": 6.123233995736766e-17
+                    },
+                    "scale": {
+                        "x": 7.5,
+                        "y": 3.0,
+                        "z": 0.1
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.05,
+                        "y": 0.06,
+                        "z": 0.08,
+                        "w": 1.0
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 0
+                },
+                "EntityName": {
+                    "name": "Kit Demo Panel"
+                }
+            }
+        },
+        {
+            "id": "50616E656C000003",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 8.0,
+                        "y": 2.2,
+                        "z": -2.5
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 1.0,
+                        "z": 0.0,
+                        "w": 6.123233995736766e-17
+                    },
+                    "scale": {
+                        "x": 7.0,
+                        "y": 2.4,
+                        "z": 0.1
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.05,
+                        "y": 0.06,
+                        "z": 0.08,
+                        "w": 1.0
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 0
+                },
+                "EntityName": {
+                    "name": "Lag Demo Panel"
+                }
+            }
+        },
+        {
+            "id": "50616E656C000004",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": -8.0,
+                        "y": 2.2,
+                        "z": -2.5
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 1.0,
+                        "z": 0.0,
+                        "w": 6.123233995736766e-17
+                    },
+                    "scale": {
+                        "x": 7.0,
+                        "y": 2.4,
+                        "z": 0.1
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.05,
+                        "y": 0.06,
+                        "z": 0.08,
+                        "w": 1.0
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 0
+                },
+                "EntityName": {
+                    "name": "Travel Demo Panel"
+                }
+            }
+        }
+    ]
+}

@@ -411,7 +411,8 @@ Component blocks (copy them as they are; every key shown is expected):
     { "declaringType": "Crucible.Scripts.ZooToggle", "name": "toggleObject", "type": "Entity",
       "boolean": false, "integer": 0, "single": 0.0, "real": 0.0, "text": "", "stringIsNull": false,
       "entityId": 6507999012386734093, "assetId": 0 } ] }
-// "fields": [] = C# defaults. type Boolean|Int32|Single|Double|String|Entity|Prefab|AudioClip|Texture|Font|Material|Model
+// "fields": [] = C# defaults. type Bool|Int|Float|Double|String|Entity|Prefab|AudioClip|Texture|Font|Material|Model
+// (exactly these names: a field whose type doesn't match the C# field is skipped and keeps its C# default)
 ```
 
 The full WorldText block (all keys) is in `Tools/SceneGen/SceneGen.Common.ps1` (`WText`).
@@ -539,6 +540,13 @@ regenerated:
 Run them with `pwsh -NoProfile -File Tools/SceneGen/<script>.ps1`. **Regenerating overwrites the
 generated files**, including edits made to them in the Editor. Either keep the generator as the
 source of truth, or stop using it for that scene once people start editing it by hand.
+
+**The mech player is now a prefab:** `Assets/Prefabs/Mech Player.cprefab`. TutorialMap, Zoo Scene
+and Player Showcase each hold an instance of it, so edit the player there (open the prefab, or
+change an instance and Apply) and every scene follows when it is next opened. TutorialMap keeps
+its own root scale (0.5), CharacterController size and camera FOV (55) as instance overrides.
+`MakePlayerShowcase.ps1` / `MakeZooScene.ps1` still write the player inline: running them again
+replaces the instance with an unlinked copy.
 
 Embedding an external texture into a GLB: read the JSON and BIN chunks, append the PNG to the BIN
 chunk (4-byte aligned), add a bufferView, then replace `images[i].uri` with `bufferView` and

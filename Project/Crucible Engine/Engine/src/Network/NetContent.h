@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.2
+* \version       1.3
 * \brief
 *                NetContent: everything two builds must agree on before
 *                they may play together - the serializers, the network
@@ -30,7 +30,10 @@
 *                  1. NetworkSession::DefaultContentHash(): protocol version,
 *                     tick rate, snapshot interval;
 *                  2. every serializer in NetComponentId order;
-*                  3. every prefab in NetPrefabId order (NetPrefabTable).
+*                  3. every prefab in NetPrefabId order (NetPrefabTable);
+*                  4. if set, the animator signature: every animator
+*                     controller's parameter names and types (what the
+*                     replicated Animator slots mean).
 *                Registration order never matters; content always does.
 *
 * \history
@@ -38,6 +41,7 @@
 *    -v1.1       authored network prefabs discovered before every session;
 *                PrepareWith, PlayerPrefab, Discovered (Networking Phase 14.2)
 *    -v1.2       scene profiles (Networking Phase 14.7)
+*    -v1.3       animator signature in the hash (Networking C# Phase 7)
 *
 **************************************************************************/
 #pragma once
@@ -58,6 +62,7 @@ namespace Crucible
 	class AssetManager;
 	class ResourceManager;
 	class ComponentRegistry;
+	struct AnimatorController;
 
 #ifdef _MSC_VER
 #pragma warning(push)
@@ -111,10 +116,28 @@ namespace Crucible
 		/// The hash for this content (no validation).
 		std::uint64_t ComputeHash(const ComponentRegistry& components) const;
 
+		/// One animator controller for AnimatorSignature: its asset id, and the controller (null
+		/// if it could not be read).
+		struct AnimatorSignatureEntry
+		{
+			std::uint64_t              guid = 0;
+			const AnimatorController*  controller = nullptr;
+		};
+
+		/// The parameter names and types of `controllers`, in guid order (Networking C# Phase 7:
+		/// replicated Animator slots are those parameters, so two machines must agree on them).
+		/// Prepare computes it from every animator controller of the project.
+		static std::uint64_t AnimatorSignature(std::span<const AnimatorSignatureEntry> controllers);
+
+		/// Enters ComputeHash when not 0 (Prepare sets it; tests may). Takes effect at the next
+		/// Recompute / PrepareWith.
+		void SetAnimatorSignature(std::uint64_t value) noexcept { m_animatorSignature = value; }
+
 	private:
 		ReplicationRegistry m_serializers;
 		NetPrefabTable      m_prefabs;
 		std::uint64_t       m_hash = 0;
+		std::uint64_t       m_animatorSignature = 0;   // Phase 7: 0 = not part of the hash
 		std::vector<Net::NetPrefabId> m_discovered;   // removed again before the next discovery
 		std::vector<Net::NetPrefabId> m_sceneProfiles;   // this session's (Phase 14.7)
 		Net::NetPrefabId    m_playerPrefab = Net::kInvalidNetPrefab;

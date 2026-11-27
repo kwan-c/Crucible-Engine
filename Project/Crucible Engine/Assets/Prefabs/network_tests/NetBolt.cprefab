@@ -1,0 +1,72 @@
+{
+    "version": 3,
+    "name": "NetBolt",
+    "entities": [
+        {
+            "id": "4E65744265737411",
+            "parent": -1,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 0.2,
+                        "y": 0.2,
+                        "z": 0.2
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 1.0,
+                        "y": 0.85,
+                        "z": 0.1,
+                        "w": 1.0
+                    },
+                    "meshAsset": 8362592118289502741,
+                    "materialAsset": 0
+                },
+                "EntityName": {
+                    "name": "Net Bolt"
+                },
+                "ScriptComponent": {
+                    "scripts": [
+                        {
+                            "enabled": true,
+                            "assembly": "Managed/Crucible.Scripts.dll",
+                            "namespace": "Crucible.Scripts",
+                            "class": "NetBolt",
+                            "fields": []
+                        }
+                    ]
+                },
+                "NetworkObjectAuthoring": {
+                    "replicated": [
+                        "Transform/Full"
+                    ],
+                    "serverOnly": [
+                        "ScriptComponent"
+                    ],
+                    "ownerLocalOnly": [],
+                    "enabledReplicated": [],
+                    "sendPriority": 1.0,
+                    "critical": true,
+                    "allowScenePlacement": true,
+                    "spawnPerPlayer": false
+                }
+            }
+        }
+    ]
+}

@@ -40,6 +40,7 @@ namespace Crucible::ScriptBindings
 		RegisterTerrainBindings();
 		RegisterApplicationBindings();
 		RegisterTagBindings();
+		RegisterNetworkBindings();
 		RegisterRagdollBindings();
 		RegisterGraphicsBindings();
 		RegisterQualitySettingsBindings();
@@ -56,6 +57,7 @@ namespace Crucible::ScriptBindings
 		SetEvents(nullptr);
 		SetCore(nullptr);
 		SetResources(nullptr);
+		SetNetwork(nullptr, nullptr);
 		// Clear new adapters here.
 	}
 }

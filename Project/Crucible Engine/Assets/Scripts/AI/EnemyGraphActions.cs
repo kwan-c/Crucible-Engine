@@ -81,20 +81,28 @@ namespace Crucible.Scripts
     {
         protected override Status Tick()
         {
-            Controller.Hold("Request attack");
-            if (!Controller.SensePlayer()) return Status.Failure;
+            if (!Controller.SensePlayer()) { Controller.Hold("Lost player"); return Status.Failure; }
+            if (!Controller.Approach() || Controller.CooldownRemaining > 0f) return Status.Running;
+            return Controller.RequestAttack() ? Status.Success : Status.Running;
+        }
+    }
 
-            // Melee pressure and ranged shooters stay in position while they wait.
-            if (Controller.ContinuousMeleePressure || Controller.UsesRangedPositioning)
+    [NodeDescription(name: "Request Spinner Charge", story: "Request Spinner charge", category: "Lithomachia/Enemy", id: "efe00bba42474790b03cbcee4ca00ad3",
+                     description: "Approaches a clear lane, asks for local permission and commits to the warning direction.")]
+    public sealed class RequestSpinnerWindupAction : EnemyGraphAction
+    {
+        protected override Status Tick()
+        {
+            if (!Controller.previewSpinnerWindup || !Controller.SensePlayer()) return Status.Failure;
+            if (Controller.CooldownRemaining > 0f || Controller.DistanceToTarget > Controller.attackRange + .25f
+                || !Controller.TargetInReach())
             {
-                bool inRange = Controller.Approach();
-                if (!inRange || Controller.CooldownRemaining > 0f) return Status.Running;
-                return Controller.RequestAttack() ? Status.Success : Status.Running;
+                Controller.Approach();
+                return Status.Running;
             }
-
-            if (!Controller.TargetInReach()) return Status.Failure;
-            if (Controller.CooldownRemaining > 0f) return Status.Running;
-            return Controller.RequestAttack() ? Status.Success : Status.Failure;
+            if (Controller.TrySpinnerWindup()) return Status.Success;
+            Controller.AwaitSpecialOpening();
+            return Status.Running;
         }
     }
 
@@ -113,6 +121,18 @@ namespace Crucible.Scripts
         protected override void OnEnd() { if (Controller != null) Controller.CancelAttack(); }
     }
 
+    [NodeDescription(name: "Finish Spinner Charge", story: "Finish charge and recovery", category: "Lithomachia/Enemy", id: "1c01f26151cb42d78f301cc542b73d19",
+                     description: "Keeps movement with the charge motor until recovery completes. Interrupting this node cancels the attack.")]
+    public sealed class FinishSpinnerChargeAction : EnemyGraphAction
+    {
+        protected override Status Tick()
+        {
+            if (Controller.SpinnerStage == Enemy.SpinnerPhase.Windup && !Controller.SensePlayer()) return Status.Failure;
+            return Controller.AttackInProgress ? Status.Running : Status.Success;
+        }
+        protected override void OnEnd() { if (Controller != null) Controller.CancelAttack(); }
+    }
+
     [NodeDescription(name: "Recover Weapon Cooldown", story: "Recover weapon cooldown", category: "Lithomachia/Enemy", id: "a8110da821b546f0a5d10af059770ce7",
                      description: "Waits out the weapon's cooldown: melee keeps pursuing, ranged keeps or improves its firing spot.")]
     public sealed class RecoverEnemyAction : EnemyGraphAction
@@ -123,8 +143,7 @@ namespace Crucible.Scripts
 
         protected override Status Tick()
         {
-            Controller.Hold("Recover");
-            if (!Controller.SensePlayer()) return Status.Failure;
+            if (!Controller.SensePlayer()) { Controller.Hold("Lost player"); return Status.Failure; }
             completed = Controller.Recover();
             return completed ? Status.Success : Status.Running;
         }

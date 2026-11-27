@@ -12,11 +12,8 @@ namespace Crucible.Scripts
     // point it aimed at when it started (bolts never home). The cooldown starts with the
     // attack. During the wind-up an orange lane on the ground warns the player.
     //
-    // Unity took damage, cooldown and reach from the weapon PART (PartData) times per-enemy
-    // multipliers; Crucible has no part system yet, so the results are the fields here:
-    //   mace:     70 damage x 0.178571 = 12.5, every 1 s x 1.05, Range 0.7 golem = 3.85 m box
-    //   crossbow: 70 damage x 0.285714 = 20,   every 1.667 s x 3.2 = 5.33 s, Range 10 golems = 40 m;
-    //             bolt speed 160 x 0.45 = 72 m/s (the bolt prefab's own fields)
+    // Armed prefabs use the player's MechPartCatalogue. The enemy owns its attack
+    // timing and aim. Older prefabs can still use their original damage and Bolt.
     public sealed partial class Enemy
     {
         public bool melee = true;                 // true: hits a box in front; false: fires boltPrefab
@@ -31,14 +28,21 @@ namespace Crucible.Scripts
         public float meleeHeight = 3.5f;
         public bool respectAttackRangeAtRelease = true;   // melee: re-check range at the hit, so backing off dodges
         public float aimSpreadDegrees = 0f;       // ranged: random cone round the aim point
-        public Prefab boltPrefab;                 // ranged: what it fires (a Bolt)
+        public Prefab boltPrefab;                 // shared MechProjectile or a legacy Bolt
         public bool telegraph = true;             // the orange warning lane during the wind-up
+        public string equippedWeaponId = "";
+        public float weaponDamageMultiplier = 1f;
+        public float projectileSpeedMultiplier = 1f;
+        public int spawnCost = 1;
 
         bool attacking, released, warnedNoBolt;
         float age, cooldownLeft;
         CombatHealth attackTarget;                // who the current attack is aimed at
         Vector3 aim, strikeFacing;                // where the bolt goes; which way the swing faces
         Entity telegraphEntity;
+        Entity weaponMuzzle;
+        MechPartDef equippedWeapon;
+        bool invalidWeapon;
         float telegraphThickness = 0.02f;
 
         public bool AttackInProgress { get { return attacking; } }
@@ -46,6 +50,14 @@ namespace Crucible.Scripts
 
         void CreateWeapon()
         {
+            if (!string.IsNullOrEmpty(equippedWeaponId))
+            {
+                equippedWeapon = MechPartCatalogue.Find(equippedWeaponId);
+                invalidWeapon = equippedWeapon == null || !equippedWeapon.IsWeapon || equippedWeapon.Attack == MechAttackType.Special;
+                if (invalidWeapon) Log.Warning("[Enemy] " + Entity.Name + ": invalid equipped weapon " + equippedWeaponId);
+                else melee = equippedWeapon.Attack == MechAttackType.Melee;
+            }
+            weaponMuzzle = Entity.FindChild("Weapon Muzzle");
             telegraphEntity = Entity.FindChild("Telegraph");
             if (telegraph && (telegraphEntity == null || !telegraphEntity.HasComponent<MeshRenderer>()))
             {
@@ -61,14 +73,15 @@ namespace Crucible.Scripts
         {
             cooldownLeft = Math.Max(0f, cooldownLeft - deltaTime);
 
-            if (attacking)
+            if (attacking && previewSpinnerWindup)
+                TickSpinner(deltaTime);
+            else if (attacking)
             {
                 // A lost or dead target cancels the hit that hasn't landed. A bolt already
                 // flying keeps flying.
                 if (attackTarget == null || attackTarget.IsDead || !attackTarget.Entity.IsActive)
                 {
-                    if (!released) AnimateAttackCancel();   // EnemyAnimation.cs: don't leave a charge hanging
-                    attacking = false;
+                    CancelAttack();
                 }
                 else
                 {
@@ -78,9 +91,9 @@ namespace Crucible.Scripts
                         released = true;
                         if (melee) StrikeMelee();
                         else FireBolt();
-                        AnimateAttackRelease();             // EnemyAnimation.cs: the cannon's Fire
+                        AnimateAttackRelease();
                     }
-                    if (age >= fireDuration) attacking = false;
+                    if (age >= fireDuration) CancelAttack();
                 }
             }
 
@@ -98,19 +111,21 @@ namespace Crucible.Scripts
         // Starts an attack if it is off cooldown and can reach. Returns whether it started.
         public bool TryAttack()
         {
-            if (!IsReady || attacking || cooldownLeft > 0f) return false;
+            if (!IsReady || asleep || invalidWeapon || attacking || cooldownLeft > 0f) return false;
             if (MechHitStop.BlocksNewActions(Entity)) return false;   // Unity's EnemyAttack: none during a hit stop
             if (targetHealth == null || targetHealth == this || targetHealth.IsDead || !targetHealth.Entity.IsActive) return false;
 
             Entity victim = targetHealth.Entity;
             if (!CanReach(victim) || !ClearPathFrom(Position, victim, melee)) return false;
+            if (previewSpinnerWindup && !PrepareSpinner(victim)) return false;
+            if (!previewSpinnerWindup && !AdmitMeleeAttack()) return false;
 
             attackTarget = targetHealth;
             aim = AimPoint(victim);                  // ranged shots aim once; bolts never home
             if (!melee && aimSpreadDegrees > 0f) aim = Spread(aim);
             strikeFacing = Facing;                   // melee strikes where the swing began
             age = 0f;
-            cooldownLeft = cooldown;
+            cooldownLeft = previewSpinnerWindup ? spinnerCooldown : cooldown;
             attacking = true;
             released = false;
             AnimateAttackStart();                    // EnemyAnimation.cs: the slash, or the cannon's charge
@@ -121,9 +136,12 @@ namespace Crucible.Scripts
         public void CancelAttack()
         {
             if (attacking && !released) AnimateAttackCancel();
+            if (SpinnerStage != SpinnerPhase.Idle) EndSpinner();
+            ReleaseMeleeAttack();
             attacking = false;
             released = false;
             attackTarget = null;
+            HideTelegraph();
         }
 
         // Melee: within reach on the flat and no more than verticalReach above or below.
@@ -210,7 +228,8 @@ namespace Crucible.Scripts
             if (ahead < 0f || ahead > weaponReach) return;
             if (Math.Abs(across) > meleeWidth * 0.5f || Math.Abs(offset.Y) > meleeHeight * 0.5f) return;
 
-            if (!attackTarget.ApplyDamage(damage)) return;
+            float amount = equippedWeapon != null ? equippedWeapon.Damage * weaponDamageMultiplier : damage;
+            if (!attackTarget.ApplyDamage(amount)) return;
             // Unity's CombatFeedback: a melee hit that lands on the mech stops the golem that landed
             // it as well (bolts don't). The mech decides, since its hit stop settings are its own.
             MechPlayer player = attackTarget as MechPlayer;
@@ -228,12 +247,16 @@ namespace Crucible.Scripts
 
             // Unity's fallback muzzle: half a metre up and ahead. 1.5 m ahead here, to start
             // clear of the golem's 1.7 m deep body box.
-            Vector3 start = Position + Vector3.Up * 0.5f + strikeFacing * 1.5f;
+            Vector3 start = weaponMuzzle != null ? weaponMuzzle.Transform.WorldPosition
+                : Position + Vector3.Up * 0.5f + strikeFacing * 1.5f;
             Vector3 direction = (aim - start).Normalized;
             if (direction.Length < 0.5f) direction = strikeFacing;
 
             // LookRotation points the bolt's Transform.Forward along direction; Bolt flies that way.
-            boltPrefab.Instantiate(start, Quaternion.LookRotation(direction));
+            Entity shot = boltPrefab.Instantiate(start, Quaternion.LookRotation(direction));
+            if (equippedWeapon != null)
+                MechProjectile.Fire(shot, equippedWeapon, Entity, direction, weaponDamageMultiplier,
+                    speedMultiplier: projectileSpeedMultiplier, enemyTarget: attackTarget);
         }
 
         // The aim point moved by a random amount inside a cone of aimSpreadDegrees.
@@ -266,20 +289,27 @@ namespace Crucible.Scripts
             if (renderer.Visible != show) renderer.Visible = show;
             if (!show) return;
 
-            float groundY = Position.Y - (agent != null ? agent.BaseOffset : 1f) + 0.06f;   // just above the feet
+            float groundY = (previewSpinnerWindup ? GroundAtFeet() : Position.Y - (agent != null ? agent.BaseOffset : 1f)) + .06f;
             Vector3 start = new Vector3(Position.X, groundY, Position.Z);
-            Vector3 end = melee ? start + strikeFacing * 3f : new Vector3(aim.X, groundY, aim.Z);
+            Vector3 end = previewSpinnerWindup ? start + chargeDirection * (chargeSpeed * chargeDuration)
+                : melee ? start + strikeFacing * 3f : new Vector3(aim.X, groundY, aim.Z);
 
             Vector3 lane = end - start;
             float length = lane.Length;
             Vector3 direction = length > 0.01f ? lane * (1f / length) : strikeFacing;
             float progress = Math.Max(0.1f, Math.Min(1f, age / Math.Max(0.01f, fireDuration * releaseFrame)));
-            float filled = Math.Max(0.01f, length * progress);
+            float filled = Math.Max(0.01f, length * (previewSpinnerWindup ? 1f : progress));
 
-            // Scale is local; the golem roots are at scale 1, so local is world here.
             telegraphEntity.Transform.WorldPosition = start + direction * (filled * 0.5f);
             telegraphEntity.Transform.WorldRotation = Quaternion.LookRotation(direction);
-            telegraphEntity.Transform.Scale = new Vector3(melee ? 2f : 0.55f, telegraphThickness, filled);
+            if (previewSpinnerWindup)
+            {
+                // The preview prefab root is half scale. Express the warning in world metres.
+                Vector3 scale = Transform.Scale;
+                telegraphEntity.Transform.Scale = new Vector3(2f * contactRadius / Math.Max(.001f, Math.Abs(scale.X)),
+                    telegraphThickness, filled / Math.Max(.001f, Math.Abs(scale.Z)));
+            }
+            else telegraphEntity.Transform.Scale = new Vector3(melee ? 2f : 0.55f, telegraphThickness, filled);
         }
 
         void HideTelegraph()

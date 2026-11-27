@@ -41,6 +41,7 @@
 #include "Network/Systems/LocalPlayerInputSystem.h"
 #include "Network/Systems/NetInputSystem.h"
 #include "Network/Systems/NetInterpolationSystem.h"
+#include "Network/Systems/NetAnimatorSystem.h"
 
 // STL
 #include <algorithm>
@@ -299,26 +300,28 @@ namespace Crucible {
         // tearing down the play world announces nothing to the other players. Before a Host or
         // Client start, the prefab files are read and validated again and the content hash is
         // recomputed: an invalid table refuses the start (the editor's Network panel shows why).
-        m_networkPlayState = m_events.engine.Subscribe<EngineEvents::PlayStateChanged>([this, netRegistrationError](const EngineEvents::PlayStateChanged& e) {
+        const auto prepareNetContent = [this, netRegistrationError] {
+            std::string contentError = netRegistrationError;
+            if (contentError.empty() && m_netContent->Prepare(*m_world, *m_assets, *m_resources, contentError))
+                m_network->SetContentHash(m_netContent->Hash());
+            m_network->SetContentError(contentError);
+        };
+        m_network->SetContentPreparer(prepareNetContent);   // a session a script starts mid-Play (Network.StartHost / Join)
+        m_networkPlayState = m_events.engine.Subscribe<EngineEvents::PlayStateChanged>([this, prepareNetContent](const EngineEvents::PlayStateChanged& e) {
             if (e.from == PlayState::Edit && e.to == PlayState::Playing)
             {
-                if (m_network->Settings().mode != NetMode::Offline)
-                {
-                    std::string contentError = netRegistrationError;
-                    if (contentError.empty() && m_netContent->Prepare(*m_world, *m_assets, *m_resources, contentError))
-                        m_network->SetContentHash(m_netContent->Hash());
-                    m_network->SetContentError(contentError);
-                }
+                if (m_network->Settings().mode != NetMode::Offline) prepareNetContent();
                 std::string error;
                 if (!m_network->Start(error)) CRU_ERROR("[Net] could not start the {} session: {}", ToString(m_network->Settings().mode), error);
             }
         });
         m_playMode->OnBeforeStop([this] { m_network->Stop("Play stopped"); });
 
-        // v1 rule: a scene change during a session ends it (clients cannot follow a level switch
-        // yet). This runs inside SceneManager::ApplyPending, before any system of the frame.
+        // A scene change during a session ends it - unless the session made it itself (the host's
+        // Network.LoadScene, and the client following it): then it carries on in the new scene.
+        // This runs inside SceneManager::ApplyPending, before any system of the frame.
         m_scenes->OnSceneChanged([this] {
-            if (m_network->IsActive()) m_network->Stop("the scene changed during the session");
+            if (m_network->IsActive() && !m_network->AcceptSceneChange()) m_network->Stop("the scene changed during the session");
         });
 
         RegisterEngineSystems();
@@ -386,7 +389,20 @@ namespace Crucible {
             // The safe point: nothing is iterating the world yet this frame. Scene swaps
             // destroy every entity, and play-mode transitions snapshot, restore and start or
             // end the simulation. The scene request goes first, so Play captures the scene just loaded.
+            // Networking first: a session a script asked for starts here, and a host's scene change
+            // is turned into the load below (the session forgets the old scene's objects first, so
+            // destroying them announces nothing).
+            if (m_network->HasStartRequest() && m_playMode->InSession()) m_network->ApplyStartRequest();
+            if (std::uint64_t sceneAsset = 0; m_network->TakeSceneChangeRequest(sceneAsset))
+            {
+                if (m_scenes->RequestLoadAsset(sceneAsset, true))   // past any loading screen: the clients are told now
+                {
+                    m_network->BeginSceneTransition(sceneAsset);
+                    m_network->NoteSceneLoadIssued();
+                }
+            }
             m_scenes->ApplyPending();
+            m_network->CheckSceneLoad();   // a load the session issued that did not happen ends it
             m_playMode->ApplyRequests();
 
             // S3 instances follow Core lifetime. This tick excludes entity-owned
@@ -472,6 +488,10 @@ namespace Crucible {
         m_systems.RegisterSystem<NetInterpolationSystem>(*m_network);   // PreRender, before the hierarchy, client only: proxies drawn 100 ms behind the host, between snapshots
         m_systems.RegisterSystem<HierarchyTransformSystem>();   // after CPU poses/socket preparation: fills WorldTransform
         auto& animator = m_systems.RegisterSystem<AnimatedModelSystem>(*m_resources, *m_playMode, m_world.get());
+        // PreRender, before the animation system: C# Animator calls go through its binding (the host's writes on a
+        // network object that syncs "Animator" are recorded and sent); on a client it hands the host's values to the animator.
+        auto& netAnimator = m_systems.RegisterSystem<NetAnimatorSystem>(*m_network, animator, *m_world,
+            [resources = m_resources.get()](std::uint64_t id) { return resources->GetAnimatorController(id); });
         m_systems.RegisterSystem<SocketAttachmentSystem>(*m_resources);
         m_systems.RegisterSystem<ECSRagdollSystem>(*m_resources, *m_playMode);   // PreRender, after the animation's pose, before sockets read it: ragdolls (Hugo)
         m_systems.RegisterSystem<ECSTerrainSystem>(*m_renderer);                          // PreRender, Edit too, before RenderExtract: each Terrain's mesh onto its MeshRenderer (rebuilt only when its grid changes)
@@ -488,7 +508,7 @@ namespace Crucible {
         if (m_scriptRuntime->IsRunning()) {
             auto* physics = m_systems.FindSystem<ECSPhysicsSystem>();
             m_scriptRuntime->ConnectEngine({
-                .animator     = &animator,                                   // C# Animator
+                .animator     = &netAnimator.Binding(),                      // C# Animator (through the network: NetAnimatorSystem)
                 .world        = m_world.get(),                               // Transform, Entity, Prefab, components
                 .play         = m_playMode.get(),
                 .scenes       = m_scenes.get(),
