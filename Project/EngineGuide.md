@@ -11,6 +11,9 @@ The deeper subsystem docs are in this folder: scripting
 [ModularAnimation](<Crucible Engine/Docs/ModularAnimation.md>)). This guide summarises what you need from them. Where
 the two disagree, the source code under `ManagedScripts/Runtime` is the truth.
 
+For a Unity-style, class-by-class listing of every scripting class and member (with examples), see
+[ScriptingAPI.md](ScriptingAPI.md). Section 5 below is the short summary.
+
 Contents:
 
 1. [Where things live](#1-where-things-live)
