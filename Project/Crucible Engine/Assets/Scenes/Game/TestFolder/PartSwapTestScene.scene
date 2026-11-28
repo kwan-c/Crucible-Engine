@@ -1451,8 +1451,8 @@
                         "y": 0.5
                     },
                     "position": {
-                        "x": -22.473875045776367,
-                        "y": -84.36502075195313
+                        "x": -64.72711181640625,
+                        "y": -95.21640014648438
                     },
                     "size": {
                         "x": 248.0,
@@ -1518,7 +1518,9 @@
                     "fileId": 18431853273497976965,
                     "isRoot": false,
                     "prefabHash": 0,
-                    "overrides": []
+                    "overrides": [
+                        "UIRect/position"
+                    ]
                 },
                 "EntityTag": {
                     "tag": "Untagged"
@@ -3071,12 +3073,12 @@
                         "y": 0.5
                     },
                     "position": {
-                        "x": 97.77570343017578,
-                        "y": 1.7459946870803833
+                        "x": 121.21466827392578,
+                        "y": 28.235496520996094
                     },
                     "size": {
-                        "x": 100.0,
-                        "y": 100.0
+                        "x": 150.0,
+                        "y": 150.0
                     },
                     "rotation": 0.0,
                     "raycastTarget": true
@@ -3095,7 +3097,10 @@
                     "fileId": 14973088759677436043,
                     "isRoot": false,
                     "prefabHash": 0,
-                    "overrides": []
+                    "overrides": [
+                        "UIRect/position",
+                        "UIRect/size"
+                    ]
                 },
                 "EntityTag": {
                     "tag": "Untagged"
@@ -17613,8 +17618,8 @@
                         "y": 0.5
                     },
                     "position": {
-                        "x": 94.97714233398438,
-                        "y": -84.36502075195313
+                        "x": 124.61614990234375,
+                        "y": -95.34268188476563
                     },
                     "size": {
                         "x": 110.0,
@@ -17680,7 +17685,9 @@
                     "fileId": 8632020484339777677,
                     "isRoot": false,
                     "prefabHash": 0,
-                    "overrides": []
+                    "overrides": [
+                        "UIRect/position"
+                    ]
                 },
                 "EntityTag": {
                     "tag": "Untagged"
@@ -17934,8 +17941,8 @@
                         "y": -0.0
                     },
                     "size": {
-                        "x": 400.0,
-                        "y": 250.0
+                        "x": 500.0,
+                        "y": 300.0
                     },
                     "rotation": 0.0,
                     "raycastTarget": true
@@ -17985,7 +17992,9 @@
                     "fileId": 12667245750463742083,
                     "isRoot": false,
                     "prefabHash": 0,
-                    "overrides": []
+                    "overrides": [
+                        "UIRect/size"
+                    ]
                 },
                 "EntityTag": {
                     "tag": "Untagged"
@@ -18891,7 +18900,7 @@
                     },
                     "position": {
                         "x": 0.0,
-                        "y": -283.6289978027344
+                        "y": -519.2990112304688
                     },
                     "size": {
                         "x": 389.0,
@@ -18926,7 +18935,9 @@
                     "fileId": 17855392521194553473,
                     "isRoot": false,
                     "prefabHash": 0,
-                    "overrides": []
+                    "overrides": [
+                        "UIRect/position"
+                    ]
                 },
                 "EntityTag": {
                     "tag": "Untagged"
@@ -21189,8 +21200,8 @@
                         "y": 0.5
                     },
                     "position": {
-                        "x": -92.9549789428711,
-                        "y": 20.0
+                        "x": -139.08786010742188,
+                        "y": 20.000152587890625
                     },
                     "size": {
                         "x": 107.0,
@@ -21208,7 +21219,7 @@
                         "w": 1.0
                     },
                     "fontAsset": 11391592331814764547,
-                    "fontSize": 18.0,
+                    "fontSize": 20.0,
                     "horizontalAlign": "Left",
                     "verticalAlign": "Top",
                     "wrap": true,
@@ -21256,7 +21267,10 @@
                     "fileId": 2867412961305542791,
                     "isRoot": false,
                     "prefabHash": 0,
-                    "overrides": []
+                    "overrides": [
+                        "UIRect/position",
+                        "UIText/fontSize"
+                    ]
                 },
                 "EntityTag": {
                     "tag": "Untagged"
@@ -23048,8 +23062,8 @@
                         "y": 0.5
                     },
                     "position": {
-                        "x": 4.517728805541992,
-                        "y": 20.0
+                        "x": -35.01458740234375,
+                        "y": 20.000335693359375
                     },
                     "size": {
                         "x": 87.0,
@@ -23067,7 +23081,7 @@
                         "w": 1.0
                     },
                     "fontAsset": 11391592331814764547,
-                    "fontSize": 18.0,
+                    "fontSize": 20.0,
                     "horizontalAlign": "Left",
                     "verticalAlign": "Top",
                     "wrap": true,
@@ -23115,7 +23129,10 @@
                     "fileId": 14973088759677436041,
                     "isRoot": false,
                     "prefabHash": 0,
-                    "overrides": []
+                    "overrides": [
+                        "UIRect/position",
+                        "UIText/fontSize"
+                    ]
                 },
                 "EntityTag": {
                     "tag": "Untagged"
