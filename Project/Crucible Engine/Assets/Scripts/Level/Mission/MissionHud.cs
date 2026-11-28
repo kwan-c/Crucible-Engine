@@ -3,7 +3,7 @@
 * \author:       Jean David Vidal Cruzado
 * \par:          Email: jeandavidvidal.c@digipen.edu
 * \date          27 November 2026
-* \version       1.0
+* \version       1.1
 * \brief         Placeholder mission read-out (the GDD's quest box): what
 *                to do, the timer, and a hold bar. Goes on the Mission HUD
 *                canvas (Prefabs/UI/Mission HUD).
@@ -16,8 +16,9 @@
 *        Quest Box/ Title, Detail, Bar Back/ Bar Fill
 *
 *    A missing piece is skipped. Reads MissionController (on the entity
-*    named controllerName): Title, Detail, and the active zone's state and
-*    hold progress. Bar colours follow the zone outlines (Unity's): yellow
+*    named controllerName): Title, Detail, and the bar (ShowBar,
+*    BarProgress, BarState: a capture area's hold, or an objective
+*    script's own bar, e.g. the escort's way to the next checkpoint). Bar colours follow the zone outlines (Unity's): yellow
 *    waiting, blue holding, yellow warning, red failed, green complete.
 *    The whole box hides when the level has no mission.
 *
@@ -27,6 +28,8 @@
 *
 * \history
 *    -v1.0       quest box: title, detail, hold bar
+*    -v1.1       shows for any mission (HasMission); the bar from the
+*                controller's ShowBar / BarProgress / BarState (Escort too)
 *
 **************************************************************************/
 namespace Crucible.@Scripts
@@ -49,19 +52,18 @@ namespace Crucible.@Scripts
             if (!found && !FindPieces(deltaTime)) return;
             if (controller == null || !controller.Entity.IsAlive) { found = false; return; }
 
-            bool any = controller.Zones.Count > 0;
+            bool any = controller.HasMission;
             if (box != null) box.SetActive(any);
             if (!any) return;
             if (title != null) title.Text = controller.Title;
             if (detail != null) detail.Text = controller.Detail;
 
-            MissionController.Zone zone = controller.Active;
-            bool bar = zone != null && !zone.IsExtract;
+            bool bar = controller.ShowBar;
             if (barBack != null) barBack.SetActive(bar);
             if (!bar || fillRect == null) return;
             Vector2 size = fillRect.Size;
-            fillRect.Size = new Vector2(fullWidth * System.Math.Max(0f, System.Math.Min(1f, zone.Progress)), size.Y);
-            if (fillImage != null) fillImage.Color = ColourFor(zone.State);
+            fillRect.Size = new Vector2(fullWidth * System.Math.Max(0f, System.Math.Min(1f, controller.BarProgress)), size.Y);
+            if (fillImage != null) fillImage.Color = ColourFor(controller.BarState);
         }
 
         // The controller and the box's pieces; looked for twice a second until found.

@@ -3,7 +3,7 @@
 * \author:       Jean David Vidal Cruzado
 * \par:          Email: jeandavidvidal.c@digipen.edu
 * \date          28 November 2026
-* \version       1.0
+* \version       1.1
 * \brief         Runs an Escort level's payload: spawns it at the 1st
 *                checkpoint, moves it along the escort route while a player
 *                is near, and handles its health, destruction and respawn.
@@ -32,6 +32,11 @@
 *      then back at the last checkpoint reached at full health.
 *    One log line per change.
 *
+*    Mission: registers as an objective (MissionObjectives), so
+*    MissionController opens the extract once the payload arrives, and the
+*    Mission HUD shows its Title / Detail and a bar (the way to the next
+*    checkpoint, coloured like the ring; red while destroyed).
+*
 *    Hooks (HUD, waves, mission): Started, CheckpointReached(passed),
 *    Arrived, Destroyed, Respawned; State, CheckpointsPassed,
 *    CheckpointTotal, Health, MaximumHealth, RespawnRemaining, Payload,
@@ -39,14 +44,17 @@
 *
 * \history
 *    -v1.0       new: Unity's EscortPayload movement, health and respawn
+*    -v1.1       a mission objective (IMissionObjective): HUD lines and bar;
+*                arriving opens the extract
 *
 **************************************************************************/
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 
 namespace Crucible.@Scripts
 {
-    public sealed class EscortObjective : EntityScript
+    public sealed class EscortObjective : EntityScript, IMissionObjective
     {
         public Prefab payload;                  // the payload body: PayloadHealth on the root, a collider, a model
         public float speed = 3f;                // metres per second while a player pushes it (Unity)
@@ -91,6 +99,70 @@ namespace Crucible.@Scripts
         private EscortState lastState = EscortState.Idle;
         private bool warnedNoGenerator, warnedNoPayload;
         private const int kScriptWaitFrames = 30;   // frames to wait for the payload's PayloadHealth
+
+        public override void OnCreate()
+        {
+            MissionObjectives.Register(Entity, this);
+        }
+
+        public override void OnDestroy()
+        {
+            MissionObjectives.Unregister(this);
+        }
+
+        // --- IMissionObjective: the Mission HUD's lines and bar ----------------- //
+        public string Title
+        {
+            get { return rules == null ? "Escort the payload" : "Escort the payload  (" + rules.CheckpointsPassed + "/" + rules.CheckpointCount + ")"; }
+        }
+
+        public string Detail
+        {
+            get
+            {
+                if (rules == null || rules.Arrived) return "";
+                if (IsDestroyed) return "Payload destroyed: back at the last checkpoint in " + RespawnRemaining.ToString("0.0", CultureInfo.InvariantCulture) + "s";
+                if (!HasStarted) return "Reach the payload and stay near it to move it";
+                string hp = "  (HP " + Health.ToString("#,0", CultureInfo.InvariantCulture) + "/" + MaximumHealth.ToString("#,0", CultureInfo.InvariantCulture) + ")";
+                switch (rules.State)
+                {
+                    case EscortState.Advancing:
+                        return "Escorting: next checkpoint in " + Math.Max(0f, rules.NextCheckpoint - rules.Distance).ToString("0", CultureInfo.InvariantCulture) + " m" + hp;
+                    case EscortState.Contested: return "Payload under attack: keep pushing!" + hp;
+                    case EscortState.Retreating: return "Enemies are pushing the payload back!" + hp;
+                    default: return "Stay near the payload to move it" + hp;
+                }
+            }
+        }
+
+        public bool ShowBar { get { return rules != null && !rules.Arrived; } }
+
+        /// <summary>0..1 of the way from the last checkpoint reached to the next.</summary>
+        public float BarProgress
+        {
+            get
+            {
+                if (rules == null) return 0f;
+                float span = rules.NextCheckpoint - rules.Floor;
+                return span > 0.001f ? Math.Max(0f, Math.Min(1f, (rules.Distance - rules.Floor) / span)) : 1f;
+            }
+        }
+
+        public HoldZoneState BarState
+        {
+            get
+            {
+                if (rules == null) return HoldZoneState.Waiting;
+                if (IsDestroyed) return HoldZoneState.Failed;
+                switch (rules.State)
+                {
+                    case EscortState.Advancing: return HoldZoneState.Complete;     // green, like the ring
+                    case EscortState.Contested: return HoldZoneState.Holding;      // blue
+                    case EscortState.Retreating: return HoldZoneState.Failed;      // red
+                    default: return HoldZoneState.Waiting;                         // yellow
+                }
+            }
+        }
 
         public override void OnUpdate(float deltaTime)
         {
