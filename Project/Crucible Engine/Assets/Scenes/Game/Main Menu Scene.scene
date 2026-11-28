@@ -57,7 +57,7 @@
                         "x": 1.0,
                         "y": 1.0,
                         "z": 1.0,
-                        "w": 1.0
+                        "w": 0.0
                     },
                     "textureAsset": 0
                 },
@@ -69,25 +69,25 @@
                         "x": 1.0,
                         "y": 1.0,
                         "z": 1.0,
-                        "w": 1.0
+                        "w": 0.0
                     },
                     "hovered": {
-                        "x": 0.8999999761581421,
-                        "y": 0.8999999761581421,
-                        "z": 0.8999999761581421,
-                        "w": 1.0
+                        "x": 0.9019607901573181,
+                        "y": 0.9019607901573181,
+                        "z": 0.9019607901573181,
+                        "w": 0.0
                     },
                     "pressed": {
-                        "x": 0.699999988079071,
-                        "y": 0.699999988079071,
-                        "z": 0.699999988079071,
-                        "w": 1.0
+                        "x": 0.7019608020782471,
+                        "y": 0.7019608020782471,
+                        "z": 0.7019608020782471,
+                        "w": 0.0
                     },
                     "disabled": {
                         "x": 0.21960784494876862,
                         "y": 0.21960784494876862,
                         "z": 0.21960784494876862,
-                        "w": 1.0
+                        "w": 0.0
                     },
                     "interactable": false
                 },
@@ -727,9 +727,9 @@
                     "sceneAsset": 0,
                     "actionId": "",
                     "normal": {
-                        "x": 0.551111102104187,
-                        "y": 0.5364148020744324,
-                        "z": 0.5364148020744324,
+                        "x": 0.6078431606292725,
+                        "y": 0.4313725531101227,
+                        "z": 0.0784313753247261,
                         "w": 1.0
                     },
                     "hovered": {
@@ -1033,9 +1033,9 @@
                     "sceneAsset": 0,
                     "actionId": "",
                     "normal": {
-                        "x": 0.551111102104187,
-                        "y": 0.5364148020744324,
-                        "z": 0.5364148020744324,
+                        "x": 0.6078431606292725,
+                        "y": 0.4313725531101227,
+                        "z": 0.0784313753247261,
                         "w": 1.0
                     },
                     "hovered": {
@@ -1186,9 +1186,9 @@
                     "sceneAsset": 0,
                     "actionId": "",
                     "normal": {
-                        "x": 0.5600000023841858,
-                        "y": 0.5600000023841858,
-                        "z": 0.5600000023841858,
+                        "x": 0.6078431606292725,
+                        "y": 0.4313725531101227,
+                        "z": 0.0784313753247261,
                         "w": 1.0
                     },
                     "hovered": {
@@ -1543,9 +1543,9 @@
                     "sceneAsset": 0,
                     "actionId": "",
                     "normal": {
-                        "x": 0.551111102104187,
-                        "y": 0.5364148020744324,
-                        "z": 0.5364148020744324,
+                        "x": 0.6078431606292725,
+                        "y": 0.4313725531101227,
+                        "z": 0.0784313753247261,
                         "w": 1.0
                     },
                     "hovered": {
@@ -1696,9 +1696,9 @@
                     "sceneAsset": 0,
                     "actionId": "",
                     "normal": {
-                        "x": 0.551111102104187,
-                        "y": 0.5364148020744324,
-                        "z": 0.5364148020744324,
+                        "x": 0.6078431606292725,
+                        "y": 0.4313725531101227,
+                        "z": 0.0784313753247261,
                         "w": 1.0
                     },
                     "hovered": {
@@ -1786,6 +1786,159 @@
             }
         },
         {
+            "id": "159EE0E58806C1E3",
+            "parent": "E59EE0E58806C1E7",
+            "siblingIndex": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Jump Button"
+                },
+                "UIRect": {
+                    "anchorMin": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "anchorMax": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "pivot": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "position": {
+                        "x": 260.0,
+                        "y": -0.0
+                    },
+                    "size": {
+                        "x": 180.0,
+                        "y": 50.0
+                    },
+                    "rotation": 0.0,
+                    "raycastTarget": true
+                },
+                "UIImage": {
+                    "colour": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0,
+                        "w": 1.0
+                    },
+                    "textureAsset": 0
+                },
+                "UIButton": {
+                    "onClick": "None",
+                    "sceneAsset": 0,
+                    "actionId": "",
+                    "normal": {
+                        "x": 0.6078431606292725,
+                        "y": 0.4313725531101227,
+                        "z": 0.0784313753247261,
+                        "w": 1.0
+                    },
+                    "hovered": {
+                        "x": 0.8999999761581421,
+                        "y": 0.8999999761581421,
+                        "z": 0.8999999761581421,
+                        "w": 1.0
+                    },
+                    "pressed": {
+                        "x": 0.699999988079071,
+                        "y": 0.699999988079071,
+                        "z": 0.699999988079071,
+                        "w": 1.0
+                    },
+                    "disabled": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "interactable": true
+                },
+                "UIText": {
+                    "text": "F",
+                    "colour": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0,
+                        "w": 1.0
+                    },
+                    "fontAsset": 0,
+                    "fontSize": 30.0,
+                    "horizontalAlign": "Center",
+                    "verticalAlign": "Middle",
+                    "wrap": true,
+                    "overflow": "Overflow",
+                    "lineSpacing": 1.0,
+                    "characterSpacing": 0.0,
+                    "richText": true,
+                    "bold": false,
+                    "underline": false,
+                    "bestFit": false,
+                    "minFontSize": 10.0,
+                    "maxFontSize": 40.0,
+                    "outline": false,
+                    "outlineColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "outlineWidth": 2.0,
+                    "glow": false,
+                    "glowColour": {
+                        "x": 1.0,
+                        "y": 0.8500000238418579,
+                        "z": 0.4000000059604645,
+                        "w": 0.800000011920929
+                    },
+                    "glowWidth": 3.0,
+                    "glowSoftness": 0.5,
+                    "shadow": false,
+                    "shadowColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.6000000238418579
+                    },
+                    "shadowOffset": {
+                        "x": 2.0,
+                        "y": 2.0
+                    },
+                    "shadowSoftness": 0.0
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 681091234067284337,
+                    "fileId": 3287312054461071823,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
             "id": "1973B8DE620D4015",
             "parent": "D173B8DE5F508007",
             "siblingIndex": 2,
@@ -1830,7 +1983,7 @@
                     },
                     "size": {
                         "x": 300.0,
-                        "y": 60.0
+                        "y": 80.0
                     },
                     "rotation": 0.0,
                     "raycastTarget": true
@@ -1842,7 +1995,7 @@
                         "z": 1.0,
                         "w": 1.0
                     },
-                    "textureAsset": 0
+                    "textureAsset": 12311566928176873479
                 },
                 "UIButton": {
                     "onClick": "Custom",
@@ -2119,25 +2272,25 @@
                         "x": 1.0,
                         "y": 1.0,
                         "z": 1.0,
-                        "w": 1.0
+                        "w": 0.0
                     },
                     "hovered": {
-                        "x": 0.8999999761581421,
-                        "y": 0.8999999761581421,
-                        "z": 0.8999999761581421,
-                        "w": 1.0
+                        "x": 0.9019607901573181,
+                        "y": 0.9019607901573181,
+                        "z": 0.9019607901573181,
+                        "w": 0.0
                     },
                     "pressed": {
-                        "x": 0.699999988079071,
-                        "y": 0.699999988079071,
-                        "z": 0.699999988079071,
-                        "w": 1.0
+                        "x": 0.7019608020782471,
+                        "y": 0.7019608020782471,
+                        "z": 0.7019608020782471,
+                        "w": 0.0
                     },
                     "disabled": {
                         "x": 0.21960784494876862,
                         "y": 0.21960784494876862,
                         "z": 0.21960784494876862,
-                        "w": 1.0
+                        "w": 0.0
                     },
                     "interactable": false
                 },
@@ -2569,6 +2722,159 @@
             }
         },
         {
+            "id": "2D9EE0E58806C1E1",
+            "parent": "DD9EE0E58806C1E5",
+            "siblingIndex": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Jump Button"
+                },
+                "UIRect": {
+                    "anchorMin": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "anchorMax": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "pivot": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "position": {
+                        "x": 260.0,
+                        "y": -0.0
+                    },
+                    "size": {
+                        "x": 180.0,
+                        "y": 50.0
+                    },
+                    "rotation": 0.0,
+                    "raycastTarget": true
+                },
+                "UIImage": {
+                    "colour": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0,
+                        "w": 1.0
+                    },
+                    "textureAsset": 0
+                },
+                "UIButton": {
+                    "onClick": "None",
+                    "sceneAsset": 0,
+                    "actionId": "",
+                    "normal": {
+                        "x": 0.6078431606292725,
+                        "y": 0.4313725531101227,
+                        "z": 0.0784313753247261,
+                        "w": 1.0
+                    },
+                    "hovered": {
+                        "x": 0.8999999761581421,
+                        "y": 0.8999999761581421,
+                        "z": 0.8999999761581421,
+                        "w": 1.0
+                    },
+                    "pressed": {
+                        "x": 0.699999988079071,
+                        "y": 0.699999988079071,
+                        "z": 0.699999988079071,
+                        "w": 1.0
+                    },
+                    "disabled": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "interactable": true
+                },
+                "UIText": {
+                    "text": "Z",
+                    "colour": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0,
+                        "w": 1.0
+                    },
+                    "fontAsset": 0,
+                    "fontSize": 30.0,
+                    "horizontalAlign": "Center",
+                    "verticalAlign": "Middle",
+                    "wrap": true,
+                    "overflow": "Overflow",
+                    "lineSpacing": 1.0,
+                    "characterSpacing": 0.0,
+                    "richText": true,
+                    "bold": false,
+                    "underline": false,
+                    "bestFit": false,
+                    "minFontSize": 10.0,
+                    "maxFontSize": 40.0,
+                    "outline": false,
+                    "outlineColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "outlineWidth": 2.0,
+                    "glow": false,
+                    "glowColour": {
+                        "x": 1.0,
+                        "y": 0.8500000238418579,
+                        "z": 0.4000000059604645,
+                        "w": 0.800000011920929
+                    },
+                    "glowWidth": 3.0,
+                    "glowSoftness": 0.5,
+                    "shadow": false,
+                    "shadowColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.6000000238418579
+                    },
+                    "shadowOffset": {
+                        "x": 2.0,
+                        "y": 2.0
+                    },
+                    "shadowSoftness": 0.0
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 681091234067284337,
+                    "fileId": 3287312054460367307,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
             "id": "2FA518E53D2BC003",
             "parent": "EFA518E53D2BC001",
             "siblingIndex": 0,
@@ -2976,7 +3282,7 @@
                         "z": 1.0,
                         "w": 1.0
                     },
-                    "textureAsset": 0
+                    "textureAsset": 12311566928176873479
                 },
                 "UIButton": {
                     "onClick": "Custom",
@@ -3136,9 +3442,9 @@
                     "sceneAsset": 0,
                     "actionId": "",
                     "normal": {
-                        "x": 0.5600000023841858,
-                        "y": 0.5600000023841858,
-                        "z": 0.5600000023841858,
+                        "x": 0.6088888645172119,
+                        "y": 0.4320855438709259,
+                        "z": 0.07847902178764343,
                         "w": 1.0
                     },
                     "hovered": {
@@ -3461,9 +3767,9 @@
                     "sceneAsset": 0,
                     "actionId": "",
                     "normal": {
-                        "x": 0.551111102104187,
-                        "y": 0.5364148020744324,
-                        "z": 0.5364148020744324,
+                        "x": 0.6078431606292725,
+                        "y": 0.4313725531101227,
+                        "z": 0.0784313753247261,
                         "w": 1.0
                     },
                     "hovered": {
@@ -3665,120 +3971,6 @@
             }
         },
         {
-            "id": "3B7B78E49D8EC48B",
-            "parent": "537B78E49D8D8445",
-            "siblingIndex": 6,
-            "components": {
-                "Transform": {
-                    "positions": {
-                        "x": 0.0,
-                        "y": 0.0,
-                        "z": 0.0
-                    },
-                    "rotation": {
-                        "x": 0.0,
-                        "y": 0.0,
-                        "z": 0.0,
-                        "w": 1.0
-                    },
-                    "scale": {
-                        "x": 1.0,
-                        "y": 1.0,
-                        "z": 1.0
-                    }
-                },
-                "EntityName": {
-                    "name": "EquipLA Label"
-                },
-                "UIRect": {
-                    "anchorMin": {
-                        "x": 0.5,
-                        "y": 0.5
-                    },
-                    "anchorMax": {
-                        "x": 0.5,
-                        "y": 0.5
-                    },
-                    "pivot": {
-                        "x": 0.5,
-                        "y": 0.5
-                    },
-                    "position": {
-                        "x": 164.1389923095703,
-                        "y": -83.5999984741211
-                    },
-                    "size": {
-                        "x": 220.0,
-                        "y": 50.0
-                    },
-                    "rotation": 0.0,
-                    "raycastTarget": false
-                },
-                "UIText": {
-                    "text": "Equip \n(Left Arm)",
-                    "colour": {
-                        "x": 1.0,
-                        "y": 1.0,
-                        "z": 1.0,
-                        "w": 1.0
-                    },
-                    "fontAsset": 11391592331814764547,
-                    "fontSize": 30.0,
-                    "horizontalAlign": "Left",
-                    "verticalAlign": "Middle",
-                    "wrap": true,
-                    "overflow": "Overflow",
-                    "lineSpacing": 1.0,
-                    "characterSpacing": 0.0,
-                    "richText": true,
-                    "bold": false,
-                    "underline": false,
-                    "bestFit": true,
-                    "minFontSize": 10.0,
-                    "maxFontSize": 40.0,
-                    "outline": false,
-                    "outlineColour": {
-                        "x": 0.0,
-                        "y": 0.0,
-                        "z": 0.0,
-                        "w": 1.0
-                    },
-                    "outlineWidth": 2.0,
-                    "glow": false,
-                    "glowColour": {
-                        "x": 1.0,
-                        "y": 0.8500000238418579,
-                        "z": 0.4000000059604645,
-                        "w": 0.800000011920929
-                    },
-                    "glowWidth": 3.0,
-                    "glowSoftness": 0.5,
-                    "shadow": false,
-                    "shadowColour": {
-                        "x": 0.0,
-                        "y": 0.0,
-                        "z": 0.0,
-                        "w": 0.6000000238418579
-                    },
-                    "shadowOffset": {
-                        "x": 2.0,
-                        "y": 2.0
-                    },
-                    "shadowSoftness": 0.0
-                },
-                "PrefabInstance": {
-                    "prefabAsset": 681091234067284337,
-                    "fileId": 1980309384438432773,
-                    "isRoot": false,
-                    "prefabHash": 0,
-                    "overrides": []
-                },
-                "EntityTag": {
-                    "tag": "Untagged"
-                }
-            }
-        },
-        {
             "id": "3CD1E8E4942240B5",
             "parent": "0173B8DE620D4011",
             "siblingIndex": 2,
@@ -3818,12 +4010,12 @@
                         "y": 0.5
                     },
                     "position": {
-                        "x": -263.8259582519531,
+                        "x": -300.0,
                         "y": -270.0057373046875
                     },
                     "size": {
-                        "x": 127.5,
-                        "y": 43.5
+                        "x": 256.6000061035156,
+                        "y": 70.0
                     },
                     "rotation": 0.0,
                     "raycastTarget": true
@@ -3832,10 +4024,10 @@
                     "colour": {
                         "x": 1.0,
                         "y": 1.0,
-                        "z": 1.0,
+                        "z": 0.7019608020782471,
                         "w": 1.0
                     },
-                    "textureAsset": 0
+                    "textureAsset": 12311566928176873479
                 },
                 "UIButton": {
                     "onClick": "Custom",
@@ -4554,9 +4746,9 @@
                     "sceneAsset": 0,
                     "actionId": "",
                     "normal": {
-                        "x": 0.551111102104187,
-                        "y": 0.5364148020744324,
-                        "z": 0.5364148020744324,
+                        "x": 0.6078431606292725,
+                        "y": 0.4313725531101227,
+                        "z": 0.0784313753247261,
                         "w": 1.0
                     },
                     "hovered": {
@@ -4596,7 +4788,7 @@
                     "lineSpacing": 1.0,
                     "characterSpacing": 0.0,
                     "richText": true,
-                    "bold": true,
+                    "bold": false,
                     "underline": false,
                     "bestFit": false,
                     "minFontSize": 10.0,
@@ -4707,9 +4899,9 @@
                     "sceneAsset": 0,
                     "actionId": "",
                     "normal": {
-                        "x": 0.551111102104187,
-                        "y": 0.5364148020744324,
-                        "z": 0.5364148020744324,
+                        "x": 0.6078431606292725,
+                        "y": 0.4313725531101227,
+                        "z": 0.0784313753247261,
                         "w": 1.0
                     },
                     "hovered": {
@@ -4961,9 +5153,9 @@
                     "sceneAsset": 0,
                     "actionId": "",
                     "normal": {
-                        "x": 0.551111102104187,
-                        "y": 0.5364148020744324,
-                        "z": 0.5364148020744324,
+                        "x": 0.6078431606292725,
+                        "y": 0.4313725531101227,
+                        "z": 0.0784313753247261,
                         "w": 1.0
                     },
                     "hovered": {
@@ -5459,9 +5651,9 @@
                     "sceneAsset": 0,
                     "actionId": "",
                     "normal": {
-                        "x": 0.551111102104187,
-                        "y": 0.5364148020744324,
-                        "z": 0.5364148020744324,
+                        "x": 0.6078431606292725,
+                        "y": 0.4313725531101227,
+                        "z": 0.0784313753247261,
                         "w": 1.0
                     },
                     "hovered": {
@@ -6043,7 +6235,7 @@
                     "prefabAsset": 681091234067284337,
                     "fileId": 681091234067284249,
                     "isRoot": true,
-                    "prefabHash": 13304583454068341518,
+                    "prefabHash": 15554822240082407819,
                     "overrides": []
                 },
                 "EntityTag": {
@@ -6206,7 +6398,7 @@
                     },
                     "position": {
                         "x": 260.0,
-                        "y": -0.0
+                        "y": 1.9629970788955688
                     },
                     "size": {
                         "x": 180.0,
@@ -6229,9 +6421,9 @@
                     "sceneAsset": 0,
                     "actionId": "",
                     "normal": {
-                        "x": 0.5600000023841858,
-                        "y": 0.5600000023841858,
-                        "z": 0.5600000023841858,
+                        "x": 0.6078431606292725,
+                        "y": 0.4313725531101227,
+                        "z": 0.0784313753247261,
                         "w": 1.0
                     },
                     "hovered": {
@@ -6567,9 +6759,9 @@
                     "sceneAsset": 0,
                     "actionId": "",
                     "normal": {
-                        "x": 0.551111102104187,
-                        "y": 0.5364148020744324,
-                        "z": 0.5364148020744324,
+                        "x": 0.6078431606292725,
+                        "y": 0.4313725531101227,
+                        "z": 0.0784313753247261,
                         "w": 1.0
                     },
                     "hovered": {
@@ -6771,273 +6963,6 @@
             }
         },
         {
-            "id": "6B7B78E49D8EC489",
-            "parent": "DB7B78E49D8EC491",
-            "siblingIndex": 0,
-            "components": {
-                "Transform": {
-                    "positions": {
-                        "x": 0.0,
-                        "y": 0.0,
-                        "z": 0.0
-                    },
-                    "rotation": {
-                        "x": 0.0,
-                        "y": 0.0,
-                        "z": 0.0,
-                        "w": 1.0
-                    },
-                    "scale": {
-                        "x": 1.0,
-                        "y": 1.0,
-                        "z": 1.0
-                    }
-                },
-                "EntityName": {
-                    "name": "Jump Button"
-                },
-                "UIRect": {
-                    "anchorMin": {
-                        "x": 0.5,
-                        "y": 0.5
-                    },
-                    "anchorMax": {
-                        "x": 0.5,
-                        "y": 0.5
-                    },
-                    "pivot": {
-                        "x": 0.5,
-                        "y": 0.5
-                    },
-                    "position": {
-                        "x": 260.0,
-                        "y": -0.0
-                    },
-                    "size": {
-                        "x": 180.0,
-                        "y": 50.0
-                    },
-                    "rotation": 0.0,
-                    "raycastTarget": true
-                },
-                "UIImage": {
-                    "colour": {
-                        "x": 1.0,
-                        "y": 1.0,
-                        "z": 1.0,
-                        "w": 1.0
-                    },
-                    "textureAsset": 0
-                },
-                "UIButton": {
-                    "onClick": "None",
-                    "sceneAsset": 0,
-                    "actionId": "",
-                    "normal": {
-                        "x": 0.5600000023841858,
-                        "y": 0.5600000023841858,
-                        "z": 0.5600000023841858,
-                        "w": 1.0
-                    },
-                    "hovered": {
-                        "x": 0.8999999761581421,
-                        "y": 0.8999999761581421,
-                        "z": 0.8999999761581421,
-                        "w": 1.0
-                    },
-                    "pressed": {
-                        "x": 0.699999988079071,
-                        "y": 0.699999988079071,
-                        "z": 0.699999988079071,
-                        "w": 1.0
-                    },
-                    "disabled": {
-                        "x": 0.5,
-                        "y": 0.5,
-                        "z": 0.5,
-                        "w": 0.5
-                    },
-                    "interactable": true
-                },
-                "UIText": {
-                    "text": "Space",
-                    "colour": {
-                        "x": 1.0,
-                        "y": 1.0,
-                        "z": 1.0,
-                        "w": 1.0
-                    },
-                    "fontAsset": 0,
-                    "fontSize": 30.0,
-                    "horizontalAlign": "Center",
-                    "verticalAlign": "Middle",
-                    "wrap": true,
-                    "overflow": "Overflow",
-                    "lineSpacing": 1.0,
-                    "characterSpacing": 0.0,
-                    "richText": true,
-                    "bold": false,
-                    "underline": false,
-                    "bestFit": false,
-                    "minFontSize": 10.0,
-                    "maxFontSize": 40.0,
-                    "outline": false,
-                    "outlineColour": {
-                        "x": 0.0,
-                        "y": 0.0,
-                        "z": 0.0,
-                        "w": 1.0
-                    },
-                    "outlineWidth": 2.0,
-                    "glow": false,
-                    "glowColour": {
-                        "x": 1.0,
-                        "y": 0.8500000238418579,
-                        "z": 0.4000000059604645,
-                        "w": 0.800000011920929
-                    },
-                    "glowWidth": 3.0,
-                    "glowSoftness": 0.5,
-                    "shadow": false,
-                    "shadowColour": {
-                        "x": 0.0,
-                        "y": 0.0,
-                        "z": 0.0,
-                        "w": 0.6000000238418579
-                    },
-                    "shadowOffset": {
-                        "x": 2.0,
-                        "y": 2.0
-                    },
-                    "shadowSoftness": 0.0
-                },
-                "PrefabInstance": {
-                    "prefabAsset": 681091234067284337,
-                    "fileId": 16968288944327459859,
-                    "isRoot": false,
-                    "prefabHash": 0,
-                    "overrides": []
-                },
-                "EntityTag": {
-                    "tag": "Untagged"
-                }
-            }
-        },
-        {
-            "id": "6B7B78E49D8EC48D",
-            "parent": "537B78E49D8D8445",
-            "siblingIndex": 7,
-            "components": {
-                "Transform": {
-                    "positions": {
-                        "x": 0.0,
-                        "y": 0.0,
-                        "z": 0.0
-                    },
-                    "rotation": {
-                        "x": 0.0,
-                        "y": 0.0,
-                        "z": 0.0,
-                        "w": 1.0
-                    },
-                    "scale": {
-                        "x": 1.0,
-                        "y": 1.0,
-                        "z": 1.0
-                    }
-                },
-                "EntityName": {
-                    "name": "EquipRA Label"
-                },
-                "UIRect": {
-                    "anchorMin": {
-                        "x": 0.5,
-                        "y": 0.5
-                    },
-                    "anchorMax": {
-                        "x": 0.5,
-                        "y": 0.5
-                    },
-                    "pivot": {
-                        "x": 0.5,
-                        "y": 0.5
-                    },
-                    "position": {
-                        "x": 164.1389923095703,
-                        "y": -5.089832305908203
-                    },
-                    "size": {
-                        "x": 220.0,
-                        "y": 50.0
-                    },
-                    "rotation": 0.0,
-                    "raycastTarget": false
-                },
-                "UIText": {
-                    "text": "Equip \n(Right Arm)",
-                    "colour": {
-                        "x": 1.0,
-                        "y": 1.0,
-                        "z": 1.0,
-                        "w": 1.0
-                    },
-                    "fontAsset": 11391592331814764547,
-                    "fontSize": 30.0,
-                    "horizontalAlign": "Left",
-                    "verticalAlign": "Middle",
-                    "wrap": true,
-                    "overflow": "Overflow",
-                    "lineSpacing": 1.0,
-                    "characterSpacing": 0.0,
-                    "richText": true,
-                    "bold": false,
-                    "underline": false,
-                    "bestFit": true,
-                    "minFontSize": 10.0,
-                    "maxFontSize": 40.0,
-                    "outline": false,
-                    "outlineColour": {
-                        "x": 0.0,
-                        "y": 0.0,
-                        "z": 0.0,
-                        "w": 1.0
-                    },
-                    "outlineWidth": 2.0,
-                    "glow": false,
-                    "glowColour": {
-                        "x": 1.0,
-                        "y": 0.8500000238418579,
-                        "z": 0.4000000059604645,
-                        "w": 0.800000011920929
-                    },
-                    "glowWidth": 3.0,
-                    "glowSoftness": 0.5,
-                    "shadow": false,
-                    "shadowColour": {
-                        "x": 0.0,
-                        "y": 0.0,
-                        "z": 0.0,
-                        "w": 0.6000000238418579
-                    },
-                    "shadowOffset": {
-                        "x": 2.0,
-                        "y": 2.0
-                    },
-                    "shadowSoftness": 0.0
-                },
-                "PrefabInstance": {
-                    "prefabAsset": 681091234067284337,
-                    "fileId": 7744916907472667657,
-                    "isRoot": false,
-                    "prefabHash": 0,
-                    "overrides": []
-                },
-                "EntityTag": {
-                    "tag": "Untagged"
-                }
-            }
-        },
-        {
             "id": "733648DD3C1EC013",
             "components": {
                 "Transform": {
@@ -7137,9 +7062,9 @@
                     "sceneAsset": 0,
                     "actionId": "",
                     "normal": {
-                        "x": 0.551111102104187,
-                        "y": 0.5364148020744324,
-                        "z": 0.5364148020744324,
+                        "x": 0.6078431606292725,
+                        "y": 0.4313725531101227,
+                        "z": 0.0784313753247261,
                         "w": 1.0
                     },
                     "hovered": {
@@ -7404,9 +7329,9 @@
                     "sceneAsset": 0,
                     "actionId": "",
                     "normal": {
-                        "x": 0.551111102104187,
-                        "y": 0.5364148020744324,
-                        "z": 0.5364148020744324,
+                        "x": 0.6078431606292725,
+                        "y": 0.4313725531101227,
+                        "z": 0.0784313753247261,
                         "w": 1.0
                     },
                     "hovered": {
@@ -7886,9 +7811,9 @@
                     "sceneAsset": 0,
                     "actionId": "",
                     "normal": {
-                        "x": 0.5600000023841858,
-                        "y": 0.5600000023841858,
-                        "z": 0.5600000023841858,
+                        "x": 0.6078431606292725,
+                        "y": 0.4313725531101227,
+                        "z": 0.0784313753247261,
                         "w": 1.0
                     },
                     "hovered": {
@@ -8275,12 +8200,12 @@
                         "y": 0.5
                     },
                     "position": {
-                        "x": 156.90855407714844,
+                        "x": 200.0,
                         "y": -263.6006164550781
                     },
                     "size": {
-                        "x": 256.59375,
-                        "y": 43.5
+                        "x": 300.0,
+                        "y": 75.0
                     },
                     "rotation": 0.0,
                     "raycastTarget": true
@@ -8289,10 +8214,10 @@
                     "colour": {
                         "x": 1.0,
                         "y": 1.0,
-                        "z": 1.0,
+                        "z": 0.7019608020782471,
                         "w": 1.0
                     },
-                    "textureAsset": 0
+                    "textureAsset": 12311566928176873479
                 },
                 "UIButton": {
                     "onClick": "Custom",
@@ -8452,9 +8377,9 @@
                     "sceneAsset": 0,
                     "actionId": "",
                     "normal": {
-                        "x": 0.551111102104187,
-                        "y": 0.5364148020744324,
-                        "z": 0.5364148020744324,
+                        "x": 0.6078431606292725,
+                        "y": 0.4313725531101227,
+                        "z": 0.0784313753247261,
                         "w": 1.0
                     },
                     "hovered": {
@@ -8796,9 +8721,9 @@
                     "sceneAsset": 0,
                     "actionId": "",
                     "normal": {
-                        "x": 0.551111102104187,
-                        "y": 0.5364148020744324,
-                        "z": 0.5364148020744324,
+                        "x": 0.6078431606292725,
+                        "y": 0.4313725531101227,
+                        "z": 0.0784313753247261,
                         "w": 1.0
                     },
                     "hovered": {
@@ -9063,9 +8988,9 @@
                     "sceneAsset": 0,
                     "actionId": "",
                     "normal": {
-                        "x": 0.551111102104187,
-                        "y": 0.5364148020744324,
-                        "z": 0.5364148020744324,
+                        "x": 0.6078431606292725,
+                        "y": 0.4313725531101227,
+                        "z": 0.0784313753247261,
                         "w": 1.0
                     },
                     "hovered": {
@@ -9153,159 +9078,6 @@
             }
         },
         {
-            "id": "8B7B78E49D8EC487",
-            "parent": "FB7B78E49D8EC48F",
-            "siblingIndex": 0,
-            "components": {
-                "Transform": {
-                    "positions": {
-                        "x": 0.0,
-                        "y": 0.0,
-                        "z": 0.0
-                    },
-                    "rotation": {
-                        "x": 0.0,
-                        "y": 0.0,
-                        "z": 0.0,
-                        "w": 1.0
-                    },
-                    "scale": {
-                        "x": 1.0,
-                        "y": 1.0,
-                        "z": 1.0
-                    }
-                },
-                "EntityName": {
-                    "name": "Jump Button"
-                },
-                "UIRect": {
-                    "anchorMin": {
-                        "x": 0.5,
-                        "y": 0.5
-                    },
-                    "anchorMax": {
-                        "x": 0.5,
-                        "y": 0.5
-                    },
-                    "pivot": {
-                        "x": 0.5,
-                        "y": 0.5
-                    },
-                    "position": {
-                        "x": 260.0,
-                        "y": -0.0
-                    },
-                    "size": {
-                        "x": 180.0,
-                        "y": 50.0
-                    },
-                    "rotation": 0.0,
-                    "raycastTarget": true
-                },
-                "UIImage": {
-                    "colour": {
-                        "x": 1.0,
-                        "y": 1.0,
-                        "z": 1.0,
-                        "w": 1.0
-                    },
-                    "textureAsset": 0
-                },
-                "UIButton": {
-                    "onClick": "None",
-                    "sceneAsset": 0,
-                    "actionId": "",
-                    "normal": {
-                        "x": 0.5600000023841858,
-                        "y": 0.5600000023841858,
-                        "z": 0.5600000023841858,
-                        "w": 1.0
-                    },
-                    "hovered": {
-                        "x": 0.8999999761581421,
-                        "y": 0.8999999761581421,
-                        "z": 0.8999999761581421,
-                        "w": 1.0
-                    },
-                    "pressed": {
-                        "x": 0.699999988079071,
-                        "y": 0.699999988079071,
-                        "z": 0.699999988079071,
-                        "w": 1.0
-                    },
-                    "disabled": {
-                        "x": 0.5,
-                        "y": 0.5,
-                        "z": 0.5,
-                        "w": 0.5
-                    },
-                    "interactable": true
-                },
-                "UIText": {
-                    "text": "Space",
-                    "colour": {
-                        "x": 1.0,
-                        "y": 1.0,
-                        "z": 1.0,
-                        "w": 1.0
-                    },
-                    "fontAsset": 0,
-                    "fontSize": 30.0,
-                    "horizontalAlign": "Center",
-                    "verticalAlign": "Middle",
-                    "wrap": true,
-                    "overflow": "Overflow",
-                    "lineSpacing": 1.0,
-                    "characterSpacing": 0.0,
-                    "richText": true,
-                    "bold": false,
-                    "underline": false,
-                    "bestFit": false,
-                    "minFontSize": 10.0,
-                    "maxFontSize": 40.0,
-                    "outline": false,
-                    "outlineColour": {
-                        "x": 0.0,
-                        "y": 0.0,
-                        "z": 0.0,
-                        "w": 1.0
-                    },
-                    "outlineWidth": 2.0,
-                    "glow": false,
-                    "glowColour": {
-                        "x": 1.0,
-                        "y": 0.8500000238418579,
-                        "z": 0.4000000059604645,
-                        "w": 0.800000011920929
-                    },
-                    "glowWidth": 3.0,
-                    "glowSoftness": 0.5,
-                    "shadow": false,
-                    "shadowColour": {
-                        "x": 0.0,
-                        "y": 0.0,
-                        "z": 0.0,
-                        "w": 0.6000000238418579
-                    },
-                    "shadowOffset": {
-                        "x": 2.0,
-                        "y": 2.0
-                    },
-                    "shadowSoftness": 0.0
-                },
-                "PrefabInstance": {
-                    "prefabAsset": 681091234067284337,
-                    "fileId": 3133230889045296143,
-                    "isRoot": false,
-                    "prefabHash": 0,
-                    "overrides": []
-                },
-                "EntityTag": {
-                    "tag": "Untagged"
-                }
-            }
-        },
-        {
             "id": "9173B8DE620D4013",
             "parent": "D173B8DE5F508007",
             "siblingIndex": 6,
@@ -9372,25 +9144,25 @@
                         "x": 1.0,
                         "y": 1.0,
                         "z": 1.0,
-                        "w": 1.0
+                        "w": 0.0
                     },
                     "hovered": {
-                        "x": 0.8999999761581421,
-                        "y": 0.8999999761581421,
-                        "z": 0.8999999761581421,
-                        "w": 1.0
+                        "x": 0.9019607901573181,
+                        "y": 0.9019607901573181,
+                        "z": 0.9019607901573181,
+                        "w": 0.0
                     },
                     "pressed": {
-                        "x": 0.699999988079071,
-                        "y": 0.699999988079071,
-                        "z": 0.699999988079071,
-                        "w": 1.0
+                        "x": 0.7019608020782471,
+                        "y": 0.7019608020782471,
+                        "z": 0.7019608020782471,
+                        "w": 0.0
                     },
                     "disabled": {
                         "x": 0.21960784494876862,
                         "y": 0.21960784494876862,
                         "z": 0.21960784494876862,
-                        "w": 1.0
+                        "w": 0.0
                     },
                     "interactable": false
                 },
@@ -9614,12 +9386,12 @@
                         "y": 0.5
                     },
                     "position": {
-                        "x": -149.42042541503906,
+                        "x": -200.0,
                         "y": -263.6006164550781
                     },
                     "size": {
-                        "x": 256.59375,
-                        "y": 43.5
+                        "x": 300.0,
+                        "y": 75.0
                     },
                     "rotation": 0.0,
                     "raycastTarget": true
@@ -9628,10 +9400,10 @@
                     "colour": {
                         "x": 1.0,
                         "y": 1.0,
-                        "z": 1.0,
+                        "z": 0.7019608020782471,
                         "w": 1.0
                     },
-                    "textureAsset": 0
+                    "textureAsset": 1935273386715250697
                 },
                 "UIButton": {
                     "onClick": "Custom",
@@ -9791,9 +9563,9 @@
                     "sceneAsset": 0,
                     "actionId": "",
                     "normal": {
-                        "x": 0.551111102104187,
-                        "y": 0.5364148020744324,
-                        "z": 0.5364148020744324,
+                        "x": 0.6078431606292725,
+                        "y": 0.4313725531101227,
+                        "z": 0.0784313753247261,
                         "w": 1.0
                     },
                     "hovered": {
@@ -10320,12 +10092,12 @@
                         "y": 0.5
                     },
                     "position": {
-                        "x": 284.6573791503906,
+                        "x": 300.0,
                         "y": -270.0057373046875
                     },
                     "size": {
                         "x": 256.59375,
-                        "y": 43.5
+                        "y": 70.0
                     },
                     "rotation": 0.0,
                     "raycastTarget": true
@@ -10334,10 +10106,10 @@
                     "colour": {
                         "x": 1.0,
                         "y": 1.0,
-                        "z": 1.0,
+                        "z": 0.7019608020782471,
                         "w": 1.0
                     },
-                    "textureAsset": 0
+                    "textureAsset": 1935273386715250697
                 },
                 "UIButton": {
                     "onClick": "Custom",
@@ -10478,7 +10250,7 @@
                     },
                     "size": {
                         "x": 300.0,
-                        "y": 60.0
+                        "y": 80.0
                     },
                     "rotation": 0.0,
                     "raycastTarget": true
@@ -10490,7 +10262,7 @@
                         "z": 1.0,
                         "w": 1.0
                     },
-                    "textureAsset": 0
+                    "textureAsset": 1935273386715250697
                 },
                 "UIButton": {
                     "onClick": "Custom",
@@ -11218,7 +10990,7 @@
                     },
                     "size": {
                         "x": 300.0,
-                        "y": 60.0
+                        "y": 80.0
                     },
                     "rotation": 0.0,
                     "raycastTarget": true
@@ -11230,7 +11002,7 @@
                         "z": 1.0,
                         "w": 1.0
                     },
-                    "textureAsset": 0
+                    "textureAsset": 10582184671266603019
                 },
                 "UIButton": {
                     "onClick": "Custom",
@@ -11732,9 +11504,9 @@
                     "sceneAsset": 0,
                     "actionId": "",
                     "normal": {
-                        "x": 0.551111102104187,
-                        "y": 0.5364148020744324,
-                        "z": 0.5364148020744324,
+                        "x": 0.6078431606292725,
+                        "y": 0.4313725531101227,
+                        "z": 0.0784313753247261,
                         "w": 1.0
                     },
                     "hovered": {
@@ -11885,9 +11657,9 @@
                     "sceneAsset": 0,
                     "actionId": "",
                     "normal": {
-                        "x": 0.551111102104187,
-                        "y": 0.5364148020744324,
-                        "z": 0.5364148020744324,
+                        "x": 0.6078431606292725,
+                        "y": 0.4313725531101227,
+                        "z": 0.0784313753247261,
                         "w": 1.0
                     },
                     "hovered": {
@@ -12014,12 +11786,12 @@
                         "y": 0.5
                     },
                     "position": {
-                        "x": 215.9969940185547,
+                        "x": 200.0,
                         "y": 273.7025451660156
                     },
                     "size": {
                         "x": 280.0,
-                        "y": 50.0
+                        "y": 70.0
                     },
                     "rotation": 0.0,
                     "raycastTarget": true
@@ -12031,16 +11803,16 @@
                         "z": 1.0,
                         "w": 1.0
                     },
-                    "textureAsset": 0
+                    "textureAsset": 1935273386715250697
                 },
                 "UIButton": {
                     "onClick": "None",
                     "sceneAsset": 0,
                     "actionId": "",
                     "normal": {
-                        "x": 0.551111102104187,
-                        "y": 0.5364148020744324,
-                        "z": 0.5364148020744324,
+                        "x": 0.5098039507865906,
+                        "y": 0.37254902720451355,
+                        "z": 0.22745098173618317,
                         "w": 1.0
                     },
                     "hovered": {
@@ -12272,8 +12044,8 @@
                         "y": -1.680908441543579
                     },
                     "size": {
-                        "x": 1440.0,
-                        "y": 900.9000244140625
+                        "x": 1920.0,
+                        "y": 1080.0
                     },
                     "rotation": 0.0,
                     "raycastTarget": true
@@ -12285,7 +12057,7 @@
                         "z": 1.0,
                         "w": 1.0
                     },
-                    "textureAsset": 0
+                    "textureAsset": 3039244637823959245
                 },
                 "UIButton": {
                     "onClick": "None",
@@ -12423,12 +12195,12 @@
                         "y": 0.5
                     },
                     "position": {
-                        "x": -124.00300598144531,
+                        "x": -200.0,
                         "y": 271.4064025878906
                     },
                     "size": {
                         "x": 280.0,
-                        "y": 50.0
+                        "y": 70.0
                     },
                     "rotation": 0.0,
                     "raycastTarget": true
@@ -12440,16 +12212,16 @@
                         "z": 1.0,
                         "w": 1.0
                     },
-                    "textureAsset": 0
+                    "textureAsset": 12311566928176873479
                 },
                 "UIButton": {
                     "onClick": "None",
                     "sceneAsset": 0,
                     "actionId": "",
                     "normal": {
-                        "x": 0.551111102104187,
-                        "y": 0.5364148020744324,
-                        "z": 0.5364148020744324,
+                        "x": 0.5111111402511597,
+                        "y": 0.3710287809371948,
+                        "z": 0.2271604984998703,
                         "w": 1.0
                     },
                     "hovered": {
@@ -12600,9 +12372,9 @@
                     "sceneAsset": 0,
                     "actionId": "",
                     "normal": {
-                        "x": 0.551111102104187,
-                        "y": 0.5364148020744324,
-                        "z": 0.5364148020744324,
+                        "x": 0.6078431606292725,
+                        "y": 0.4313725531101227,
+                        "z": 0.0784313753247261,
                         "w": 1.0
                     },
                     "hovered": {
@@ -12729,12 +12501,12 @@
                         "y": 0.5
                     },
                     "position": {
-                        "x": -21.67165184020996,
+                        "x": 0.0,
                         "y": -270.0057373046875
                     },
                     "size": {
                         "x": 256.59375,
-                        "y": 43.5
+                        "y": 70.0
                     },
                     "rotation": 0.0,
                     "raycastTarget": true
@@ -12743,10 +12515,10 @@
                     "colour": {
                         "x": 1.0,
                         "y": 1.0,
-                        "z": 1.0,
+                        "z": 0.7019608020782471,
                         "w": 1.0
                     },
-                    "textureAsset": 0
+                    "textureAsset": 10582184671266603019
                 },
                 "UIButton": {
                     "onClick": "Custom",
@@ -12944,9 +12716,9 @@
             }
         },
         {
-            "id": "DB7B78E49D8EC491",
+            "id": "DD9EE0E58806C1E5",
             "parent": "537B78E49D8D8445",
-            "siblingIndex": 9,
+            "siblingIndex": 6,
             "components": {
                 "Transform": {
                     "positions": {
@@ -12967,7 +12739,7 @@
                     }
                 },
                 "EntityName": {
-                    "name": "EquipRS Label"
+                    "name": "CamLock Label "
                 },
                 "UIRect": {
                     "anchorMin": {
@@ -12984,7 +12756,7 @@
                     },
                     "position": {
                         "x": 164.1389923095703,
-                        "y": 148.05776977539063
+                        "y": -80.174072265625
                     },
                     "size": {
                         "x": 220.0,
@@ -12994,7 +12766,7 @@
                     "raycastTarget": false
                 },
                 "UIText": {
-                    "text": "Equip \n(Right Shoulder)",
+                    "text": "Camera Lock",
                     "colour": {
                         "x": 1.0,
                         "y": 1.0,
@@ -13012,7 +12784,7 @@
                     "richText": true,
                     "bold": false,
                     "underline": false,
-                    "bestFit": true,
+                    "bestFit": false,
                     "minFontSize": 10.0,
                     "maxFontSize": 40.0,
                     "outline": false,
@@ -13047,7 +12819,7 @@
                 },
                 "PrefabInstance": {
                     "prefabAsset": 681091234067284337,
-                    "fileId": 4862613145955566609,
+                    "fileId": 3863772806763790793,
                     "isRoot": false,
                     "prefabHash": 0,
                     "overrides": []
@@ -13121,9 +12893,9 @@
                     "sceneAsset": 0,
                     "actionId": "",
                     "normal": {
-                        "x": 0.5600000023841858,
-                        "y": 0.5600000023841858,
-                        "z": 0.5600000023841858,
+                        "x": 0.6078431606292725,
+                        "y": 0.4313725531101227,
+                        "z": 0.0784313753247261,
                         "w": 1.0
                     },
                     "hovered": {
@@ -13526,6 +13298,120 @@
             }
         },
         {
+            "id": "E59EE0E58806C1E7",
+            "parent": "537B78E49D8D8445",
+            "siblingIndex": 7,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Part Pickup Label "
+                },
+                "UIRect": {
+                    "anchorMin": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "anchorMax": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "pivot": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "position": {
+                        "x": 164.1389923095703,
+                        "y": 3.176715850830078
+                    },
+                    "size": {
+                        "x": 220.0,
+                        "y": 50.0
+                    },
+                    "rotation": 0.0,
+                    "raycastTarget": false
+                },
+                "UIText": {
+                    "text": "Part Pickup",
+                    "colour": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0,
+                        "w": 1.0
+                    },
+                    "fontAsset": 11391592331814764547,
+                    "fontSize": 30.0,
+                    "horizontalAlign": "Left",
+                    "verticalAlign": "Middle",
+                    "wrap": true,
+                    "overflow": "Overflow",
+                    "lineSpacing": 1.0,
+                    "characterSpacing": 0.0,
+                    "richText": true,
+                    "bold": false,
+                    "underline": false,
+                    "bestFit": false,
+                    "minFontSize": 10.0,
+                    "maxFontSize": 40.0,
+                    "outline": false,
+                    "outlineColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "outlineWidth": 2.0,
+                    "glow": false,
+                    "glowColour": {
+                        "x": 1.0,
+                        "y": 0.8500000238418579,
+                        "z": 0.4000000059604645,
+                        "w": 0.800000011920929
+                    },
+                    "glowWidth": 3.0,
+                    "glowSoftness": 0.5,
+                    "shadow": false,
+                    "shadowColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.6000000238418579
+                    },
+                    "shadowOffset": {
+                        "x": 2.0,
+                        "y": 2.0
+                    },
+                    "shadowSoftness": 0.0
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 681091234067284337,
+                    "fileId": 10781301834405577165,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
             "id": "E973B8DE657BC01D",
             "parent": "9173B8DE620D4013",
             "siblingIndex": 1,
@@ -13883,9 +13769,9 @@
                     "sceneAsset": 0,
                     "actionId": "",
                     "normal": {
-                        "x": 0.551111102104187,
-                        "y": 0.5364148020744324,
-                        "z": 0.5364148020744324,
+                        "x": 0.6078431606292725,
+                        "y": 0.4313725531101227,
+                        "z": 0.0784313753247261,
                         "w": 1.0
                     },
                     "hovered": {
@@ -14036,9 +13922,9 @@
                     "sceneAsset": 0,
                     "actionId": "",
                     "normal": {
-                        "x": 0.551111102104187,
-                        "y": 0.5364148020744324,
-                        "z": 0.5364148020744324,
+                        "x": 0.6078431606292725,
+                        "y": 0.4313725531101227,
+                        "z": 0.0784313753247261,
                         "w": 1.0
                     },
                     "hovered": {
@@ -14078,7 +13964,7 @@
                     "lineSpacing": 1.0,
                     "characterSpacing": 0.0,
                     "richText": true,
-                    "bold": true,
+                    "bold": false,
                     "underline": false,
                     "bestFit": false,
                     "minFontSize": 10.0,
@@ -14430,426 +14316,6 @@
                 "PrefabInstance": {
                     "prefabAsset": 681091234067284337,
                     "fileId": 11922075903984042357,
-                    "isRoot": false,
-                    "prefabHash": 0,
-                    "overrides": []
-                },
-                "EntityTag": {
-                    "tag": "Untagged"
-                }
-            }
-        },
-        {
-            "id": "F37B78E49D8EC485",
-            "parent": "6B7B78E49D8EC48D",
-            "siblingIndex": 0,
-            "components": {
-                "Transform": {
-                    "positions": {
-                        "x": 0.0,
-                        "y": 0.0,
-                        "z": 0.0
-                    },
-                    "rotation": {
-                        "x": 0.0,
-                        "y": 0.0,
-                        "z": 0.0,
-                        "w": 1.0
-                    },
-                    "scale": {
-                        "x": 1.0,
-                        "y": 1.0,
-                        "z": 1.0
-                    }
-                },
-                "EntityName": {
-                    "name": "Jump Button"
-                },
-                "UIRect": {
-                    "anchorMin": {
-                        "x": 0.5,
-                        "y": 0.5
-                    },
-                    "anchorMax": {
-                        "x": 0.5,
-                        "y": 0.5
-                    },
-                    "pivot": {
-                        "x": 0.5,
-                        "y": 0.5
-                    },
-                    "position": {
-                        "x": 260.0,
-                        "y": -0.0
-                    },
-                    "size": {
-                        "x": 180.0,
-                        "y": 50.0
-                    },
-                    "rotation": 0.0,
-                    "raycastTarget": true
-                },
-                "UIImage": {
-                    "colour": {
-                        "x": 1.0,
-                        "y": 1.0,
-                        "z": 1.0,
-                        "w": 1.0
-                    },
-                    "textureAsset": 0
-                },
-                "UIButton": {
-                    "onClick": "None",
-                    "sceneAsset": 0,
-                    "actionId": "",
-                    "normal": {
-                        "x": 0.5600000023841858,
-                        "y": 0.5600000023841858,
-                        "z": 0.5600000023841858,
-                        "w": 1.0
-                    },
-                    "hovered": {
-                        "x": 0.8999999761581421,
-                        "y": 0.8999999761581421,
-                        "z": 0.8999999761581421,
-                        "w": 1.0
-                    },
-                    "pressed": {
-                        "x": 0.699999988079071,
-                        "y": 0.699999988079071,
-                        "z": 0.699999988079071,
-                        "w": 1.0
-                    },
-                    "disabled": {
-                        "x": 0.5,
-                        "y": 0.5,
-                        "z": 0.5,
-                        "w": 0.5
-                    },
-                    "interactable": true
-                },
-                "UIText": {
-                    "text": "Space",
-                    "colour": {
-                        "x": 1.0,
-                        "y": 1.0,
-                        "z": 1.0,
-                        "w": 1.0
-                    },
-                    "fontAsset": 0,
-                    "fontSize": 30.0,
-                    "horizontalAlign": "Center",
-                    "verticalAlign": "Middle",
-                    "wrap": true,
-                    "overflow": "Overflow",
-                    "lineSpacing": 1.0,
-                    "characterSpacing": 0.0,
-                    "richText": true,
-                    "bold": false,
-                    "underline": false,
-                    "bestFit": false,
-                    "minFontSize": 10.0,
-                    "maxFontSize": 40.0,
-                    "outline": false,
-                    "outlineColour": {
-                        "x": 0.0,
-                        "y": 0.0,
-                        "z": 0.0,
-                        "w": 1.0
-                    },
-                    "outlineWidth": 2.0,
-                    "glow": false,
-                    "glowColour": {
-                        "x": 1.0,
-                        "y": 0.8500000238418579,
-                        "z": 0.4000000059604645,
-                        "w": 0.800000011920929
-                    },
-                    "glowWidth": 3.0,
-                    "glowSoftness": 0.5,
-                    "shadow": false,
-                    "shadowColour": {
-                        "x": 0.0,
-                        "y": 0.0,
-                        "z": 0.0,
-                        "w": 0.6000000238418579
-                    },
-                    "shadowOffset": {
-                        "x": 2.0,
-                        "y": 2.0
-                    },
-                    "shadowSoftness": 0.0
-                },
-                "PrefabInstance": {
-                    "prefabAsset": 681091234067284337,
-                    "fileId": 11780142173596632075,
-                    "isRoot": false,
-                    "prefabHash": 0,
-                    "overrides": []
-                },
-                "EntityTag": {
-                    "tag": "Untagged"
-                }
-            }
-        },
-        {
-            "id": "FB7B78E49D8EC483",
-            "parent": "3B7B78E49D8EC48B",
-            "siblingIndex": 0,
-            "components": {
-                "Transform": {
-                    "positions": {
-                        "x": 0.0,
-                        "y": 0.0,
-                        "z": 0.0
-                    },
-                    "rotation": {
-                        "x": 0.0,
-                        "y": 0.0,
-                        "z": 0.0,
-                        "w": 1.0
-                    },
-                    "scale": {
-                        "x": 1.0,
-                        "y": 1.0,
-                        "z": 1.0
-                    }
-                },
-                "EntityName": {
-                    "name": "Jump Button"
-                },
-                "UIRect": {
-                    "anchorMin": {
-                        "x": 0.5,
-                        "y": 0.5
-                    },
-                    "anchorMax": {
-                        "x": 0.5,
-                        "y": 0.5
-                    },
-                    "pivot": {
-                        "x": 0.5,
-                        "y": 0.5
-                    },
-                    "position": {
-                        "x": 260.0,
-                        "y": -0.0
-                    },
-                    "size": {
-                        "x": 180.0,
-                        "y": 50.0
-                    },
-                    "rotation": 0.0,
-                    "raycastTarget": true
-                },
-                "UIImage": {
-                    "colour": {
-                        "x": 1.0,
-                        "y": 1.0,
-                        "z": 1.0,
-                        "w": 1.0
-                    },
-                    "textureAsset": 0
-                },
-                "UIButton": {
-                    "onClick": "None",
-                    "sceneAsset": 0,
-                    "actionId": "",
-                    "normal": {
-                        "x": 0.5600000023841858,
-                        "y": 0.5600000023841858,
-                        "z": 0.5600000023841858,
-                        "w": 1.0
-                    },
-                    "hovered": {
-                        "x": 0.8999999761581421,
-                        "y": 0.8999999761581421,
-                        "z": 0.8999999761581421,
-                        "w": 1.0
-                    },
-                    "pressed": {
-                        "x": 0.699999988079071,
-                        "y": 0.699999988079071,
-                        "z": 0.699999988079071,
-                        "w": 1.0
-                    },
-                    "disabled": {
-                        "x": 0.5,
-                        "y": 0.5,
-                        "z": 0.5,
-                        "w": 0.5
-                    },
-                    "interactable": true
-                },
-                "UIText": {
-                    "text": "Space",
-                    "colour": {
-                        "x": 1.0,
-                        "y": 1.0,
-                        "z": 1.0,
-                        "w": 1.0
-                    },
-                    "fontAsset": 0,
-                    "fontSize": 30.0,
-                    "horizontalAlign": "Center",
-                    "verticalAlign": "Middle",
-                    "wrap": true,
-                    "overflow": "Overflow",
-                    "lineSpacing": 1.0,
-                    "characterSpacing": 0.0,
-                    "richText": true,
-                    "bold": false,
-                    "underline": false,
-                    "bestFit": false,
-                    "minFontSize": 10.0,
-                    "maxFontSize": 40.0,
-                    "outline": false,
-                    "outlineColour": {
-                        "x": 0.0,
-                        "y": 0.0,
-                        "z": 0.0,
-                        "w": 1.0
-                    },
-                    "outlineWidth": 2.0,
-                    "glow": false,
-                    "glowColour": {
-                        "x": 1.0,
-                        "y": 0.8500000238418579,
-                        "z": 0.4000000059604645,
-                        "w": 0.800000011920929
-                    },
-                    "glowWidth": 3.0,
-                    "glowSoftness": 0.5,
-                    "shadow": false,
-                    "shadowColour": {
-                        "x": 0.0,
-                        "y": 0.0,
-                        "z": 0.0,
-                        "w": 0.6000000238418579
-                    },
-                    "shadowOffset": {
-                        "x": 2.0,
-                        "y": 2.0
-                    },
-                    "shadowSoftness": 0.0
-                },
-                "PrefabInstance": {
-                    "prefabAsset": 681091234067284337,
-                    "fileId": 10050759916686361607,
-                    "isRoot": false,
-                    "prefabHash": 0,
-                    "overrides": []
-                },
-                "EntityTag": {
-                    "tag": "Untagged"
-                }
-            }
-        },
-        {
-            "id": "FB7B78E49D8EC48F",
-            "parent": "537B78E49D8D8445",
-            "siblingIndex": 8,
-            "components": {
-                "Transform": {
-                    "positions": {
-                        "x": 0.0,
-                        "y": 0.0,
-                        "z": 0.0
-                    },
-                    "rotation": {
-                        "x": 0.0,
-                        "y": 0.0,
-                        "z": 0.0,
-                        "w": 1.0
-                    },
-                    "scale": {
-                        "x": 1.0,
-                        "y": 1.0,
-                        "z": 1.0
-                    }
-                },
-                "EntityName": {
-                    "name": "EquipLS Label"
-                },
-                "UIRect": {
-                    "anchorMin": {
-                        "x": 0.5,
-                        "y": 0.5
-                    },
-                    "anchorMax": {
-                        "x": 0.5,
-                        "y": 0.5
-                    },
-                    "pivot": {
-                        "x": 0.5,
-                        "y": 0.5
-                    },
-                    "position": {
-                        "x": 164.1389923095703,
-                        "y": 72.85179901123047
-                    },
-                    "size": {
-                        "x": 220.0,
-                        "y": 50.0
-                    },
-                    "rotation": 0.0,
-                    "raycastTarget": false
-                },
-                "UIText": {
-                    "text": "Equip \n(Left Shoulder)",
-                    "colour": {
-                        "x": 1.0,
-                        "y": 1.0,
-                        "z": 1.0,
-                        "w": 1.0
-                    },
-                    "fontAsset": 11391592331814764547,
-                    "fontSize": 30.0,
-                    "horizontalAlign": "Left",
-                    "verticalAlign": "Middle",
-                    "wrap": true,
-                    "overflow": "Overflow",
-                    "lineSpacing": 1.0,
-                    "characterSpacing": 0.0,
-                    "richText": true,
-                    "bold": false,
-                    "underline": false,
-                    "bestFit": true,
-                    "minFontSize": 10.0,
-                    "maxFontSize": 40.0,
-                    "outline": false,
-                    "outlineColour": {
-                        "x": 0.0,
-                        "y": 0.0,
-                        "z": 0.0,
-                        "w": 1.0
-                    },
-                    "outlineWidth": 2.0,
-                    "glow": false,
-                    "glowColour": {
-                        "x": 1.0,
-                        "y": 0.8500000238418579,
-                        "z": 0.4000000059604645,
-                        "w": 0.800000011920929
-                    },
-                    "glowWidth": 3.0,
-                    "glowSoftness": 0.5,
-                    "shadow": false,
-                    "shadowColour": {
-                        "x": 0.0,
-                        "y": 0.0,
-                        "z": 0.0,
-                        "w": 0.6000000238418579
-                    },
-                    "shadowOffset": {
-                        "x": 2.0,
-                        "y": 2.0
-                    },
-                    "shadowSoftness": 0.0
-                },
-                "PrefabInstance": {
-                    "prefabAsset": 681091234067284337,
-                    "fileId": 3133230889045296141,
                     "isRoot": false,
                     "prefabHash": 0,
                     "overrides": []

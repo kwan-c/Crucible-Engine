@@ -357,7 +357,7 @@ namespace Crucible.Scripts
                     RequestAbility(MechSocket.Legs, now);
             }
             UpdateAbilities(deltaTime, now);
-            UpdateAimModeInput(gameplay);   // F / right stick press: Free Aim -> Soft Lock -> Hard Lock (MechAimModes.cs)
+            UpdateAimModeInput(gameplay);   // Z / right stick press: Free Aim -> Soft Lock -> Hard Lock (MechAimModes.cs)
             UpdateAttacks(gameplay, now);
 
             Vector2 move = gameplay ? ReadMove() : Vector2.Zero;
@@ -613,7 +613,7 @@ namespace Crucible.Scripts
             UpdateWorldCard(selected);   // the highlighted part's card, over it (no WorldText prompt any more)
 
             // F starts the swap (Unity's 1 / 2 are gone): it needs a highlighted part. Without the swap
-            // cards in the scene it does nothing here and F stays the camera lock.
+            // cards in the scene it does nothing here. Z is the camera lock (MechAimModes.cs).
             if (gameplay && selected.Def != null && Input.IsPressed(KeyCode.F) && OpenSwap(selected)) swapKeyUsed = true;
         }
 
