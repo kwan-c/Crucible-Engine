@@ -42,6 +42,8 @@ Disable all three participation switches on the test actors to isolate ordinary 
 
 Change walking speed on the actor's **FlowFieldAgent**. A charge has its own speed and leaves the agent's walking speed intact. `Enemy.SetSlowed` remembers the speed when wandering begins and restores it when wandering ends. If another system edits the speed during the wander, its newer value takes precedence.
 
-A scene enables coordination by placing one **Enemy Coordination** entity with both coordinator scripts. The Zoo, TutorialMap, Golem_test and Layers_test include it. Enemies still operate independently in a scene without a host. The native graph supplies the nearest player marker as its target. Mission objectives currently have no targeting hook.
+A scene enables coordination by placing one **Enemy Coordination** entity with both coordinator scripts. The Zoo, TutorialMap, Capture, Golem_test and Layers_test include it. Enemies still operate independently in a scene without a host.
+
+> **Every new mission scene needs an Enemy Coordination entity.** Add one root entity named **Enemy Coordination** with **EnemyHordeCoordinator** and **EnemySpecialCoordinator** on it. Copying the one from `Scenes/Game/Missions/Capture.scene` or the Zoo works. Nothing warns when it is missing. The golems still spawn and fight, but they skip melee turn-taking and special-attack limits and all attack at once. The enemies themselves need no changes: missions spawn the same `Prefabs/Golem *` prefabs as the Zoo through `Prefabs/Spawning/Spawn Director`. The native graph supplies the nearest player marker as its target. Mission objectives currently have no targeting hook.
 
 The graph actions, position query, permission pool and directed movement boundary are the pieces to retain during the future `EnemyParent` refactor. Full roster settings, changed assets and test evidence are in [Enemy gameplay verification](EnemyGameplayVerification.md).

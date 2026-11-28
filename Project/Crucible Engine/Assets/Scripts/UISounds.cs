@@ -6,7 +6,7 @@
 * \details
 *    Setup (Inspector):
 *      1. Put this script on an entity that also has an AudioSource
-*         (the "SFX" entity in Main Menu Scene).
+*         (for example an "SFX" entity in the menu scene).
 *      2. Drag button_hover / button_click onto Button Hover / Button Click.
 *      3. Button Roots: comma-separated names of the entities to search
 *         for buttons (usually your canvases). Every UIButton under them,

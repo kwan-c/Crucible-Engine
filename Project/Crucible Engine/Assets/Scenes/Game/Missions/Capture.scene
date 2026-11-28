@@ -2835,6 +2835,28 @@
                             "enabled": true,
                             "assembly": "Managed/Crucible.Scripts.dll",
                             "namespace": "Crucible.Scripts",
+                            "class": "ObjectiveFireworks",
+                            "fields": [
+                                {
+                                    "declaringType": "Crucible.Scripts.ObjectiveFireworks",
+                                    "name": "fireworks",
+                                    "type": "Prefab",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 7424741183691469501,
+                                    "componentType": ""
+                                }
+                            ]
+                        },
+                        {
+                            "enabled": true,
+                            "assembly": "Managed/Crucible.Scripts.dll",
+                            "namespace": "Crucible.Scripts",
                             "class": "MissionExit",
                             "fields": [
                                 {
@@ -2852,6 +2874,53 @@
                                     "componentType": ""
                                 }
                             ]
+                        }
+                    ]
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
+            "id": "48C24F64B035A0C9",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Enemy Coordination"
+                },
+                "ScriptComponent": {
+                    "scripts": [
+                        {
+                            "enabled": true,
+                            "assembly": "Managed/Crucible.Scripts.dll",
+                            "namespace": "Crucible.Scripts",
+                            "class": "EnemyHordeCoordinator",
+                            "fields": []
+                        },
+                        {
+                            "enabled": true,
+                            "assembly": "Managed/Crucible.Scripts.dll",
+                            "namespace": "Crucible.Scripts",
+                            "class": "EnemySpecialCoordinator",
+                            "fields": []
                         }
                     ]
                 },

@@ -1,0 +1,294 @@
+{
+    "version": 3,
+    "name": "Objective Fireworks",
+    "entities": [
+        {
+            "id": "A1F3C0DE7E5A4001",
+            "parent": -1,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Objective Fireworks"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
+            "id": "A1F3C0DE7E5A4003",
+            "parent": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 5.0,
+                        "z": -4.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "ParticleEmitter": {
+                    "playing": true,
+                    "loop": true,
+                    "duration": 1.5,
+                    "rate": 0.0,
+                    "burstCount": 150,
+                    "maxParticles": 500,
+                    "shape": "Point",
+                    "shapeRadius": 0.25,
+                    "boxExtents": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5
+                    },
+                    "spreadDeg": 70.0,
+                    "coneAngleDeg": 25.0,
+                    "coneLength": 1.0,
+                    "worldSpace": true,
+                    "lifetimeMin": 0.6000000238418579,
+                    "lifetimeMax": 1.399999976158142,
+                    "speedMin": 6.0,
+                    "speedMax": 14.0,
+                    "sizeMin": 0.07999999821186066,
+                    "sizeMax": 0.15000000596046448,
+                    "endSizeScale": 0.30000001192092896,
+                    "gravityScale": 1.0,
+                    "drag": 0.800000011920929,
+                    "spinDeg": 0.0,
+                    "stretch": 0.03999999910593033,
+                    "colourStart": {
+                        "x": 1.0,
+                        "y": 0.8500000238418579,
+                        "z": 0.44999998807907104
+                    },
+                    "colourEnd": {
+                        "x": 1.0,
+                        "y": 0.30000001192092896,
+                        "z": 0.05000000074505806
+                    },
+                    "alphaStart": 1.0,
+                    "alphaEnd": 0.0,
+                    "brightness": 12.0,
+                    "blend": "Additive",
+                    "textureAsset": 0,
+                    "flipbookCols": 1,
+                    "flipbookRows": 1,
+                    "emitLight": true,
+                    "lightColour": {
+                        "x": 1.0,
+                        "y": 0.6000000238418579,
+                        "z": 0.25
+                    },
+                    "lightIntensity": 20.0,
+                    "lightRange": 12.0,
+                    "seed": 1
+                },
+                "EntityName": {
+                    "name": "Sparks 1"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
+            "id": "A1F3C0DE7E5A4005",
+            "parent": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 5.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "ParticleEmitter": {
+                    "playing": true,
+                    "loop": true,
+                    "duration": 1.5,
+                    "rate": 0.0,
+                    "burstCount": 150,
+                    "maxParticles": 500,
+                    "shape": "Point",
+                    "shapeRadius": 0.25,
+                    "boxExtents": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5
+                    },
+                    "spreadDeg": 70.0,
+                    "coneAngleDeg": 25.0,
+                    "coneLength": 1.0,
+                    "worldSpace": true,
+                    "lifetimeMin": 0.6000000238418579,
+                    "lifetimeMax": 1.399999976158142,
+                    "speedMin": 6.0,
+                    "speedMax": 14.0,
+                    "sizeMin": 0.07999999821186066,
+                    "sizeMax": 0.15000000596046448,
+                    "endSizeScale": 0.30000001192092896,
+                    "gravityScale": 1.0,
+                    "drag": 0.800000011920929,
+                    "spinDeg": 0.0,
+                    "stretch": 0.03999999910593033,
+                    "colourStart": {
+                        "x": 1.0,
+                        "y": 0.8500000238418579,
+                        "z": 0.44999998807907104
+                    },
+                    "colourEnd": {
+                        "x": 1.0,
+                        "y": 0.30000001192092896,
+                        "z": 0.05000000074505806
+                    },
+                    "alphaStart": 1.0,
+                    "alphaEnd": 0.0,
+                    "brightness": 12.0,
+                    "blend": "Additive",
+                    "textureAsset": 0,
+                    "flipbookCols": 1,
+                    "flipbookRows": 1,
+                    "emitLight": true,
+                    "lightColour": {
+                        "x": 1.0,
+                        "y": 0.6000000238418579,
+                        "z": 0.25
+                    },
+                    "lightIntensity": 20.0,
+                    "lightRange": 12.0,
+                    "seed": 1
+                },
+                "EntityName": {
+                    "name": "Sparks 2"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
+            "id": "A1F3C0DE7E5A4007",
+            "parent": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 5.0,
+                        "z": 4.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "ParticleEmitter": {
+                    "playing": true,
+                    "loop": true,
+                    "duration": 1.5,
+                    "rate": 0.0,
+                    "burstCount": 150,
+                    "maxParticles": 500,
+                    "shape": "Point",
+                    "shapeRadius": 0.25,
+                    "boxExtents": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5
+                    },
+                    "spreadDeg": 70.0,
+                    "coneAngleDeg": 25.0,
+                    "coneLength": 1.0,
+                    "worldSpace": true,
+                    "lifetimeMin": 0.6000000238418579,
+                    "lifetimeMax": 1.399999976158142,
+                    "speedMin": 6.0,
+                    "speedMax": 14.0,
+                    "sizeMin": 0.07999999821186066,
+                    "sizeMax": 0.15000000596046448,
+                    "endSizeScale": 0.30000001192092896,
+                    "gravityScale": 1.0,
+                    "drag": 0.800000011920929,
+                    "spinDeg": 0.0,
+                    "stretch": 0.03999999910593033,
+                    "colourStart": {
+                        "x": 1.0,
+                        "y": 0.8500000238418579,
+                        "z": 0.44999998807907104
+                    },
+                    "colourEnd": {
+                        "x": 1.0,
+                        "y": 0.30000001192092896,
+                        "z": 0.05000000074505806
+                    },
+                    "alphaStart": 1.0,
+                    "alphaEnd": 0.0,
+                    "brightness": 12.0,
+                    "blend": "Additive",
+                    "textureAsset": 0,
+                    "flipbookCols": 1,
+                    "flipbookRows": 1,
+                    "emitLight": true,
+                    "lightColour": {
+                        "x": 1.0,
+                        "y": 0.6000000238418579,
+                        "z": 0.25
+                    },
+                    "lightIntensity": 20.0,
+                    "lightRange": 12.0,
+                    "seed": 1
+                },
+                "EntityName": {
+                    "name": "Sparks 3"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        }
+    ]
+}
