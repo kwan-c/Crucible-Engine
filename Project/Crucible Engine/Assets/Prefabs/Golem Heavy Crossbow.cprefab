@@ -87,6 +87,19 @@
                         },
                         {
                             "declaringType": "Crucible.Scripts.Enemy",
+                            "name": "healthBarHeight",
+                            "type": "Float",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 2.8,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.Enemy",
                             "name": "arriveRadius",
                             "type": "Float",
                             "boolean": false,
