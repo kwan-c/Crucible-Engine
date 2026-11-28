@@ -1,0 +1,47 @@
+{
+    "version": 3,
+    "name": "Level Manager",
+    "entities": [
+        {
+            "id": "566ED22F9E2DE7F3",
+            "parent": -1,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Level Manager"
+                },
+                "ScriptComponent": {
+                    "scripts": [
+                        {
+                            "enabled": true,
+                            "assembly": "Managed/Crucible.Scripts.dll",
+                            "namespace": "Crucible.Scripts",
+                            "class": "LevelManager",
+                            "fields": []
+                        }
+                    ]
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        }
+    ]
+}
