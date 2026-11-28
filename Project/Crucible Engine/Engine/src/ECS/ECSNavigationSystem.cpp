@@ -10,12 +10,13 @@
 *                v1.9: moving DynamicObstacles re-stamped;
 *                v1.10: obstacle tag suggestions, bake warning;
 *                v1.11: Walkable boxes read for layers;
-*                v1.12: queries and agents per layer),
+*                v1.12: queries and agents per layer;
+*                v1.13: extra flow-field goals),
 *                Hugo Low Ren Hao (initial engine port)
 * \par:          Email: jeandavidvidal.c@digipen.edu,
 *                Email: low.h@digipen.edu
 * \date          31 October 2026
-* \version       1.12
+* \version       1.13
 * \brief
 *                Bakes the NavGrid from the scene, and draws it.
 *
@@ -94,12 +95,15 @@
 *    -v1.12      Build step 6d-2: IsWalkable / IsPathClear are the grid's
 *                (layers and links); the mover gets agentHeight and the
 *                padding as well as the step height
+*    -v1.13      AddGoal / RemoveGoal: extra goals (alive, valid transform)
+*                join the players in CollectGoals; forgotten at Stop
 *
 **************************************************************************/
 #include "ECSNavigationSystem.h"
 
 // STL
 #include <algorithm>    // std::max
+#include <cstddef>      // std::ptrdiff_t
 #include <string>       // std::to_string
 
 // Crucible engine
@@ -291,6 +295,7 @@ namespace Crucible {
         if (m_lastState != PlayState::Edit && state == PlayState::Edit) {
             m_field.ClearFlow();
             m_goals.ForgetLastBuild();
+            m_extraGoals.clear();   // AddGoal is a Play-session thing, like the scripts that call it
             m_bakePending = false;
             m_mover.ResetWarnings();
             m_dynamicRefresh = 2;   // the grid still has the obstacles where Play left them
@@ -366,7 +371,31 @@ namespace Crucible {
                 m_goals.Add(Math::vec3(transform.matrix[3]), player);
             });
 
+        // AddGoal's entities (an objective such as the escort payload): goals of
+        // the field too, not players. Gone ones are dropped.
+        for (std::size_t i = m_extraGoals.size(); i-- > 0;) {
+            const Entity goal = m_extraGoals[i];
+            if (!world.IsAlive(goal)) { m_extraGoals.erase(m_extraGoals.begin() + static_cast<std::ptrdiff_t>(i)); continue; }
+            const WorldTransform* transform = world.Read<WorldTransform>(goal);
+            if (transform && transform->valid) m_goals.Add(Math::vec3(transform->matrix[3]), goal, false);
+        }
+
     }   // ECSNavigationSystem::CollectGoals()
+
+    void ECSNavigationSystem::AddGoal(Entity entity) {
+
+        if (!entity.IsValid()) return;
+        for (const Entity goal : m_extraGoals) if (goal == entity) return;
+        m_extraGoals.push_back(entity);
+
+    }   // ECSNavigationSystem::AddGoal()
+
+    void ECSNavigationSystem::RemoveGoal(Entity entity) {
+
+        for (std::size_t i = m_extraGoals.size(); i-- > 0;)
+            if (m_extraGoals[i] == entity) m_extraGoals.erase(m_extraGoals.begin() + static_cast<std::ptrdiff_t>(i));
+
+    }   // ECSNavigationSystem::RemoveGoal()
 
     /*!
         \brief

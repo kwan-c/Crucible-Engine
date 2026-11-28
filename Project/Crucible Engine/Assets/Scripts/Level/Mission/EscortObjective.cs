@@ -3,7 +3,7 @@
 * \author:       Jean David Vidal Cruzado
 * \par:          Email: jeandavidvidal.c@digipen.edu
 * \date          28 November 2026
-* \version       1.2
+* \version       1.3
 * \brief         Runs an Escort level's payload: spawns it at the 1st
 *                checkpoint, moves it along the escort route while a player
 *                is near, and handles its health, destruction and respawn.
@@ -30,6 +30,8 @@
 *      hoverHeight over the route.
 *      Destroyed (PayloadHealth.Died): hidden for respawnDelay seconds,
 *      then back at the last checkpoint reached at full health.
+*    Enemies go for it through WaveTargeting (by the prefab's "Payload"
+*      tag); on arrival it is untagged and can't be destroyed any more.
 *    One log line per change.
 *
 *    Mission: registers as an objective (MissionObjectives), so
@@ -48,6 +50,8 @@
 *                arriving opens the extract
 *    -v1.2       stopMargin: once moving, it stops only when no player is
 *                within radius + stopMargin (no flicker at the ring's edge)
+*    -v1.3       arrived: untagged (so WaveTargeting's enemies drop it) and
+*                no longer destroyable
 *
 **************************************************************************/
 using System;
@@ -184,7 +188,11 @@ namespace Crucible.@Scripts
             if (payloadEntity == null || rules == null) return;
             if (body == null && !FindBody()) return;
 
-            if (diedThisFrame) OnDestroyedPayload();
+            if (diedThisFrame)
+            {
+                if (rules.Arrived) { diedThisFrame = false; body.Revive(maxHealth); }   // its job is done: it can't be destroyed any more
+                else OnDestroyedPayload();
+            }
             if (respawnIn > 0f)
             {
                 respawnIn -= deltaTime;
@@ -215,6 +223,8 @@ namespace Crucible.@Scripts
             }
             if (rules.Arrived)
             {
+                // Untagged: enemies sent after it (WaveTargeting, by tag) go back to the players.
+                try { payloadEntity.Tag = "Untagged"; } catch (Exception) { }
                 Log.Info("EscortObjective: the payload has arrived");
                 if (Arrived != null) Arrived();
             }

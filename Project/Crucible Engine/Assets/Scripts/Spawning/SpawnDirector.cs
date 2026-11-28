@@ -3,7 +3,7 @@
 * \author:       Jean David Vidal Cruzado
 * \par:          Email: jeandavidvidal.c@digipen.edu
 * \date          27 November 2026
-* \version       1.0
+* \version       1.1
 * \brief         The scene's one spawn manager: runs the roaming wave and the
 *                objective wave another script starts.
 *
@@ -37,6 +37,8 @@
 *
 * \history
 *    -v1.0       ported from Unity; roaming rotates between players
+*    -v1.1       SpawnedFromWave(wave name, enemy) for every spawn, roaming
+*                included (WaveTargeting picks enemies by wave)
 *
 **************************************************************************/
 using System;
@@ -70,6 +72,8 @@ namespace Crucible.@Scripts
 
         /// <summary>Every enemy a wave spawns, with the wave's owner (the director itself for roaming).</summary>
         public event Action<object, Entity> Spawned;
+        /// <summary>Every spawn, roaming included: (the wave's name, e.g. "Wave Escort", the new enemy).</summary>
+        public event Action<string, Entity> SpawnedFromWave;
 
         public int TotalSpawned { get; private set; }
         public int TotalLeashed { get; private set; }
@@ -190,6 +194,7 @@ namespace Crucible.@Scripts
             TotalSpawned++;
             pendingWake.Add(member);
             if (Spawned != null) Spawned(run.Owner, member);
+            if (SpawnedFromWave != null) SpawnedFromWave(run.Settings.Name, member);
         }
 
         private static Entity Make(WaveEnemy enemy, Vector3 position, Quaternion rotation)

@@ -5,7 +5,7 @@
 * \par:          Email: jeandavidvidal.c@digipen.edu,
 *                Email: low.h@digipen.edu
 * \date          7 November 2026
-* \version       1.0
+* \version       1.1
 * \brief         Questions about where enemies can go, answered from the
 *                FlowFieldSurface's baked grid. Unity's NavMesh static
 *                class (SamplePosition, Raycast). Part of
@@ -25,8 +25,16 @@
 *    Unlike Unity's NavMesh.Raycast, which returns true when the way is
 *    BLOCKED, IsPathClear returns true when it is clear - read as it's named.
 *
+*    AddGoal / RemoveGoal (v1.1): the enemies' flow field also leads to an
+*    entity besides the players - a mission objective such as the escort
+*    payload - so enemies told to go for it find their way round walls.
+*
 *    C++ side: Engine/src/Scripting/Bindings/NavigationBindings.cpp, which
 *    asks ECSNavigationSystem::Active().
+*
+* \history
+*    -v1.0       IsWalkable, IsPathClear, Rebake, IsBaked, BakeCount
+*    -v1.1       AddGoal / RemoveGoal
 *
 **************************************************************************/
 using System.Runtime.CompilerServices;
@@ -63,10 +71,28 @@ namespace Crucible
         /// <summary>How many bakes have finished so far. Read it before Rebake(); once it changes, the new grid is in.</summary>
         public static int BakeCount { get { return GetBakeCountInternal(); } }
 
+        /// <summary>
+        /// The flow field also leads to this entity (not only the players) while it exists, e.g. an
+        /// objective enemies go for. Not a player: "nearest player" ignores it. Forgotten at Stop.
+        /// </summary>
+        /// <returns>False outside Play, with no navigation, or for a dead entity.</returns>
+        public static bool AddGoal(Entity entity)
+        {
+            return entity != null && AddGoalInternal((int)entity.Index, (int)entity.Generation) != 0;
+        }
+
+        /// <summary>Stops leading the flow field to this entity.</summary>
+        public static bool RemoveGoal(Entity entity)
+        {
+            return entity != null && RemoveGoalInternal((int)entity.Index, (int)entity.Generation) != 0;
+        }
+
         [MethodImpl(MethodImplOptions.InternalCall)] private static extern int IsWalkableInternal(ref Vector3 position);
         [MethodImpl(MethodImplOptions.InternalCall)] private static extern int RebakeInternal();
         [MethodImpl(MethodImplOptions.InternalCall)] private static extern int IsBakedInternal();
         [MethodImpl(MethodImplOptions.InternalCall)] private static extern int GetBakeCountInternal();
         [MethodImpl(MethodImplOptions.InternalCall)] private static extern int IsPathClearInternal(ref Vector3 from, ref Vector3 to);
+        [MethodImpl(MethodImplOptions.InternalCall)] private static extern int AddGoalInternal(int index, int generation);
+        [MethodImpl(MethodImplOptions.InternalCall)] private static extern int RemoveGoalInternal(int index, int generation);
     }
 }

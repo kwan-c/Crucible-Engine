@@ -2944,6 +2944,20 @@
                                     "entityId": 0,
                                     "assetId": 974498798151855419,
                                     "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.EscortObjective",
+                                    "name": "hoverHeight",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 1.5,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
                                 }
                             ]
                         },
@@ -3044,6 +3058,13 @@
                             "assembly": "Managed/Crucible.Scripts.dll",
                             "namespace": "Crucible.Scripts",
                             "class": "EscortWaves",
+                            "fields": []
+                        },
+                        {
+                            "enabled": true,
+                            "assembly": "Managed/Crucible.Scripts.dll",
+                            "namespace": "Crucible.Scripts",
+                            "class": "WaveTargeting",
                             "fields": []
                         }
                     ]

@@ -1,14 +1,18 @@
 /*************************************************************************
 * \file:         ECSStateGraphSystem.cpp
-* \author:       Hugo Low Ren Hao
-* \par:          Email: low.h@digipen.edu
+* \author:       Hugo Low Ren Hao (main author),
+*                Jean David Vidal Cruzado (v1.1: target override)
+* \par:          Email: low.h@digipen.edu,
+*                Email: jeandavidvidal.c@digipen.edu
 * \date          3 November 2026
-* \version       1.0
+* \version       1.1
 * \brief
 *                Making, running and dropping each enemy's state graph copy.
 *
 * \history
 *    -v1.0       first version
+*    -v1.1       SetTargetOverride; an overridden enemy's Target is its
+*                override while that entity is alive
 *
 **************************************************************************/
 #include "ECSStateGraphSystem.h"
@@ -50,6 +54,18 @@ namespace Crucible {
         return running.instance ? &running.instance->Variables() : nullptr;
 
     }   // ECSStateGraphSystem::VariablesOf()
+
+    bool ECSStateGraphSystem::SetTargetOverride(World& world, Entity entity, Entity target) {
+
+        const StateGraphAgent* agent = world.Read<StateGraphAgent>(entity);
+        if (!agent) return false;
+        SyncSession();   // as VariablesOf: a script may call this before the first Update
+        Running& running = Prepare(world, entity, agent->m_graph);
+        if (!running.instance) return false;
+        running.targetOverride = target;
+        return true;
+
+    }   // ECSStateGraphSystem::SetTargetOverride()
 
     std::string_view ECSStateGraphSystem::CurrentStateOf(Entity entity) const {
 
@@ -157,8 +173,13 @@ namespace Crucible {
             if (!running.instance) continue;
 
             // TEMPORARY until perception: the target is simply the nearest
-            // player (null if there is none), refreshed every frame.
-            if (const WorldTransform* self = world.Read<WorldTransform>(found.entity); self && self->valid) {
+            // player (null if there is none), refreshed every frame - unless a
+            // script gave this enemy an override (SetTargetOverride), which wins
+            // while it exists. A destroyed override is dropped for good.
+            if (running.targetOverride.IsValid() && !world.IsAlive(running.targetOverride)) running.targetOverride = kNullEntity;
+            if (running.targetOverride.IsValid()) {
+                running.instance->Variables().Set("Target", running.targetOverride);
+            } else if (const WorldTransform* self = world.Read<WorldTransform>(found.entity); self && self->valid) {
                 running.instance->Variables().Set("Target", NearestPlayer(Math::vec3(self->matrix[3])));
             }
 

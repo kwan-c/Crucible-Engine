@@ -9,12 +9,13 @@
 *                v1.9: moving DynamicObstacles re-stamped;
 *                v1.10: obstacle tag suggestions, bake warning;
 *                v1.11: Walkable boxes read for layers;
-*                v1.12: queries and agents per layer),
+*                v1.12: queries and agents per layer;
+*                v1.13: extra flow-field goals),
 *                Hugo Low Ren Hao (initial engine port)
 * \par:          Email: jeandavidvidal.c@digipen.edu,
 *                Email: low.h@digipen.edu
 * \date          31 October 2026
-* \version       1.12
+* \version       1.13
 * \brief
 *                Enemy navigation's ECS side: bakes the NavGrid from the
 *                scene's FlowFieldSurface and "Obstacle"-tagged colliders, and draws
@@ -93,6 +94,9 @@
 *                bake and handed to the grid as layers
 *    -v1.12      build step 6d-2: IsWalkable and IsPathClear go by layers
 *                and links (NavGrid)
+*    -v1.13      AddGoal / RemoveGoal: entities besides the players that the
+*                flow field also leads to (the escort payload; C#
+*                Navigation.AddGoal)
 *
 **************************************************************************/
 #pragma once
@@ -280,6 +284,22 @@ namespace Crucible {
         // asked for one waits for this to change (C# Navigation.BakeCount).
         ENGINE_API std::uint32_t BakeCount() const { return m_bakeCount; }
 
+        /*!
+            \brief
+            Makes the flow field lead to `entity` too, as well as to the
+            players (C# Navigation.AddGoal): an objective enemies should be
+            able to reach, such as the escort payload. Each frame its
+            position is a goal while it is alive and has a world transform;
+            an enemy told to Arrive at it follows the field when the
+            straight line is blocked, as for a player. It is not a player
+            ("nearest player" ignores it). Adding it twice adds it once.
+            Forgotten at Stop.
+        */
+        void AddGoal(Entity entity);
+
+        // Stops leading the field to `entity` (C# Navigation.RemoveGoal).
+        void RemoveGoal(Entity entity);
+
     private:
 
         void CollectGoals(World& world);
@@ -316,6 +336,7 @@ namespace Crucible {
         int                             m_dynamicRefresh = 0;      // after Stop: frames until the restored positions are re-stamped
 
         NavGoalTracker           m_goals;   // this frame's players, and when the field is rebuilt towards them
+        std::vector<Entity>      m_extraGoals;   // AddGoal: entities besides the players the field leads to
         NavAgentMover            m_mover;   // moves the FlowFieldAgents (owns the probes' physics lookup)
 
     };  // ECSNAVIGATIONSYSTEM CLASS

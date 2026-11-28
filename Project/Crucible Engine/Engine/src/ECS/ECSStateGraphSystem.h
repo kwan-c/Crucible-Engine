@@ -1,9 +1,11 @@
 /*************************************************************************
 * \file:         ECSStateGraphSystem.h
-* \author:       Hugo Low Ren Hao
-* \par:          Email: low.h@digipen.edu
+* \author:       Hugo Low Ren Hao (main author),
+*                Jean David Vidal Cruzado (v1.1: target override)
+* \par:          Email: low.h@digipen.edu,
+*                Email: jeandavidvidal.c@digipen.edu
 * \date          3 November 2026
-* \version       1.0
+* \version       1.1
 * \brief
 *                Runs every StateGraphAgent's state graph, once per frame,
 *                while Playing.
@@ -22,9 +24,15 @@
 *                enemy's "Target" variable is set to the nearest player -
 *                Jean David's "find the object tagged Player". So a script
 *                that sets Target is overwritten the next frame, for now.
+*                Except: an enemy given a target override
+*                (SetTargetOverride, C# StateGraphAgent.SetTargetOverride)
+*                gets that entity as its Target instead, while it exists
+*                (a mission objective such as the escort payload).
 *
 * \history
 *    -v1.0       first version
+*    -v1.1       SetTargetOverride: a per-enemy Target instead of the
+*                nearest player (Jean David, for the escort payload)
 *
 **************************************************************************/
 #pragma once
@@ -74,6 +82,12 @@ namespace Crucible {
         // The name of the state it's in; "" before its first frame or without a copy.
         std::string_view CurrentStateOf(Entity entity) const;
 
+        // This enemy's "Target" becomes `target` instead of the nearest player,
+        // every frame while `target` exists; kNullEntity = back to the nearest
+        // player. Kept with its running copy (dropped with it, never saved).
+        // False: no StateGraphAgent, or its graph didn't load.
+        bool SetTargetOverride(World& world, Entity entity, Entity target);
+
         // --- IECSSystem ---------------------------------------------------- //
 
         void Update(World& world, CommandBuffer& commands) override;
@@ -96,6 +110,7 @@ namespace Crucible {
             std::uint64_t                       asset     = 0;   // the graph it was made from (to spot a change)
             std::unique_ptr<StateGraphInstance> instance;        // null: no graph, or it failed to load
             std::uint64_t                       seenFrame = 0;   // last frame its StateGraphAgent was found
+            Entity                              targetOverride = kNullEntity;   // SetTargetOverride; null = the nearest player
 
         };  // RUNNING STRUCT
 
