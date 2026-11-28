@@ -5954,7 +5954,7 @@
                         "w": 0.5
                     },
                     "meshAsset": 3578055278504480029,
-                    "materialAsset": 0
+                    "materialAsset": 14196428849969102855
                 },
                 "EntityName": {
                     "name": "Telegraph"
@@ -12241,6 +12241,48 @@
                                     "entityId": 0,
                                     "assetId": 0,
                                     "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Enemy",
+                                    "name": "weaponContactSeconds",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.28999999165534973,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Enemy",
+                                    "name": "attackSound",
+                                    "type": "AudioClip",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 15989090200631148553,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Enemy",
+                                    "name": "attackSoundPeak",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.41999998688697815,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
                                 }
                             ]
                         }
@@ -12250,7 +12292,7 @@
                     "prefabAsset": 12564058752782925993,
                     "fileId": 16599284018906890403,
                     "isRoot": true,
-                    "prefabHash": 4609088517781076105,
+                    "prefabHash": 17778769107098760175,
                     "overrides": [
                         "ScriptComponent/scripts"
                     ]
@@ -12408,6 +12450,58 @@
                 },
                 "EntityName": {
                     "name": "Wall_TopStone"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
+            "id": "37E160E542ED8003",
+            "parent": "804E60DEE5BD8005",
+            "siblingIndex": 3,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.6199839115142822,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 2.0,
+                        "y": 0.10000000149011612,
+                        "z": 0.10000000149011612
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": false,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.44999998807907104,
+                        "y": 0.05999999865889549,
+                        "z": 0.05000000074505806,
+                        "w": 0.5
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 0
+                },
+                "EntityName": {
+                    "name": "Health Bar Missing"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 12564058752782925993,
+                    "fileId": 8528833486658973873,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
                 },
                 "EntityTag": {
                     "tag": "Untagged"
@@ -15043,6 +15137,58 @@
             }
         },
         {
+            "id": "47E160E542ED8005",
+            "parent": "C6A048DEEB8D4027",
+            "siblingIndex": 3,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.6199839115142822,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 2.0,
+                        "y": 0.10000000149011612,
+                        "z": 0.10000000149011612
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": false,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.44999998807907104,
+                        "y": 0.05999999865889549,
+                        "z": 0.05000000074505806,
+                        "w": 0.5
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 0
+                },
+                "EntityName": {
+                    "name": "Health Bar Missing"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 12564058752782925993,
+                    "fileId": 8528833486658973873,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
             "id": "47E4188228D1BF01",
             "parent": "81228E07381DFB2D",
             "siblingIndex": 6,
@@ -15239,6 +15385,53 @@
                 },
                 "EntityName": {
                     "name": "Wall_Block"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
+            "id": "48C24F64B035A0C7",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Enemy Coordination"
+                },
+                "ScriptComponent": {
+                    "scripts": [
+                        {
+                            "enabled": true,
+                            "assembly": "Managed/Crucible.Scripts.dll",
+                            "namespace": "Crucible.Scripts",
+                            "class": "EnemyHordeCoordinator",
+                            "fields": []
+                        },
+                        {
+                            "enabled": true,
+                            "assembly": "Managed/Crucible.Scripts.dll",
+                            "namespace": "Crucible.Scripts",
+                            "class": "EnemySpecialCoordinator",
+                            "fields": []
+                        }
+                    ]
                 },
                 "EntityTag": {
                     "tag": "Untagged"
@@ -18440,7 +18633,7 @@
                     "layer": "Player"
                 },
                 "PlayerController": {
-                    "moveSpeed": 6,
+                    "moveSpeed": 6.0,
                     "jumpHeight": 1.5,
                     "faceCamera": true
                 },
@@ -26710,7 +26903,7 @@
                     "name": "Label"
                 },
                 "WorldText": {
-                    "text": "Press F here to return\n to main Menu",
+                    "text": "Press G here to return\n to main Menu",
                     "colour": {
                         "x": 0.019999999552965164,
                         "y": 0.019999999552965164,
@@ -26965,7 +27158,7 @@
                                     "integer": 0,
                                     "single": 0.0,
                                     "real": 0.0,
-                                    "text": "ShoulderR:-0.944351106951115,-0.29793237343135165,-0.821248543393273,0.017372363505641475,-0.07733278648493547,-0.0013478709737880235,0.9968530254615038;ShoulderL:0.858347569960929,-0.2979326134313757,-0.8212483133933149,0.017372363505641475,-0.07733278648493547,-0.0013478709737880235,0.9968530254615038",
+                                    "text": "ShoulderR:-1.549961,-0.325813,-0.509266,0.017451,0.101288,0.001045,0.994704;ShoulderL:1.465237,-0.326869,-0.517258,0.01674,-0.253446,-0.003697,0.967198",
                                     "stringIsNull": false,
                                     "entityId": 0,
                                     "assetId": 0,
@@ -39047,6 +39240,58 @@
             }
         },
         {
+            "id": "6FE160E542ED8001",
+            "parent": "36A048DEEB8D4025",
+            "siblingIndex": 3,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.6199839115142822,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 2.0,
+                        "y": 0.10000000149011612,
+                        "z": 0.10000000149011612
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": false,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.44999998807907104,
+                        "y": 0.05999999865889549,
+                        "z": 0.05000000074505806,
+                        "w": 0.5
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 0
+                },
+                "EntityName": {
+                    "name": "Health Bar Missing"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 12564058752782925993,
+                    "fileId": 8528833486658973873,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
             "id": "70061E5CAD2D87B5",
             "parent": "523F27E8F3ECE81B",
             "siblingIndex": 3,
@@ -40430,7 +40675,7 @@
                         "w": 0.5
                     },
                     "meshAsset": 3578055278504480029,
-                    "materialAsset": 0
+                    "materialAsset": 14196428849969102855
                 },
                 "EntityName": {
                     "name": "Telegraph"
@@ -40482,7 +40727,7 @@
                         "w": 0.5
                     },
                     "meshAsset": 3578055278504480029,
-                    "materialAsset": 0
+                    "materialAsset": 14196428849969102855
                 },
                 "EntityName": {
                     "name": "Telegraph"
@@ -41652,7 +41897,7 @@
                         "w": 0.5
                     },
                     "meshAsset": 3578055278504480029,
-                    "materialAsset": 0
+                    "materialAsset": 14196428849969102855
                 },
                 "EntityName": {
                     "name": "Telegraph"
@@ -41882,6 +42127,48 @@
                                     "entityId": 0,
                                     "assetId": 0,
                                     "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Enemy",
+                                    "name": "weaponContactSeconds",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.28999999165534973,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Enemy",
+                                    "name": "attackSound",
+                                    "type": "AudioClip",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 15989090200631148553,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Enemy",
+                                    "name": "attackSoundPeak",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.41999998688697815,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
                                 }
                             ]
                         }
@@ -41891,7 +42178,7 @@
                     "prefabAsset": 12564058752782925993,
                     "fileId": 16599284018906890403,
                     "isRoot": true,
-                    "prefabHash": 4609088517781076105,
+                    "prefabHash": 17778769107098760175,
                     "overrides": []
                 },
                 "FlowFieldAgent": {
@@ -53531,7 +53818,7 @@
                         "w": 0.5
                     },
                     "meshAsset": 3578055278504480029,
-                    "materialAsset": 0
+                    "materialAsset": 14196428849969102855
                 },
                 "EntityName": {
                     "name": "Telegraph"
@@ -57548,6 +57835,48 @@
                                     "entityId": 0,
                                     "assetId": 0,
                                     "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Enemy",
+                                    "name": "weaponContactSeconds",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.28999999165534973,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Enemy",
+                                    "name": "attackSound",
+                                    "type": "AudioClip",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 15989090200631148553,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Enemy",
+                                    "name": "attackSoundPeak",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.41999998688697815,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
                                 }
                             ]
                         }
@@ -57557,7 +57886,7 @@
                     "prefabAsset": 12564058752782925993,
                     "fileId": 16599284018906890403,
                     "isRoot": true,
-                    "prefabHash": 4609088517781076105,
+                    "prefabHash": 17778769107098760175,
                     "overrides": [
                         "ScriptComponent/scripts"
                     ]
@@ -57770,6 +58099,58 @@
                 },
                 "EntityName": {
                     "name": "Ruin_Tower_BranchCorner"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
+            "id": "C7E160E542ED8007",
+            "parent": "D6A048DEEB8D4023",
+            "siblingIndex": 3,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.6199839115142822,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 2.0,
+                        "y": 0.10000000149011612,
+                        "z": 0.10000000149011612
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": false,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.44999998807907104,
+                        "y": 0.05999999865889549,
+                        "z": 0.05000000074505806,
+                        "w": 0.5
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 0
+                },
+                "EntityName": {
+                    "name": "Health Bar Missing"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 12564058752782925993,
+                    "fileId": 8528833486658973873,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
                 },
                 "EntityTag": {
                     "tag": "Untagged"
@@ -60721,6 +61102,48 @@
                                     "entityId": 0,
                                     "assetId": 0,
                                     "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Enemy",
+                                    "name": "weaponContactSeconds",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.28999999165534973,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Enemy",
+                                    "name": "attackSound",
+                                    "type": "AudioClip",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 15989090200631148553,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Enemy",
+                                    "name": "attackSoundPeak",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.41999998688697815,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
                                 }
                             ]
                         }
@@ -60730,7 +61153,7 @@
                     "prefabAsset": 12564058752782925993,
                     "fileId": 16599284018906890403,
                     "isRoot": true,
-                    "prefabHash": 4609088517781076105,
+                    "prefabHash": 17778769107098760175,
                     "overrides": [
                         "ScriptComponent/scripts"
                     ]
@@ -62652,6 +63075,48 @@
                                     "entityId": 0,
                                     "assetId": 0,
                                     "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Enemy",
+                                    "name": "weaponContactSeconds",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.28999999165534973,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Enemy",
+                                    "name": "attackSound",
+                                    "type": "AudioClip",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 15989090200631148553,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Enemy",
+                                    "name": "attackSoundPeak",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.41999998688697815,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
                                 }
                             ]
                         }
@@ -62661,7 +63126,7 @@
                     "prefabAsset": 12564058752782925993,
                     "fileId": 16599284018906890403,
                     "isRoot": true,
-                    "prefabHash": 4609088517781076105,
+                    "prefabHash": 17778769107098760175,
                     "overrides": [
                         "ScriptComponent/scripts"
                     ]
@@ -64609,6 +65074,58 @@
                 },
                 "EntityName": {
                     "name": "Gate_Keystone"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
+            "id": "E7E160E542ED8009",
+            "parent": "DEA048DEEB8D4021",
+            "siblingIndex": 3,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.6199839115142822,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 2.0,
+                        "y": 0.10000000149011612,
+                        "z": 0.10000000149011612
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": false,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.44999998807907104,
+                        "y": 0.05999999865889549,
+                        "z": 0.05000000074505806,
+                        "w": 0.5
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 0
+                },
+                "EntityName": {
+                    "name": "Health Bar Missing"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 12564058752782925993,
+                    "fileId": 8528833486658973873,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
                 },
                 "EntityTag": {
                     "tag": "Untagged"

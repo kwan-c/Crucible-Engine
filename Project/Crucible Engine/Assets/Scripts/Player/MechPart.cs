@@ -36,6 +36,8 @@
 *          F no longer swaps (Unity: 1 / 2).
 *    v1.2  settleOnSpawn: a spawned pickup (an enemy's drop) lands upright
 *          on the ground below it.
+*    v1.3  rollLootStats: a part that starts loose rolls its stats +-10%
+*          (MechPartStatRoll, Unity's PartStatRoll); mounted parts don't.
 *
 **************************************************************************/
 using System;
@@ -65,6 +67,11 @@ namespace Crucible.Scripts
         // spawn point instead. Off for parts placed in a scene: they are already where the level's
         // author put them, maybe on a rack, and must not move.
         public bool settleOnSpawn = false;
+        // Unity's Part.RollLootStats: a part that starts loose in the world (an enemy's drop, a
+        // test spawner's, one lying in a level) rolls its numeric stats +-10% once
+        // (MechPartStatRoll). A part that starts mounted on the mech keeps the catalogue's
+        // stats, and a rolled part keeps its roll through every swap. Untick for exact balance.
+        public bool rollLootStats = true;
 
         public MechPartDef Def { get; private set; }
         public MechWeapon Weapon { get; private set; }     // weapons only
@@ -77,12 +84,38 @@ namespace Crucible.Scripts
         public override void OnCreate()
         {
             Def = MechPartCatalogue.Find(partId);
+            Entity parent = Transform.Parent;
+            bool startsMounted = parent != null && parent.Name.StartsWith("Mount ");
+            if (rollLootStats && !startsMounted && Def != null) Def = MechPartStatRoll.Create(Def, MechPartStatRoll.NewSeed());
             if (Def != null && Def.IsWeapon) Weapon = new MechWeapon(Def);
             Entity labelEntity = Entity.FindChild("Label");
             label = labelEntity != null ? labelEntity.GetComponent<WorldText>() : null;
-            Entity parent = Transform.Parent;
-            SetMounted(parent != null && parent.Name.StartsWith("Mount "));
+            SetMounted(startsMounted);
             if (settleOnSpawn && !IsMounted) SettleOnGround();
+        }
+
+        /// <summary>
+        /// Re-rolls this loose part's stats from a known seed (Unity: Part.RollLootStats(seed), for
+        /// loot spawners or saves). Refused once the part is mounted. A fresh weapon state comes
+        /// with it (full ammo for the rolled magazine and reserve).
+        /// </summary>
+        public bool RollLootStats(int seed)
+        {
+            if (IsMounted || Def == null) return false;
+            Def = MechPartStatRoll.Create(Def, seed);
+            Weapon = Def.IsWeapon ? new MechWeapon(Def) : null;
+            RefreshLabel();
+            return true;
+        }
+
+        /// <summary>Back to the catalogue's authored stats (Unity: KeepAuthoredStats). Loose parts only.</summary>
+        public bool KeepAuthoredStats()
+        {
+            if (IsMounted || Def == null || Def.Base == null) return false;
+            Def = Def.Base;
+            Weapon = Def.IsWeapon ? new MechWeapon(Def) : null;
+            RefreshLabel();
+            return true;
         }
 
         // Prefab.Instantiate(position, rotation) REPLACES the root's rotation, so a spawned part

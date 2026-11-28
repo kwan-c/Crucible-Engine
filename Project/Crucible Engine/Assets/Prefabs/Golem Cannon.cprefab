@@ -344,6 +344,58 @@
                             "stringIsNull": false,
                             "entityId": 0,
                             "assetId": 0
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.Enemy",
+                            "name": "groundTargetSplash",
+                            "type": "Bool",
+                            "boolean": true,
+                            "integer": 0,
+                            "single": 0.0,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.Enemy",
+                            "name": "minimumAttackDistance",
+                            "type": "Float",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 3.0,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.Enemy",
+                            "name": "attackSound",
+                            "type": "AudioClip",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 0.0,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 5612796659169525761
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.Enemy",
+                            "name": "attackSoundPeak",
+                            "type": "Float",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 0.0,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
                         }
                     ]
                 },
@@ -471,18 +523,36 @@
             "parent": 0,
             "components": {
                 "Transform": {
-                    "positions": { "x": 0.0, "y": -0.94, "z": 1.5 },
-                    "rotation": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 },
-                    "scale": { "x": 2.0, "y": 0.02, "z": 3.0 }
+                    "positions": {
+                        "x": 0.0,
+                        "y": -0.94,
+                        "z": 1.5
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 2.0,
+                        "y": 0.02,
+                        "z": 3.0
+                    }
                 },
                 "MeshRenderer": {
                     "visible": false,
                     "modelAsset": 0,
                     "modelRoot": 4294967295,
                     "materialOverrides": [],
-                    "colour": { "x": 1.0, "y": 0.4000000059604645, "z": 0.11999999731779099, "w": 0.5 },
+                    "colour": {
+                        "x": 1.0,
+                        "y": 0.15000000596046448,
+                        "z": 0.10000000149011612,
+                        "w": 0.5
+                    },
                     "meshAsset": 3578055278504480029,
-                    "materialAsset": 0
+                    "materialAsset": 4396596060807954433
                 },
                 "EntityName": {
                     "name": "Telegraph"
@@ -494,16 +564,34 @@
             "parent": 1,
             "components": {
                 "Transform": {
-                    "positions": { "x": 0.0, "y": 0.0, "z": 0.0 },
-                    "rotation": { "x": 0, "y": 0.0, "z": 0.0, "w": 1 },
-                    "scale": { "x": 1.0, "y": 1.0, "z": 1.0 }
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
                 },
                 "MeshRenderer": {
                     "visible": true,
                     "modelAsset": 2654220400306328953,
                     "modelRoot": 9,
                     "materialOverrides": [],
-                    "colour": { "x": 0.5, "y": 0.5, "z": 0.5, "w": 0.5 },
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
                     "meshAsset": 0,
                     "materialAsset": 0
                 },
@@ -556,6 +644,88 @@
                 },
                 "EntityName": {
                     "name": "Weapon Muzzle"
+                }
+            }
+        },
+        {
+            "id": "765C80DE4F57B0B1",
+            "parent": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 1.600000023841858,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 2.0,
+                        "y": 0.10000000149011612,
+                        "z": 0.10000000149011612
+                    }
+                },
+                "EntityName": {
+                    "name": "Health Bar Missing"
+                },
+                "MeshRenderer": {
+                    "visible": false,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.44999998807907104,
+                        "y": 0.05999999865889549,
+                        "z": 0.05000000074505806,
+                        "w": 0.5
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 0
+                }
+            }
+        },
+        {
+            "id": "C65C80DE4F57D15C",
+            "parent": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": -0.94,
+                        "z": 1.5
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": false,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 1.0,
+                        "y": 0.15000000596046448,
+                        "z": 0.10000000149011612,
+                        "w": 0.5
+                    },
+                    "meshAsset": 5933818420240141953,
+                    "materialAsset": 4396596060807954433
+                },
+                "EntityName": {
+                    "name": "Telegraph Splash"
                 }
             }
         }

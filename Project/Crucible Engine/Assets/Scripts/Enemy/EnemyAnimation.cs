@@ -115,7 +115,15 @@ namespace Crucible.Scripts
             }
             if (attackAnimation == "Slash") Trigger("Attack");
             else if (attackAnimation == "Cannon") Trigger("Charge");
-            if (melee) equippedWeaponAnimator?.SetTrigger("Fire");
+            if (melee && WeaponSwingTime <= 0f) SwingWeapon();   // else EnemyWeapon starts it so it connects on the hit
+        }
+
+        // The equipped melee weapon's own Fire clip (MaceArm_Fire, SwordArm_Fire). Once per attack.
+        void SwingWeapon()
+        {
+            if (weaponSwung) return;
+            weaponSwung = true;
+            equippedWeaponAnimator?.SetTrigger("Fire");
         }
 
         void AnimateAttackRelease()

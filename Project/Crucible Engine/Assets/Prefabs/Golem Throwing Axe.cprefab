@@ -223,8 +223,8 @@
                                     "type": "Float",
                                     "boolean": false,
                                     "integer": 0,
-                                    "single": 12,
-                                    "real": 0,
+                                    "single": 7.0,
+                                    "real": 0.0,
                                     "text": "",
                                     "stringIsNull": false,
                                     "entityId": 0,
@@ -314,8 +314,73 @@
                                     "type": "Float",
                                     "boolean": false,
                                     "integer": 0,
-                                    "single": 3,
-                                    "real": 0,
+                                    "single": 2.5,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Enemy",
+                                    "name": "strafeWhileAttacking",
+                                    "type": "Bool",
+                                    "boolean": true,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Enemy",
+                                    "name": "arriveRadius",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 10.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Enemy",
+                                    "name": "preferredRange",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 5.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Enemy",
+                                    "name": "attackSound",
+                                    "type": "AudioClip",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 424649888438714381
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Enemy",
+                                    "name": "attackSoundPeak",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.42,
+                                    "real": 0.0,
                                     "text": "",
                                     "stringIsNull": false,
                                     "entityId": 0,
@@ -472,13 +537,13 @@
                     "modelRoot": 4294967295,
                     "materialOverrides": [],
                     "colour": {
-                        "x": 1,
-                        "y": 0.4000000059604645,
-                        "z": 0.119999997317791,
+                        "x": 1.0,
+                        "y": 0.15000000596046448,
+                        "z": 0.10000000149011612,
                         "w": 0.5
                     },
                     "meshAsset": 3578055278504480029,
-                    "materialAsset": 0
+                    "materialAsset": 4396596060807954433
                 },
                 "EntityName": {
                     "name": "Telegraph"
@@ -633,6 +698,47 @@
                 },
                 "EntityName": {
                     "name": "Weapon Muzzle"
+                }
+            }
+        },
+        {
+            "id": "6829B7339AD5B0B1",
+            "parent": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0,
+                        "y": 0.6199839115142822,
+                        "z": 0
+                    },
+                    "rotation": {
+                        "x": 0,
+                        "y": 0,
+                        "z": 0,
+                        "w": 1
+                    },
+                    "scale": {
+                        "x": 2,
+                        "y": 0.10000000149011612,
+                        "z": 0.10000000149011612
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": false,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.44999998807907104,
+                        "y": 0.05999999865889549,
+                        "z": 0.05000000074505806,
+                        "w": 0.5
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 0
+                },
+                "EntityName": {
+                    "name": "Health Bar Missing"
                 }
             }
         }

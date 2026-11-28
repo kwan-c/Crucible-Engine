@@ -74,6 +74,14 @@ namespace Crucible.Scripts
         public float AbilityPower;      // meaning depends on Ability (see MechAbilityKind)
         public float AbilityDuration;   // seconds; 0 = instant (Jump)
 
+        // Loot: set on a rolled copy (MechPartStatRoll) - the catalogue entry it was rolled from
+        // and the seed. Null / 0 on the catalogue's own, authored entries.
+        public MechPartDef Base;
+        public int RollSeed;
+        public bool IsRolled { get { return Base != null; } }
+
+        public MechPartDef Copy() { return (MechPartDef)MemberwiseClone(); }
+
         public bool IsWeapon { get { return Attack != MechAttackType.None; } }
         public const float MetresPerGolem = 4f;
         /// <summary>Metres. A shot does full damage up to here and disappears at it (Unity: MechCombat's ranged fire).</summary>
@@ -182,6 +190,103 @@ namespace Crucible.Scripts
         }
     }
 
+    /// <summary>
+    /// Loot stat variation. Unity: PartStatRoll. Every numeric stat Unity rolls is scaled by a
+    /// random factor in [1 - Variation, 1 + Variation]; identity (id, name, kind, attack type,
+    /// mechanic, ability) is untouched. Ammo and magazine stay whole numbers inside the rolled
+    /// bounds, so a one-round magazine stays one round. MeleeWidth is this port's greybox
+    /// setting, not a Unity stat, so it is not rolled.
+    /// </summary>
+    public static class MechPartStatRoll
+    {
+        public const double Variation = .10d;
+        static readonly Random seeds = new Random();
+
+        public static int NewSeed() { lock (seeds) return seeds.Next(1, int.MaxValue); }
+
+        public static MechPartDef Create(MechPartDef definition, int seed)
+        {
+            if (definition == null) return null;
+            MechPartDef source = definition.Base ?? definition;   // never roll a roll
+            MechPartDef result = source.Copy();
+            result.Base = source;
+            result.RollSeed = seed;
+            var random = new Random(seed);
+            // Unity rolls its stats list in authored order; the order here is fixed, so a seed
+            // always gives the same part.
+            result.Health          = Roll(source.Health, random);
+            result.Speed           = Roll(source.Speed, random);
+            result.Damage          = Roll(source.Damage, random);
+            result.Magazine        = RollCount(source.Magazine, random);
+            result.Ammo            = RollCount(source.Ammo, random);
+            result.Reload          = Roll(source.Reload, random);
+            result.RangeGolems     = Roll(source.RangeGolems, random);
+            result.ProjectileSpeed = Roll(source.ProjectileSpeed, random);
+            result.ProjectileSize  = Roll(source.ProjectileSize, random);
+            result.SplashRadius    = Roll(source.SplashRadius, random);
+            result.FireRate        = Roll(source.FireRate, random);
+            result.SplashDamage    = Roll(source.SplashDamage, random);
+            result.AbilityCooldown = Roll(source.AbilityCooldown, random);
+            result.AbilityDuration = Roll(source.AbilityDuration, random);
+            result.AbilityPower    = Roll(source.AbilityPower, random);
+            return result;
+        }
+
+        static double Factor(Random random) { return 1d - Variation + random.NextDouble() * Variation * 2d; }
+
+        static float Roll(float value, Random random)
+        {
+            double factor = Factor(random);   // drawn for zeros too, so every stat's draw is stable
+            if (value == 0f || float.IsNaN(value) || float.IsInfinity(value)) return value;
+            return (float)(value * factor);
+        }
+
+        static int RollCount(int value, Random random)
+        {
+            double factor = Factor(random);
+            if (value == 0) return value;
+            double first = value * (1d - Variation), second = value * (1d + Variation);
+            double minimum = Math.Ceiling(Math.Min(first, second)), maximum = Math.Floor(Math.Max(first, second));
+            if (minimum > maximum) return value;
+            return (int)Math.Max(minimum, Math.Min(maximum, Math.Round(value * factor)));
+        }
+
+        /// <summary>"DMG 50 > 53.1 (+6%), RATE ..." - every stat this roll changed, for the log.</summary>
+        public static string Describe(MechPartDef rolled)
+        {
+            MechPartDef b = rolled != null ? rolled.Base : null;
+            if (b == null) return rolled != null ? rolled.Name + " (authored stats)" : "";
+            var text = new System.Text.StringBuilder(rolled.Name);
+            text.Append(" [seed ").Append(rolled.RollSeed).Append("]");
+            Add(text, "HP", b.Health, rolled.Health);
+            Add(text, "SPD%", b.Speed, rolled.Speed);
+            Add(text, "DMG", b.Damage, rolled.Damage);
+            Add(text, "MAG", b.Magazine, rolled.Magazine);
+            Add(text, "AMMO", b.Ammo, rolled.Ammo);
+            Add(text, "RELOAD", b.Reload, rolled.Reload);
+            Add(text, "RANGE", b.RangeGolems, rolled.RangeGolems);
+            Add(text, "PROJ SPD", b.ProjectileSpeed, rolled.ProjectileSpeed);
+            Add(text, "PROJ SIZE", b.ProjectileSize, rolled.ProjectileSize);
+            Add(text, "SPLASH R", b.SplashRadius, rolled.SplashRadius);
+            Add(text, "RATE", b.FireRate, rolled.FireRate);
+            Add(text, "SPLASH DMG", b.SplashDamage, rolled.SplashDamage);
+            Add(text, "ABIL CD", b.AbilityCooldown, rolled.AbilityCooldown);
+            Add(text, "ABIL DUR", b.AbilityDuration, rolled.AbilityDuration);
+            Add(text, "ABIL PWR", b.AbilityPower, rolled.AbilityPower);
+            return text.ToString();
+        }
+
+        static void Add(System.Text.StringBuilder text, string label, float from, float to)
+        {
+            if (from == 0f) return;
+            var c = System.Globalization.CultureInfo.InvariantCulture;
+            float percent = (to / from - 1f) * 100f;
+            text.Append("\n  ").Append(label).Append(' ').Append(from.ToString("0.###", c)).Append(" > ")
+                .Append(to.ToString("0.###", c)).Append(" (").Append(percent >= 0f ? "+" : "")
+                .Append(percent.ToString("0.0", c)).Append("%)");
+        }
+    }
+
     /// <summary>One physical weapon part's live state. Unity: Part (ammo, ReadyAt, reload).</summary>
     public sealed class MechWeapon
     {
@@ -267,6 +372,17 @@ namespace Crucible.Scripts
             return true;
         }
 
+        /// <summary>
+        /// Zoo respawn: ready to fire again with a full magazine and reserve - no cooldown or
+        /// reload left running. The part keeps its identity and socket.
+        /// </summary>
+        public void Rearm()
+        {
+            readyAt = readyStartedAt = reloadEndsAt = 0f;
+            RemainingAmmo = UsesAmmo ? Math.Max(0, Def.Ammo) : 0;
+            MagazineRounds = Def.Magazine > 0 ? Math.Min(Def.Magazine, RemainingAmmo) : RemainingAmmo;
+        }
+
         /// <summary>"[in the magazine / left in total]", or N/A without ammo. Unity: WeaponsHudPod.AmmoText.</summary>
         public string AmmoText { get { return UsesAmmo ? MagazineRounds + " / " + RemainingAmmo : "N/A"; } }
     }
@@ -308,6 +424,12 @@ namespace Crucible.Scripts
             duration = Cooldown;
             readyAt = now + Cooldown;
             return true;
+        }
+
+        /// <summary>Zoo respawn: ends a running effect (Heal, Damage Amp) and clears the cooldown.</summary>
+        public void Reset()
+        {
+            readyAt = duration = activeUntil = 0f;
         }
     }
 

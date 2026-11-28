@@ -53,5 +53,25 @@ namespace Crucible.Scripts
         }
 
         public static bool Finite(float value) { return !float.IsNaN(value) && !float.IsInfinity(value); }
+
+        /// <summary>
+        /// "RRGGBB" or "RRGGBBAA" (a leading '#' is allowed) as a colour. The Inspector cannot edit
+        /// Color fields, so designer-facing colours are hex strings. False keeps the fallback.
+        /// </summary>
+        public static bool TryParseColour(string hex, out Color colour)
+        {
+            colour = Color.White;
+            if (string.IsNullOrEmpty(hex)) return false;
+            hex = hex.Trim().TrimStart('#');
+            if (hex.Length != 6 && hex.Length != 8) return false;
+            uint value;
+            if (!uint.TryParse(hex, System.Globalization.NumberStyles.HexNumber, System.Globalization.CultureInfo.InvariantCulture, out value)) return false;
+            if (hex.Length == 6) value = (value << 8) | 0xFFu;
+            colour = new Color(((value >> 24) & 0xFF) / 255f, ((value >> 16) & 0xFF) / 255f, ((value >> 8) & 0xFF) / 255f, (value & 0xFF) / 255f);
+            return true;
+        }
+
+        /// <summary>The colour from hex, or fallback when hex is empty or malformed.</summary>
+        public static Color ColourOr(string hex, Color fallback) { Color c; return TryParseColour(hex, out c) ? c : fallback; }
     }
 }
