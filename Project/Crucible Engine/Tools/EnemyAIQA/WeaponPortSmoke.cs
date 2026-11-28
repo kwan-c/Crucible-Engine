@@ -179,7 +179,7 @@ namespace Crucible.Scripts
                     if (def.Mechanic == MechWeaponMechanic.Tesla)
                         Check(behindDamage > 0f, "Tesla chains to a second target");
                     if (def.Mechanic == MechWeaponMechanic.Scythe)
-                        Check(Math.Abs(player.Health.Current - health - 10f) < .1f, "Scythe heals 10% of the damage applied to CombatHealth");
+                        Check(Math.Abs(player.Health.Current - health - def.Damage * .1f) < .1f, "Scythe heals 10% of the damage applied to CombatHealth (its rolled " + def.Damage.ToString("F1") + ")");
                     if (def.Mechanic == MechWeaponMechanic.PunchyArm)
                         Check(frontHits == 3, "Punchy Arm lands three timed hits (" + frontHits + ")");
                     if (def.Mechanic == MechWeaponMechanic.Hook)
@@ -203,7 +203,8 @@ namespace Crucible.Scripts
             var healthByType = new[] { 100f, 120f, 90f, 80f, 320f, 200f, 120f };
             var costByType = new[] { 1, 1, 1, 2, 10, 10, 2 };
             var distances = new[] { 2.0f, 4.5f, 3.4f, 7f, 14f, 19f, 5f };
-            var damageByType = new[] { 15f, 12.5f, 15f, 20f, 72f, 19.6364f, 0f };
+            // The stationary player receives the Cannon's splash. Direct interception is checked separately.
+            var damageByType = new[] { 15f, 12.5f, 15f, 20f, 27f, 19.6364f, 0f };
             var cannonSocket = Entity.Find("QA Cannon socket");
             for (int i = 0; i < enemies.Length; ++i)
             {

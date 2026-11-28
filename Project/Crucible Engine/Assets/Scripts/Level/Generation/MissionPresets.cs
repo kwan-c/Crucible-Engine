@@ -3,7 +3,7 @@
 * \author:       Jean David Vidal Cruzado
 * \par:          Email: jeandavidvidal.c@digipen.edu
 * \date          26 November 2026
-* \version       1.6
+* \version       1.7
 * \brief         Each mission's level numbers, from the GDD's side quest
 *                specs (M3): map size, which chunks it places, their sizes
 *                and spacing. Plain data, so it can be tested alone.
@@ -35,21 +35,14 @@
 *    -v1.4       decor (tree scatter) settings per mission
 *    -v1.5       Capture areas get a generated interior (InteriorSettings)
 *    -v1.6       Capture objective numbers (CaptureSettings)
+*    -v1.7       CaptureSettings removed: the Capture rules are Inspector
+*                fields on MissionController
 *
 **************************************************************************/
 using System.Collections.Generic;
 
 namespace Crucible.@Scripts
 {
-    // Capture's objective numbers (GDD). Arrays are the GDD's a/b/c/d: for 1, 2, 3, 4 players.
-    public sealed class CaptureSettings
-    {
-        public float[] holdSeconds = { 40f, 50f, 60f, 70f };   // seconds to hold an area
-        public float[] graceSeconds = { 5f, 4f, 3f, 3f };      // seconds to get back in after leaving
-        public float failedSeconds = 2f;                       // the Failed state shows this long, then resets (Unity)
-        public bool inOrder = true;                            // 1st before 2nd before 3rd (GDD); off = any order
-    }
-
     public sealed class MissionPreset
     {
         public string Name;
@@ -58,7 +51,6 @@ namespace Crucible.@Scripts
         public ChunkPlacementSettings Placement = new ChunkPlacementSettings();
         public RoadSettings Roads = new RoadSettings();     // Unity's road numbers (SubLevelGen_*.asset)
         public DecorSettings Decor = new DecorSettings();   // Unity's "Trees" decor numbers; quadrant themes are temporary
-        public CaptureSettings Capture;                     // Capture's objective rules (MissionController); null for other missions
     }
 
     public static class MissionPresets
@@ -99,7 +91,6 @@ namespace Crucible.@Scripts
             // Roads follow the objective route (spawn -> 1st -> 2nd -> 3rd -> extract). Unity's KOTH
             // used a network instead (chain off: shortest links + 1 loop); the other numbers are Unity's.
             p.Roads.chain = true;
-            p.Capture = new CaptureSettings();
             return p;
         }
     }

@@ -43,11 +43,13 @@
 *        Q / E               left / right shoulder weapon
 *        R                   reload partly empty magazines
 *        Tab / Ctrl          head ability (Heal) / torso ability (Damage Amp)
-*        V                   cycle the highlighted nearby part (its card shows over it)
-*        F                   with a part highlighted: open the swap cards (PartSwapHUD), then click
-*                            the card of the socket to swap into (F again cancels). With nothing
-*                            highlighted F is the camera lock.
+*        V                   cycle the highlighted nearby part
+*        1, 2                swap it into the left (or only) / right socket
+*        F / right stick     aim mode: Free Aim -> Soft Lock -> Hard Lock (Unity's
+*                            lock button; MechAimModes.cs). Not while standing
+*                            on a Zoo pad, which uses F itself.
 *    Showcase-only debug keys: K take 25 damage, H full heal / revive.
+*    Zoo only: a destroyed mech respawns (Zoo/ZooPlayerRespawn.cs, MechRespawn.cs).
 *
 *    Hits: ranged weapons hit what is under the screen centre (Unity's free
 *    aim ray), at full damage up to their Range, where the shot ends, with splash;
@@ -286,6 +288,8 @@ namespace Crucible.Scripts
             Health = new MechHealth(250f);
             Health.BlocksDamage = BlocksWeaponDamage;
             Targeting = new MechTargetLock(Entity);
+            ApplyAimSettings();
+            Targeting.SetMode((MechAimMode)Math.Max(0, Math.Min(2, startAimMode)), null);   // Unity starts in soft lock
             Health.Damaged += amount => NotifyCombatAction();
             Health.Damaged += amount => StartShake(damageShake, damageShakeDuration);   // CombatFeedback.OnDamaged
             Health.Damaged += amount => { if (hitStop) MechHitStop.Request(Entity, damageHitStop); };   // refused if it killed
@@ -353,8 +357,7 @@ namespace Crucible.Scripts
                     RequestAbility(MechSocket.Legs, now);
             }
             UpdateAbilities(deltaTime, now);
-            // Unity: F toggles camera lock. Not on the frame F opened or closed the part swap cards.
-            if (gameplay && !swapKeyUsed && Input.IsPressed(KeyCode.F)) Targeting.ToggleHardLock(gameplayCamera);
+            UpdateAimModeInput(gameplay);   // F / right stick press: Free Aim -> Soft Lock -> Hard Lock (MechAimModes.cs)
             UpdateAttacks(gameplay, now);
 
             Vector2 move = gameplay ? ReadMove() : Vector2.Zero;
@@ -380,7 +383,8 @@ namespace Crucible.Scripts
                 UpdateWeaponEffects(deltaTime);
                 UpdateLegsAnimation();
             }
-            Targeting.Update(gameplayCamera, gameplay ? Input.MouseDelta : Vector2.Zero, deltaTime);
+            ApplyAimSettings();
+            Targeting.Update(gameplayCamera, deltaTime);
             UpdateLockCamera(deltaTime);
             UpdateWeaponIdle(deltaTime, now);
             PlaceCamera(deltaTime);
@@ -1191,16 +1195,23 @@ namespace Crucible.Scripts
 
             // Splash: everyone else inside the radius takes the splash damage.
             if (weapon.Def.Attack != MechAttackType.Splash || weapon.Def.SplashRadius <= 0f) return;
+            Entity directEntity = direct ? MechCombatTargets.Owning(hit.Entity)?.Entity : null;
+            CombatHealth directHealth = directEntity != null ? CombatHealth.Find(directEntity) : null;
+            int kills = directHealth != null && directHealth.IsDead ? 1 : 0;
             var targets = new List<MechCombatTargets.Target>(MechCombatTargets.All);
             foreach (var target in targets)
             {
                 if (!target.Entity.IsAlive || (direct && IsHitEntity(target.Entity, hit.Entity))) continue;
                 if ((target.Entity.Transform.WorldPosition - hit.Point).Length <= weapon.Def.SplashRadius + 0.5f)
                 {
+                    CombatHealth health = CombatHealth.Find(target.Entity);
+                    bool wasDead = health != null && health.IsDead;
                     target.OnDamage(weapon.Def.SplashDamage * amp, origin);
+                    if (!wasDead && health != null && health.IsDead) kills++;
                     ConfirmHit(target.Entity, MechHitKind.Blast);
                 }
             }
+            ConfirmExplosion(hit.Point, kills);
         }
 
         static bool IsHitEntity(Entity target, Entity hit)
@@ -1334,54 +1345,6 @@ namespace Crucible.Scripts
             return enemy.ApplyMeleeHit(damage, push, killLaunch, meleePushSeconds);
         }
 
-        // --- camera hard lock (Unity's CameraControlThirdPerson.UpdateCameraOrbit) ------------------- //
-        public float hardLockPitch = 20f;          // base pitch while locked (looks down)
-        public float hardLockHeight = 1.5f;        // pivot raise while locked (Unity metres)
-        public float hardLockOrbitResponse = 0.12f;
-        CameraOrbit orbit;
-        Entity pivot;
-        float orbitSensitivity = -1f, orbitStick, orbitMaxPitch, pivotBaseY, lockHeight;
-
-        void UpdateLockCamera(float deltaTime)
-        {
-            if (orbit == null)
-            {
-                pivot = Entity.FindChild("Camera Pivot");
-                if (pivot == null || !pivot.HasComponent<CameraOrbit>()) return;
-                orbit = pivot.CameraOrbit;
-                pivotBaseY = pivot.Transform.Position.Y;
-            }
-            float response = 1f - (float)Math.Exp(-deltaTime / Math.Max(0.01f, hardLockOrbitResponse));
-            bool locked = Targeting.IsHardLocked;
-            if (locked)
-            {
-                // The mouse no longer steers the view (restored when the lock ends).
-                if (orbitSensitivity < 0f) { orbitSensitivity = orbit.Sensitivity; orbitStick = orbit.StickSpeed; orbitMaxPitch = orbit.MaxPitch; }
-                orbit.Sensitivity = 0f; orbit.StickSpeed = 0f; orbit.MaxPitch = 80f;
-                Vector3 d = Targeting.CurrentTarget.AimPosition - Transform.WorldPosition;
-                float planar = MechMath.Flat(d).Length;
-                if (planar > 0.001f)
-                {
-                    float yaw = (float)(Math.Atan2(-d.X, -d.Z) * 180.0 / Math.PI);     // view forward = (-sin, 0, -cos)
-                    float delta = ((yaw - orbit.Yaw) % 360f + 540f) % 360f - 180f;
-                    orbit.Yaw = orbit.Yaw + delta * response;
-                }
-                // Raise the view for nearby low targets so the sightline clears the mech.
-                float h = hardLockHeight * unityScale;
-                float clearance = (float)(Math.Atan2(h - d.Y, Math.Max(0.1f, planar - (body != null ? body.Radius : 1f) - 0.35f)) * 180.0 / Math.PI);
-                float desired = MechMath.Clamp(Math.Max(hardLockPitch, clearance), 5f, 80f);
-                orbit.Pitch = orbit.Pitch + (desired - orbit.Pitch) * response;
-                lockHeight = MechMath.Lerp(lockHeight, h, response);
-            }
-            else
-            {
-                if (orbitSensitivity >= 0f) { orbit.Sensitivity = orbitSensitivity; orbit.StickSpeed = orbitStick; orbit.MaxPitch = orbitMaxPitch; orbitSensitivity = -1f; }
-                lockHeight = MechMath.Lerp(lockHeight, 0f, response);
-            }
-            Vector3 p = pivot.Transform.Position;
-            pivot.Transform.Position = new Vector3(p.X, pivotBaseY + lockHeight, p.Z);
-        }
-
         // --- MechWeaponIdle ---        // ------------------------------------------------------------------------------------ //
         // After the mech stands still for weaponIdleDelay, one randomly chosen equipped weapon plays its
         // Neutral clip; the others hold its first frame. Moving, boosting or any weapon still attacking /
@@ -1431,6 +1394,16 @@ namespace Crucible.Scripts
         public float dashStopShakeDuration = 0.06f;
         public float damageShake = 0.16f;           // the mech takes damage
         public float damageShakeDuration = 0.24f;
+        // CombatFeedback "Confirmed hits": one of the mech's attacks lands (x1.15 if it killed),
+        // at most once per hitShakeInterval so a shotgun or a splash doesn't stack shakes.
+        public float hitShake = 0.12f;
+        public float hitShakeDuration = 0.14f;
+        public float hitShakeInterval = 0.06f;
+        // CombatFeedback "Impact Impulse": one of the mech's splash shots bursts. Full strength on
+        // top of the mech, fading to nothing at explosionShakeRange metres; +20% per extra kill (up to 3).
+        public float explosionShake = 0.09f;
+        public float explosionShakeDuration = 0.14f;
+        public float explosionShakeRange = 45f;
 
         // --- hit stop (CombatFeedback "Confirmed hits and actor hitstop"; MechHitStop) ---------------- //
         public bool hitStop = true;
@@ -1446,11 +1419,32 @@ namespace Crucible.Scripts
         /// </summary>
         public void ConfirmHit(Entity victim, MechHitKind kind)
         {
+            float now = Time.ElapsedTime;
+            if (victim != null && now >= nextHitShake)
+            {
+                CombatHealth health = CombatHealth.Find(victim);
+                StartShake(hitShake * (health != null && health.IsDead ? 1.15f : 1f), hitShakeDuration);
+                nextHitShake = now + Math.Max(0f, hitShakeInterval);
+            }
             if (!hitStop) return;
             float seconds = kind == MechHitKind.Melee ? meleeHitStop
                           : kind == MechHitKind.Blast ? blastHitStop : projectileHitStop;
             MechHitStop.Request(Entity, seconds);
             MechHitStop.Request(victim, seconds);   // and the victim (refused if the hit killed it)
+        }
+
+        float nextHitShake;
+
+        /// <summary>
+        /// One of the mech's splash shots burst at point, killing "kills" targets (Unity's
+        /// CombatFeedback.PlayImpact camera impulse). Weaker the further away it is.
+        /// </summary>
+        public void ConfirmExplosion(Vector3 point, int kills)
+        {
+            float range = Math.Max(1f, explosionShakeRange);
+            float proximity = MechMath.Clamp01(1f - (point - Transform.WorldPosition).Length / range);
+            float strength = Math.Min(0.2f, explosionShake * (1f + Math.Max(0, Math.Min(kills - 1, 3)) * 0.2f));
+            StartShake(strength * proximity, explosionShakeDuration);
         }
 
         /// <summary>

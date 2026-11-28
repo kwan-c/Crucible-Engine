@@ -107,12 +107,12 @@ namespace Crucible.Scripts
     }
 
     [NodeDescription(name: "Wait For Weapon Attack", story: "Wait for weapon attack", category: "Lithomachia/Enemy", id: "48e8f62d4ecb4d8d8b3334a212a34449",
-                     description: "Holds still (keeping the swing's facing) until the attack has played out. Cancels it if the player is lost.")]
+                     description: "Holds still (keeping the swing's facing) until the attack has played out - or keeps circling, for an enemy with Strafe While Attacking. Cancels it if the player is lost.")]
     public sealed class WaitEnemyAttackAction : EnemyGraphAction
     {
         protected override Status Tick()
         {
-            Controller.Hold("Attack windup / release");
+            Controller.HoldForAttack();
             if (!Controller.SensePlayer()) { Controller.CancelAttack(); return Status.Failure; }
             return Controller.AttackInProgress ? Status.Running : Status.Success;
         }

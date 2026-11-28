@@ -3,27 +3,48 @@
 * \author:       Tok Duan Jie Nelson
 * \par:          Email: t.duanjienelson@digipen.edu
 * \date          8 November 2026
-* \version       1.0
-* \brief         Target selection and camera lock. Port of Unity's
-*                MechTargetLockController (Combat/ControlScheme.md):
+* \version       2.0
+* \brief         Target selection for the three aim modes. Port of Unity's
+*                MechTargetLockController (LockMode NoLockOn /
+*                FreeCameraLockOn / CameraLockOn), with Crucible's own
+*                hard-lock switching:
 *
-*                - Automatic weapon aim is always on: every frame the enemy
-*                  under the screen centre wins, then one within the small
-*                  switch radius of the centre, else the nearest-to-centre
-*                  enemy inside the auto-aim circle (0.18 of the smaller
-*                  screen side) and lock range (60 m). A valid selection is
-*                  kept while it stays in that area.
-*                - Z toggles hard lock: the camera and body track the target
-*                  (MechPlayer); losing it picks the nearest visible one.
-*                - While hard locked, a quick mouse flick switches to the
-*                  nearest visible enemy in that screen direction.
+*                - Free Aim: no target. Weapons aim at the screen centre.
+*                - Soft Lock: the camera stays free. The enemy under the
+*                  hidden centre-screen targeting cursor becomes the target;
+*                  with nothing under it, the selection is kept while it stays
+*                  inside the auto-aim circle (Unity: 0.4 of the smaller
+*                  screen side on the player prefab) and lock range (60 m),
+*                  and an empty selection takes the enemy nearest the centre
+*                  of that circle.
+*                - Hard Lock: the camera follows the target (MechPlayer). The
+*                  player switches the same way as in soft lock: the same
+*                  hidden cursor, acquisition and hysteresis. MechPlayer lets
+*                  the mouse add a bounded look offset on top of the camera
+*                  tracking, so the cursor can be moved onto another enemy;
+*                  the camera then follows the new one. (Unity used a mouse
+*                  flick toward a screen direction instead. That was dropped
+*                  at the design owner's request.)
 *
 * \details
 *    A plain object owned by MechPlayer (one script per entity). Candidates
-*    are the damageable targets in MechCombatTargets (Unity: colliders with a
-*    MechTargetable within lockRange). "Under the screen centre" is the
-*    centre ray's first collider belonging to a target. All screen maths
-*    uses Camera.WorldToScreenPoint in game-screen pixels.
+*    are the damageable targets in MechCombatTargets. Valid means: alive,
+*    switched on, registered, not the player, inside LockRange and in front
+*    of the camera inside the screen (minus ScreenPadding for a new pick).
+*
+*    Stability (hysteresis), all tunable from MechPlayer's Inspector fields:
+*      - an enemy must stay under the cursor for SwitchDwellSeconds before it
+*        replaces the current target, so a body passing through the crosshair
+*        or two overlapping enemies cannot make the selection flicker;
+*      - the current target wins while it is under the cursor itself;
+*      - soft lock drops its target only once it leaves KeepRadiusScale x the
+*        acquisition circle; empty space under the cursor keeps the target;
+*      - a dead, destroyed, unregistered or out-of-range target is dropped at
+*        once (hard lock then recovers the nearest visible enemy by world
+*        distance, as Unity did).
+*
+*    v2.0  Three explicit modes (F cycles them, as Unity), dwell hysteresis,
+*          hard-lock switching through the shared cursor.
 *
 **************************************************************************/
 using System;
@@ -31,159 +52,166 @@ using System.Collections.Generic;
 
 namespace Crucible.Scripts
 {
+    /// <summary>Unity's LockMode order: NoLockOn, FreeCameraLockOn, CameraLockOn.</summary>
+    public enum MechAimMode { FreeAim = 0, SoftLock = 1, HardLock = 2 }
+
     public sealed class MechTargetLock
     {
-        // Unity MechTargetLockController defaults (FullPlayer_mech_specialist keeps them).
+        // Unity MechTargetLockController values (FullPlayer_mech_specialist keeps them).
         public float LockRange = 60f;
         public float ScreenPadding = 0.04f;        // viewport fraction; acquisition only
-        public float TargetSwitchRadius = 0.025f;  // fraction of the smaller screen dimension
+        public float TargetSwitchRadius = 0.025f;  // hidden cursor radius, fraction of the smaller screen dimension
         public float AutoAimRadius = 0.4f;         // Unity main's player prefab (the code default there is 0.18)
-        public float SwitchFlickDistance = 80f;    // pixels within the gesture window
-        public float SwitchGestureWindow = 0.2f;
-        public float SwitchMinimumSpeed = 120f;    // pixels / second
-        public float SwitchReleaseTime = 0.1f;
-        public float SwitchCooldown = 0.25f;
-        public float SwitchDirectionHalfAngle = 60f;
+        // Crucible hysteresis (MechPlayer copies its Inspector fields here every frame).
+        public float SwitchDwellSeconds = 0.12f;   // a new enemy must stay under the cursor this long
+        public float KeepRadiusScale = 1.25f;      // soft lock keeps its target out to this x the auto-aim circle
 
+        /// <summary>The selected enemy (null = none). The setter is private: QA sets it by reflection.</summary>
         public MechCombatTargets.Target CurrentTarget { get; private set; }
-        public bool IsFreeAim { get { return !targetingEnabled; } }
-        public bool IsHardLockMode { get { return targetingEnabled && hardLockEnabled; } }
+        public MechAimMode Mode { get; private set; }
+        public bool IsFreeAim { get { return Mode == MechAimMode.FreeAim; } }
+        public bool IsSoftLock { get { return Mode == MechAimMode.SoftLock; } }
+        public bool IsHardLockMode { get { return Mode == MechAimMode.HardLock; } }
         public bool IsHardLocked { get { return IsHardLockMode && IsTargetInRange(CurrentTarget); } }
+        /// <summary>The valid enemy under the hidden targeting cursor this frame (null = empty space).</summary>
+        public MechCombatTargets.Target CursorTarget { get; private set; }
+        /// <summary>Every change of CurrentTarget, for QA and presentation.</summary>
+        public int TargetChanges { get; private set; }
+
         public event Action<bool> HardLockChanged;
+        public event Action<MechAimMode> ModeChanged;
+        /// <summary>(previous, next) whenever the selection changes.</summary>
+        public event Action<MechCombatTargets.Target, MechCombatTargets.Target> TargetChanged;
 
-        bool targetingEnabled = true;   // Unity: OnEnable -> ResumeTargeting
-        bool hardLockEnabled, rememberedHardLock;
-        bool switchLatched;
-        Vector2 switchTravel;
-        float gestureTime, quietTime, cooldownRemaining;
-        Entity owner;
+        MechAimMode rememberedLockMode = MechAimMode.SoftLock;
+        MechCombatTargets.Target pendingTarget;   // waiting out SwitchDwellSeconds under the cursor
+        float pendingTime;
+        readonly Entity owner;
 
-        public MechTargetLock(Entity owner) { this.owner = owner; }
+        public MechTargetLock(Entity owner) { this.owner = owner; Mode = MechAimMode.SoftLock; }
 
         Vector3 OwnerPosition { get { return owner.Transform.WorldPosition; } }
 
-        /// <summary>Z: toggles camera lock on press. Weapon auto-aim stays on either way.</summary>
+        // ---------------------------------------------------------------------------- //
+        // Modes
+        // ---------------------------------------------------------------------------- //
+
+        /// <summary>F: Free Aim -> Soft Lock -> Hard Lock -> Free Aim (Unity's CycleLockMode).</summary>
+        public void CycleMode(Camera camera)
+        {
+            SetMode((MechAimMode)(((int)Mode + 1) % 3), camera);
+        }
+
+        public void SetMode(MechAimMode mode, Camera camera)
+        {
+            if (mode == Mode) return;
+            bool wasHard = IsHardLockMode;
+            Mode = mode;
+            ResetDwell();
+            if (mode == MechAimMode.FreeAim) SetTarget(null);
+            else
+            {
+                rememberedLockMode = mode;
+                // Entering soft lock picks what the cursor shows. Entering hard lock keeps the
+                // visible selection; it must not silently choose another enemy.
+                if (mode == MechAimMode.SoftLock || camera == null || !IsValidTarget(CurrentTarget, camera))
+                    AcquireNew(camera);
+            }
+            if (wasHard != IsHardLockMode && HardLockChanged != null) HardLockChanged(IsHardLockMode);
+            if (ModeChanged != null) ModeChanged(mode);
+        }
+
+        /// <summary>Soft <-> hard (Unity's ToggleHardLock). From Free Aim it enters hard lock.</summary>
         public void ToggleHardLock(Camera camera)
         {
-            if (IsFreeAim) ResumeTargeting(camera);
-            if (hardLockEnabled) { SetHardLock(false); return; }
-            // Toggling follows the visible selection; it must not silently choose another enemy.
-            SetHardLock(true);
-            if (camera == null || !IsValidTarget(CurrentTarget, camera)) SelectTarget(camera);
+            SetMode(IsHardLockMode ? MechAimMode.SoftLock : MechAimMode.HardLock, camera);
         }
 
-        public void EnterFreeAim()
-        {
-            if (targetingEnabled) rememberedHardLock = hardLockEnabled;
-            targetingEnabled = false;
-            SetHardLock(false);
-            CurrentTarget = null;
-        }
+        public void EnterFreeAim() { SetMode(MechAimMode.FreeAim, null); }
 
+        /// <summary>Back to the last lock mode used (Unity's ResumeTargeting).</summary>
         public void ResumeTargeting(Camera camera)
         {
-            if (targetingEnabled) return;
-            targetingEnabled = true;
-            SelectTarget(camera);
-            SetHardLock(rememberedHardLock);
+            if (IsFreeAim) SetMode(rememberedLockMode, camera);
         }
 
-        public void CancelSwitchGesture()
+        /// <summary>Forget the selection but keep the mode (respawn, scene change).</summary>
+        public void ClearTarget()
         {
-            switchTravel = Vector2.Zero; gestureTime = quietTime = 0f; switchLatched = false;
+            ResetDwell();
+            SetTarget(null);
         }
 
-        /// <summary>Once per frame after the camera moved: keep or re-pick the target.</summary>
-        public void Update(Camera camera, Vector2 mouseDelta, float deltaTime)
-        {
-            if (IsFreeAim || camera == null) return;
-            if (hardLockEnabled)
-            {
-                ProcessSwitchInput(camera, mouseDelta, deltaTime);
-                RefreshHardLockTarget(camera);
-                return;
-            }
-            SelectTarget(camera);
-        }
+        // ---------------------------------------------------------------------------- //
+        // Per frame
+        // ---------------------------------------------------------------------------- //
 
-        // --- hard lock: keep the target while it lives and is in range, else the nearest visible ---------
-        void RefreshHardLockTarget(Camera camera)
+        /// <summary>Once per frame after the camera moved: keep, switch or re-pick the target.</summary>
+        public void Update(Camera camera, float deltaTime)
         {
-            if (!IsHardLockMode) return;
-            if (CurrentTarget != null && IsTargetInRange(CurrentTarget) && MechCombatTargets.All.Contains(CurrentTarget)) return;
-            CurrentTarget = null;
-            SelectTarget(camera);
-        }
+            if (IsFreeAim || camera == null) { CursorTarget = null; return; }
 
-        void ProcessSwitchInput(Camera camera, Vector2 mouseDelta, float deltaTime)
-        {
-            if (!IsHardLocked || deltaTime <= 0f) return;
-            cooldownRemaining = Math.Max(0f, cooldownRemaining - deltaTime);
-            gestureTime += deltaTime;
-            if (mouseDelta.Length / deltaTime < SwitchMinimumSpeed || (mouseDelta.X == 0f && mouseDelta.Y == 0f))
-            {
-                quietTime += deltaTime;
-                if (quietTime >= SwitchReleaseTime) { switchLatched = false; switchTravel = Vector2.Zero; gestureTime = 0f; }
-                return;
-            }
-            quietTime = 0f;
-            if (switchLatched || cooldownRemaining > 0f) return;
-            if (gestureTime > SwitchGestureWindow || Vector2.Dot(switchTravel, mouseDelta) < 0f)
-            {
-                switchTravel = Vector2.Zero;
-                gestureTime = deltaTime;
-            }
-            switchTravel = switchTravel + mouseDelta;
-            if (switchTravel.Length < SwitchFlickDistance) return;
-            SwitchInDirection(camera, switchTravel.Normalized);
-            // Consume even a gesture toward empty space, so holding it cannot switch later.
-            switchLatched = true;
-            cooldownRemaining = SwitchCooldown;
-            switchTravel = Vector2.Zero;
-            gestureTime = 0f;
-        }
+            // A destroyed, dead, unregistered or out-of-range lock is dropped before anything else.
+            if (CurrentTarget != null && !IsTargetInRange(CurrentTarget)) SetTarget(null);
 
-        void SwitchInDirection(Camera camera, Vector2 direction)
-        {
-            Vector2 origin; float depth;
-            if (CurrentTarget == null || !camera.WorldToScreenPoint(CurrentTarget.AimPosition, out origin, out depth)) return;
-            float minimumDot = (float)Math.Cos(SwitchDirectionHalfAngle * Math.PI / 180.0);
-            MechCombatTargets.Target next = null;
-            float nearest = float.MaxValue;
-            foreach (var candidate in MechCombatTargets.All)
-            {
-                if (candidate == CurrentTarget || !IsValidTarget(candidate, camera)) continue;
-                Vector2 screen;
-                if (!camera.WorldToScreenPoint(candidate.AimPosition, out screen, out depth)) continue;
-                Vector2 offset = screen - origin;
-                float sqr = Vector2.Dot(offset, offset);
-                if (sqr < 1f || Vector2.Dot(offset.Normalized, direction) < minimumDot) continue;
-                if (sqr < nearest) { nearest = sqr; next = candidate; }
-            }
-            if (next != null) CurrentTarget = next;
-        }
-
-        void SetHardLock(bool active)
-        {
-            if (hardLockEnabled == active) return;
-            hardLockEnabled = active;
-            if (targetingEnabled) rememberedHardLock = active;
-            CancelSwitchGesture();
-            cooldownRemaining = 0f;
-            if (HardLockChanged != null) HardLockChanged(active);
-        }
-
-        // --- selection (Unity's SelectTarget) --------------------------------------------------------
-        void SelectTarget(Camera camera)
-        {
-            if (IsFreeAim || camera == null) { CurrentTarget = null; return; }
             Vector2 size = Camera.ScreenSize;
             if (size.X <= 0f || size.Y <= 0f) return;
-            Vector2 centre = size * 0.5f;
-            float smaller = Math.Min(size.X, size.Y);
-            float switchRadius = TargetSwitchRadius * smaller, acquisition = AutoAimRadius * smaller;
+            CursorTarget = FindCursorTarget(camera, size);
 
-            // The enemy whose collider the centre ray crosses first.
+            if (CurrentTarget == null)
+            {
+                // Nothing selected: take what the cursor shows at once, else (soft lock: the enemy
+                // nearest the centre of the auto-aim circle; hard lock: the nearest by distance).
+                ResetDwell();
+                if (CursorTarget != null) SetTarget(CursorTarget);
+                else AcquireNew(camera);
+                return;
+            }
+
+            // Soft lock lets a selection go once it leaves the (slightly larger) keep circle.
+            if (IsSoftLock && !InsideCircle(CurrentTarget, camera, size, AutoAimRadius * Math.Max(1f, KeepRadiusScale)))
+            {
+                ResetDwell();
+                SetTarget(null);
+                if (CursorTarget != null) SetTarget(CursorTarget); else AcquireNew(camera);
+                return;
+            }
+
+            // Switching: only another enemy held under the cursor for the dwell time. The current
+            // target under the cursor, or empty space, keeps the selection.
+            if (CursorTarget == null || CursorTarget == CurrentTarget) { ResetDwell(); return; }
+            if (CursorTarget != pendingTarget) { pendingTarget = CursorTarget; pendingTime = 0f; }
+            pendingTime += Math.Max(0f, deltaTime);
+            if (pendingTime + 1e-5f < Math.Max(0f, SwitchDwellSeconds)) return;
+            ResetDwell();
+            SetTarget(CursorTarget);
+        }
+
+        void ResetDwell() { pendingTarget = null; pendingTime = 0f; }
+
+        void SetTarget(MechCombatTargets.Target next)
+        {
+            if (ReferenceEquals(CurrentTarget, next)) return;
+            MechCombatTargets.Target previous = CurrentTarget;
+            CurrentTarget = next;
+            TargetChanges++;
+            if (TargetChanged != null) TargetChanged(previous, next);
+        }
+
+        // ---------------------------------------------------------------------------- //
+        // The hidden targeting cursor (screen centre) and acquisition
+        // ---------------------------------------------------------------------------- //
+
+        /// <summary>
+        /// The valid enemy under the hidden cursor: the one whose collider the centre ray crosses
+        /// first, else the one whose aim point is nearest the centre within TargetSwitchRadius.
+        /// When the current target is under the cursor too, it wins (no flicker between overlaps).
+        /// </summary>
+        MechCombatTargets.Target FindCursorTarget(Camera camera, Vector2 size)
+        {
+            Vector2 centre = size * 0.5f;
+            float switchRadius = TargetSwitchRadius * Math.Min(size.X, size.Y);
+
             MechCombatTargets.Target rayTarget = null;
             Ray ray; RaycastHit hit;
             if (camera.ViewportPointToRay(new Vector2(0.5f, 0.5f), out ray)
@@ -193,33 +221,76 @@ namespace Crucible.Scripts
                 if (owning != null && IsValidTarget(owning, camera)) rayTarget = owning;
             }
 
-            MechCombatTargets.Target nearest = null, centred = null;
-            float nearestScore = float.MaxValue, centredScore = float.MaxValue;
-            bool keepCurrent = false;
+            MechCombatTargets.Target centred = null;
+            float centredScore = float.MaxValue;
+            bool currentCentred = false;
             foreach (var candidate in MechCombatTargets.All)
             {
-                if (!IsValidTarget(candidate, camera)) continue;
-                Vector2 screen; float depth;
-                if (!camera.WorldToScreenPoint(candidate.AimPosition, out screen, out depth)) continue;
+                Vector2 screen;
+                if (!IsValidTarget(candidate, camera) || !Project(candidate, camera, out screen)) continue;
                 Vector2 d = screen - centre;
                 float score = Vector2.Dot(d, d);
-                bool crossed = candidate == rayTarget;
-                if (!hardLockEnabled && !crossed && score > acquisition * acquisition) continue;
-                keepCurrent |= candidate == CurrentTarget;
-                // Soft acquisition follows the centre; hard-lock recovery uses world distance.
-                Vector3 toTarget = candidate.AimPosition - OwnerPosition;
-                float distance = hardLockEnabled ? Vector3.Dot(toTarget, toTarget) : score;
-                if (distance < nearestScore) { nearestScore = distance; nearest = candidate; }
-                if (score <= switchRadius * switchRadius && score < centredScore) { centredScore = score; centred = candidate; }
+                if (score > switchRadius * switchRadius) continue;
+                if (candidate == CurrentTarget) currentCentred = true;
+                if (score < centredScore) { centredScore = score; centred = candidate; }
             }
-            // Empty space keeps a valid selection instead of cycling through enemies.
-            MechCombatTargets.Target aimed = rayTarget ?? centred;
-            CurrentTarget = !hardLockEnabled && aimed != null ? aimed : keepCurrent ? CurrentTarget : nearest;
+            if (CurrentTarget != null && (rayTarget == CurrentTarget || currentCentred)) return CurrentTarget;
+            return rayTarget ?? centred;
         }
 
-        bool IsTargetInRange(MechCombatTargets.Target target)
+        /// <summary>A fresh pick with nothing selected (Unity's SelectTarget fallback).</summary>
+        void AcquireNew(Camera camera)
         {
-            if (target == null || !target.Entity.IsAlive || MechCombatTargets.Same(target.Entity, owner)) return false;
+            if (IsFreeAim || camera == null) { SetTarget(null); return; }
+            Vector2 size = Camera.ScreenSize;
+            if (size.X <= 0f || size.Y <= 0f) return;
+            Vector2 centre = size * 0.5f;
+            float acquisition = AutoAimRadius * Math.Min(size.X, size.Y);
+            MechCombatTargets.Target best = FindCursorTarget(camera, size);
+            if (best == null)
+            {
+                float bestScore = float.MaxValue;
+                foreach (var candidate in MechCombatTargets.All)
+                {
+                    Vector2 screen;
+                    if (!IsValidTarget(candidate, camera) || !Project(candidate, camera, out screen)) continue;
+                    Vector2 d = screen - centre;
+                    float screenScore = Vector2.Dot(d, d);
+                    // Soft acquisition stays inside the auto-aim circle; hard-lock recovery keeps
+                    // Unity's world-distance rule over every visible enemy.
+                    if (!IsHardLockMode && screenScore > acquisition * acquisition) continue;
+                    Vector3 toTarget = candidate.AimPosition - OwnerPosition;
+                    float score = IsHardLockMode ? Vector3.Dot(toTarget, toTarget) : screenScore;
+                    if (score < bestScore) { bestScore = score; best = candidate; }
+                }
+            }
+            SetTarget(best);
+        }
+
+        bool InsideCircle(MechCombatTargets.Target target, Camera camera, Vector2 size, float radiusFraction)
+        {
+            Vector2 screen;
+            if (!IsValidTarget(target, camera) || !Project(target, camera, out screen)) return false;
+            Vector2 d = screen - size * 0.5f;
+            float radius = radiusFraction * Math.Min(size.X, size.Y);
+            return Vector2.Dot(d, d) <= radius * radius;
+        }
+
+        static bool Project(MechCombatTargets.Target target, Camera camera, out Vector2 screen)
+        {
+            float depth;
+            return camera.WorldToScreenPoint(target.AimPosition, out screen, out depth);
+        }
+
+        // ---------------------------------------------------------------------------- //
+        // Validity
+        // ---------------------------------------------------------------------------- //
+
+        /// <summary>Alive, switched on, still registered, not the player, within LockRange.</summary>
+        public bool IsTargetInRange(MechCombatTargets.Target target)
+        {
+            if (target == null || target.Entity == null || !target.Entity.IsAlive || !target.Entity.IsActive
+                || MechCombatTargets.Same(target.Entity, owner) || !MechCombatTargets.All.Contains(target)) return false;
             Vector3 offset = target.AimPosition - OwnerPosition;
             return Vector3.Dot(offset, offset) <= LockRange * LockRange;
         }

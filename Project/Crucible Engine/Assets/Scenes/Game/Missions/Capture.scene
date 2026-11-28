@@ -3043,7 +3043,22 @@
                             "assembly": "Managed/Crucible.Scripts.dll",
                             "namespace": "Crucible.Scripts",
                             "class": "MissionController",
-                            "fields": []
+                            "fields": [
+                                {
+                                    "declaringType": "Crucible.Scripts.MissionController",
+                                    "name": "hold1Player",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 40.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                }
+                            ]
                         },
                         {
                             "enabled": true,

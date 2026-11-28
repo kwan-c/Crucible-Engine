@@ -4,7 +4,7 @@
 * \par:          Email: t.duanjienelson@digipen.edu
 * \date          8 November 2026
 * \version       1.0
-* \brief         Zoo pad: step on it and press F to go back to the main
+* \brief         Zoo pad: step on it and press G to go back to the main
 *                menu. Port of Unity's ZooBacktoMain (+ SceneManagerScript).
 *
 **************************************************************************/
@@ -20,12 +20,12 @@ namespace Crucible.Scripts
         public override void OnCreate()
         {
             pad = new ZooPad(this);
-            pad.SetText("Press F here to return to main Menu");
+            pad.SetText("Press G here to return to main Menu");
         }
 
         public override void OnUpdate(float deltaTime)
         {
-            if (!pad.WasUsed(KeyCode.F) || LoadingScreen.IsLoading) return;
+            if (!pad.WasUsed(KeyCode.G) || LoadingScreen.IsLoading) return;
             if (!Scene.Load(menuScene)) Log.Error("ZooBackToMain: could not load " + menuScene);
         }
 
