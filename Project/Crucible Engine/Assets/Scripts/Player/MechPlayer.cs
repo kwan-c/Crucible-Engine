@@ -43,8 +43,10 @@
 *        Q / E               left / right shoulder weapon
 *        R                   reload partly empty magazines
 *        Tab / Ctrl          head ability (Heal) / torso ability (Damage Amp)
-*        V                   cycle the highlighted nearby part
-*        1, 2                swap it into the left (or only) / right socket
+*        V                   cycle the highlighted nearby part (its card shows over it)
+*        F                   with a part highlighted: open the swap cards (PartSwapHUD), then click
+*                            the card of the socket to swap into (F again cancels). With nothing
+*                            highlighted F is the camera lock.
 *    Showcase-only debug keys: K take 25 damage, H full heal / revive.
 *
 *    Hits: ranged weapons hit what is under the screen centre (Unity's free
@@ -73,6 +75,10 @@
 *          torsoEntityName model.
 *          Hit stop (MechHitStop): the mech and its victim freeze briefly
 *          when its hits land; the mech and a melee attacker when hurt.
+*    v1.4  part swap UI: the highlighted dropped part shows a PartSwapWindow over
+*          it (PartSwapWorldC, always facing the camera) instead of a WorldText
+*          prompt; F (not 1 / 2) opens the PartSwapHUD cards for the sockets the
+*          part fits, and clicking a card swaps (CompletePartSwap).
 *
 **************************************************************************/
 using System;
@@ -159,6 +165,11 @@ namespace Crucible.Scripts
         public bool debugKeys = true;
         public float debugDamage = 25f;
 
+        // --- Part swap cards (PartSwapWindow) ------------------------------------------------ //
+        public string partSwapHudName = "PartSwapHUD";        // screen canvas: RAnchor / LAnchor, each holding a PartSwapWindow
+        public string partSwapWorldName = "PartSwapWorldC";   // world canvas: PartSwapWindowWorld > PartSwapWorldSpace
+        public float partSwapWorldLift = 0f;                  // metres above the dropped part (the card's own offset is its UIRect position)
+
         // --- Read by the HUD and other scripts ------------------------------------- //
         public MechHealth Health { get; private set; }
         /// <summary>Target selection and F camera lock (Unity's MechTargetLockController).</summary>
@@ -210,6 +221,15 @@ namespace Crucible.Scripts
         bool loadoutBuilt;
         readonly List<MechPart> nearbyParts = new List<MechPart>();
         int selectedPart;
+
+        // Part swap cards. hudRight / hudLeft are the PartSwapHUD cards under RAnchor / LAnchor.
+        PartSwapWindow hudRight, hudLeft, worldCard;
+        Entity worldCanvasEntity, worldCardRect;
+        bool swapUiBound, worldCardShown, swapOpen, swapKeyUsed;
+        int swapBindAttempts;
+        float nextSwapBind;
+        MechPart swapPart;        // the dropped part the open swap is for
+        MechPart worldCardPart;   // the part the world card currently describes
 
         Vector3 planarVelocity;
         Vector3 externalVelocity;
@@ -302,6 +322,7 @@ namespace Crucible.Scripts
 
             if (Health.IsDead)
             {
+                CloseSwap();
                 attacksArmed = false;
                 meleeWeapon = null;   // a swing still sliding in dies with the mech
                 ClearWeaponEffects();
@@ -332,7 +353,8 @@ namespace Crucible.Scripts
                     RequestAbility(MechSocket.Legs, now);
             }
             UpdateAbilities(deltaTime, now);
-            if (gameplay && Input.IsPressed(KeyCode.F)) Targeting.ToggleHardLock(gameplayCamera);   // Unity: F toggles camera lock
+            // Unity: F toggles camera lock. Not on the frame F opened or closed the part swap cards.
+            if (gameplay && !swapKeyUsed && Input.IsPressed(KeyCode.F)) Targeting.ToggleHardLock(gameplayCamera);
             UpdateAttacks(gameplay, now);
 
             Vector2 move = gameplay ? ReadMove() : Vector2.Zero;
@@ -560,23 +582,35 @@ namespace Crucible.Scripts
 
         void UpdatePickups(bool gameplay)
         {
+            swapKeyUsed = false;
             for (int i = nearbyParts.Count - 1; i >= 0; i--)
                 if (nearbyParts[i] == null || !nearbyParts[i].Entity.IsAlive || nearbyParts[i].IsMounted) nearbyParts.RemoveAt(i);
-            if (nearbyParts.Count == 0) { selectedPart = 0; return; }
+            if (swapOpen && !SwapPartInReach()) CloseSwap();   // walked off, or the part is gone
+            if (nearbyParts.Count == 0)
+            {
+                selectedPart = 0;
+                CloseSwap();
+                UpdateWorldCard(null);
+                return;
+            }
             if (selectedPart >= nearbyParts.Count) selectedPart = 0;
+
+            if (swapOpen)
+            {
+                // Modal: the mouse is free for the cards (so gameplay is off and V does nothing). A click on
+                // a card swaps (PartSwapWindow -> CompletePartSwap); F backs out.
+                UpdateWorldCard(swapPart);
+                if (Input.IsPressed(KeyCode.F)) { CloseSwap(); swapKeyUsed = true; }
+                return;
+            }
 
             if (gameplay && Input.IsPressed(KeyCode.V)) selectedPart = (selectedPart + 1) % nearbyParts.Count;
             MechPart selected = nearbyParts[selectedPart];
-            for (int i = 0; i < nearbyParts.Count; i++)
-                nearbyParts[i].SetHighlight(i == selectedPart, i == selectedPart ? SwapPrompt(selected.Def) : null);
+            UpdateWorldCard(selected);   // the highlighted part's card, over it (no WorldText prompt any more)
 
-            // Unity's MechPlayerInput.SwapSelected: 1 = the left / only slot, 2 = the right slot
-            // (ignored for a part with one slot). F is the camera lock in Unity, not a swap.
-            if (!gameplay || selected.Def == null) return;
-            MechSocket first, second;
-            bool twoSockets = SocketsFor(selected.Def.Kind, out first, out second);
-            if (Input.IsPressed(KeyCode.Num1)) Equip(selected, first);
-            else if (Input.IsPressed(KeyCode.Num2) && twoSockets) Equip(selected, second);
+            // F starts the swap (Unity's 1 / 2 are gone): it needs a highlighted part. Without the swap
+            // cards in the scene it does nothing here and F stays the camera lock.
+            if (gameplay && selected.Def != null && Input.IsPressed(KeyCode.F) && OpenSwap(selected)) swapKeyUsed = true;
         }
 
         static bool SocketsFor(MechPartKind kind, out MechSocket first, out MechSocket second)
@@ -591,14 +625,151 @@ namespace Crucible.Scripts
             }
         }
 
-        string SwapPrompt(MechPartDef def)
+        // --- part swap cards (PartSwapWindow) ------------------------------------------- //
+        // The highlighted dropped part gets a world-space card over it (PartSwapWorldC > PartSwapWindowWorld
+        // > PartSwapWorldSpace) showing ITS stats. F opens the swap: the PartSwapHUD cards (RAnchor = right
+        // sockets, LAnchor = left) show what the mech has in the sockets that part fits, the mouse is freed,
+        // and a click on a card swaps the part into that socket (PartSwapWindow -> CompletePartSwap).
+
+        public bool IsSwapOpen { get { return swapOpen; } }
+
+        // Found by name, once the scene's scripts have been created (the first updates), a few tries at most.
+        void BindSwapUi()
         {
-            if (def == null) return string.Empty;
+            if (swapUiBound || swapBindAttempts >= 3 || Time.ElapsedTime < nextSwapBind) return;
+            swapBindAttempts++;
+            nextSwapBind = Time.ElapsedTime + 0.5f;
+
+            Entity hud = Entity.Find(partSwapHudName);
+            if (hud != null)
+            {
+                hudRight = CardUnder(hud, "RAnchor");
+                hudLeft = CardUnder(hud, "LAnchor");
+            }
+            worldCanvasEntity = Entity.Find(partSwapWorldName);
+            if (worldCanvasEntity != null)
+            {
+                worldCardRect = worldCanvasEntity.FindChild("PartSwapWindowWorld");
+                Entity panel = worldCanvasEntity.FindChild("PartSwapWorldSpace");
+                worldCard = panel != null ? panel.GetComponent<PartSwapWindow>() : null;
+                UICanvas canvas = worldCanvasEntity.GetComponent<UICanvas>();
+                if (canvas != null) canvas.Billboard = Billboard.FaceCamera;   // the world card always faces the camera
+            }
+            swapUiBound = hudRight != null || hudLeft != null || worldCard != null;
+            if (!swapUiBound)
+            {
+                if (swapBindAttempts >= 3) Log.Warning("MechPlayer: no PartSwapWindow found under '" + partSwapHudName + "' or '" + partSwapWorldName + "': F will not open a part swap.");
+                return;
+            }
+            // Every card starts Inactive, whatever the scene saved.
+            if (hudRight != null) hudRight.SetActive(false);
+            if (hudLeft != null) hudLeft.SetActive(false);
+            worldCardShown = true;
+            HideWorldCard();
+        }
+
+        static PartSwapWindow CardUnder(Entity hud, string anchorName)
+        {
+            Entity anchor = hud.FindChild(anchorName);
+            Entity card = anchor != null ? anchor.FindChild("PartSwapWindow") : null;
+            return card != null ? card.GetComponent<PartSwapWindow>() : null;
+        }
+
+        // The world card follows the highlighted dropped part (null: nothing highlighted, hide it).
+        void UpdateWorldCard(MechPart part)
+        {
+            if (part == null || part.Def == null) { HideWorldCard(); return; }
+            BindSwapUi();
+            if (worldCard == null) return;
+            if (worldCanvasEntity != null)
+                worldCanvasEntity.Transform.WorldPosition = part.Transform.WorldPosition + Vector3.Up * partSwapWorldLift;
+            if (worldCardPart != part)
+            {
+                worldCard.ShowPart(part.Def);
+                worldCardPart = part;
+            }
+            if (!worldCardShown)
+            {
+                worldCardShown = true;
+                if (worldCardRect != null) worldCardRect.SetEnabled<UIRect>(true);
+                worldCard.SetActive(true);
+            }
+        }
+
+        void HideWorldCard()
+        {
+            if (!worldCardShown) return;
+            worldCardShown = false;
+            worldCardPart = null;
+            if (worldCard != null) worldCard.SetActive(false);
+            if (worldCardRect != null) worldCardRect.SetEnabled<UIRect>(false);
+        }
+
+        bool SwapPartInReach()
+        {
+            return swapPart != null && swapPart.Entity.IsAlive && !swapPart.IsMounted && nearbyParts.Contains(swapPart);
+        }
+
+        // F on a highlighted part. Two-socket parts (arms, shoulders) fill the left card with the left socket and
+        // the right card with the right one; head, torso and legs have one socket, shown on the right card.
+        bool OpenSwap(MechPart part)
+        {
+            BindSwapUi();
+            PartSwapWindow single = hudRight != null ? hudRight : hudLeft;
+            if (single == null) return false;
+
             MechSocket first, second;
-            string cycle = nearbyParts.Count > 1 ? "   [V] next" : string.Empty;
-            if (SocketsFor(def.Kind, out first, out second))
-                return "[1] left   [2] right" + cycle;
-            return "[1] equip" + cycle;
+            bool twoSockets = SocketsFor(part.Def.Kind, out first, out second);
+            HideSwapCards();
+            if (twoSockets)
+            {
+                ShowSocketCard(hudLeft, first, part.Def.Kind);
+                ShowSocketCard(hudRight, second, part.Def.Kind);
+            }
+            else ShowSocketCard(single, first, part.Def.Kind);
+
+            swapPart = part;
+            swapOpen = true;
+            Input.SetMouseLocked(false);   // the cards are clicked: free the cursor until the swap closes
+            return true;
+        }
+
+        void ShowSocketCard(PartSwapWindow card, MechSocket socket, MechPartKind kind)
+        {
+            if (card == null) return;
+            card.Bind(this, socket);
+            MechPartDef def = equipped[(int)socket];
+            if (def != null) card.ShowPart(def);
+            else card.ShowEmpty(kind);   // "-EMPTY-", icon alpha 0, no stats
+            card.SetActive(true);
+        }
+
+        void HideSwapCards()
+        {
+            if (hudRight != null) hudRight.SetActive(false);
+            if (hudLeft != null) hudLeft.SetActive(false);
+        }
+
+        void CloseSwap()
+        {
+            if (!swapOpen) return;
+            swapOpen = false;
+            swapPart = null;
+            HideSwapCards();
+            Input.SetMouseLocked(true);   // back to mouse-look
+        }
+
+        /// <summary>
+        /// A swap card was clicked (PartSwapWindow): the highlighted dropped part goes into that socket, the part
+        /// that was there drops at the mech's feet, and the cards close. False if no swap is open.
+        /// </summary>
+        public bool CompletePartSwap(MechSocket socket)
+        {
+            if (!swapOpen || swapPart == null) return false;
+            MechPart part = swapPart;
+            bool swapped = Equip(part, socket);
+            CloseSwap();
+            return swapped;
         }
 
         // ---------------------------------------------------------------------------- //
