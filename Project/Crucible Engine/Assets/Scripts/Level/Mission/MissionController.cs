@@ -3,7 +3,7 @@
 * \author:       Jean David Vidal Cruzado
 * \par:          Email: jeandavidvidal.c@digipen.edu
 * \date          27 November 2026
-* \version       1.4
+* \version       1.5
 * \brief         Runs a mission level's objectives: the Capture areas in
 *                order, then the extract. Put it on the same entity as the
 *                SubLevelGenerator.
@@ -20,8 +20,10 @@
 *      2. Capture: the current area (the lowest unfinished 1st/2nd/3rd;
 *         with inOrder off, every unfinished area) runs a HoldZoneRules.
 *         "Inside" = EVERY player inside the area's footprint. Hold and
-*         grace seconds come from MissionPresets by player count (GDD
-*         a/b/c/d = 1/2/3/4 players), fixed when the area first ticks.
+*         grace seconds are this script's Inspector fields, by player count
+*         (GDD a/b/c/d = 1/2/3/4 players; 4 is used for more), fixed when
+*         the area first ticks (a change in Play applies to areas not yet
+*         started). A Capture level = its preset has Capture chunks.
 *      3. MissionRules: when every area is complete the extract opens; the
 *         mission completes the moment every player is inside it (GDD:
 *         "collectively standing in this area").
@@ -43,6 +45,9 @@
 *                (RoamingBlockers, as Unity's chunks did); never the extract
 *    -v1.4       Fail() / Failed / MissionFailed (e.g. every player down, from
 *                MissionExit); ReturnNote shown under the outcome
+*    -v1.5       Capture rules in the Inspector (hold / grace per player count,
+*                failedSeconds, inOrder; GDD defaults), replacing
+*                MissionPresets.CaptureSettings
 *
 **************************************************************************/
 using System;
@@ -52,6 +57,18 @@ namespace Crucible.@Scripts
 {
     public sealed class MissionController : EntityScript
     {
+        // Capture rules (GDD). One field per player count: the Inspector has no list fields yet.
+        public float hold1Player = 40f;     // seconds to hold an area with 1 player
+        public float hold2Players = 50f;
+        public float hold3Players = 60f;
+        public float hold4Players = 70f;    // also used for more than 4
+        public float grace1Player = 5f;     // seconds to get back in after leaving, 1 player
+        public float grace2Players = 4f;
+        public float grace3Players = 3f;
+        public float grace4Players = 3f;
+        public float failedSeconds = 2f;    // "Area lost" shows this long, then the area resets (Unity)
+        public bool inOrder = true;         // 1st before 2nd before 3rd (GDD); off = any order
+
         /// <summary>One objective zone (a capture area or the extract), read by the visuals and the HUD.</summary>
         public sealed class Zone
         {
@@ -73,7 +90,7 @@ namespace Crucible.@Scripts
         private readonly List<Zone> areas = new List<Zone>();
         private readonly List<Zone> zones = new List<Zone>();       // areas, then the extract
         private Zone extract;
-        private CaptureSettings settings;
+        private bool isCapture;                                     // the preset has Capture areas
         private MissionRules mission;
         private bool warnedNoTag, warnedNoGenerator;
 
@@ -149,7 +166,7 @@ namespace Crucible.@Scripts
                     case HoldZoneState.Holding: return "Hold: " + a.Remaining.ToString("0.0") + "s";
                     case HoldZoneState.Warning: return "Get back in! " + a.GraceRemaining.ToString("0.0") + "s";
                     case HoldZoneState.Failed: return "Area lost - go back in to restart";
-                    default: return settings != null && players > 1 ? "Get every player inside" : "Get inside the area";
+                    default: return isCapture && players > 1 ? "Get every player inside" : "Get inside the area";
                 }
             }
         }
@@ -180,10 +197,11 @@ namespace Crucible.@Scripts
             foreach (Zone area in areas)
             {
                 if (area.State == HoldZoneState.Complete) { completed++; continue; }
-                if (settings.inOrder && area != Current()) continue;
+                if (inOrder && area != Current()) continue;
                 if (area.Rules == null)
-                    area.Rules = new HoldZoneRules(ByPlayers(settings.holdSeconds, players.Count), ByPlayers(settings.graceSeconds, players.Count),
-                                                   settings.failedSeconds);
+                    area.Rules = new HoldZoneRules(ByPlayers(players.Count, hold1Player, hold2Players, hold3Players, hold4Players),
+                                                   ByPlayers(players.Count, grace1Player, grace2Players, grace3Players, grace4Players),
+                                                   failedSeconds);
                 if (area.Rules.Tick(deltaTime, AllInside(players, area.Definition)))
                 {
                     Log.Info("MissionController: " + Ordinal(area.Order) + " area " + area.State.ToString().ToLower());
@@ -221,8 +239,8 @@ namespace Crucible.@Scripts
             Failed = false;
             BuildCount++;
             MissionPreset preset = generator.Preset;
-            settings = preset != null ? preset.Capture : null;
-            if (settings == null) return;                       // not a Capture level
+            isCapture = HasCaptureAreas(preset);
+            if (!isCapture) return;                             // not a Capture level
 
             foreach (Entity chunk in generator.SpawnedChunks)
             {
@@ -243,7 +261,7 @@ namespace Crucible.@Scripts
             if (extract != null) zones.Add(extract);
             mission = new MissionRules();
             UpdateOpen();
-            Log.Info("MissionController: " + preset.Name + " - " + areas.Count + " area(s)" + (settings.inOrder ? " in order" : "") +
+            Log.Info("MissionController: " + preset.Name + " - " + areas.Count + " area(s)" + (inOrder ? " in order" : "") +
                      (extract != null ? ", then the extract" : ", no extract chunk"));
         }
 
@@ -261,7 +279,7 @@ namespace Crucible.@Scripts
             Zone current = Current();
             bool inProgress = mission != null && mission.State == MissionState.InProgress && !Failed;
             foreach (Zone a in areas)
-                a.IsOpen = inProgress && a.State != HoldZoneState.Complete && (!settings.inOrder || a == current);
+                a.IsOpen = inProgress && a.State != HoldZoneState.Complete && (!inOrder || a == current);
             if (extract != null) extract.IsOpen = mission != null && mission.State == MissionState.ExtractOpen && !Failed;
         }
 
@@ -283,11 +301,18 @@ namespace Crucible.@Scripts
             return true;
         }
 
-        // The GDD's a/b/c/d: the value for 1, 2, 3, 4 players (the last one for more).
-        private static float ByPlayers(float[] values, int players)
+        // The GDD's a/b/c/d: the value for 1, 2, 3, 4 players (the 4-player one for more).
+        private static float ByPlayers(int players, float one, float two, float three, float four)
         {
-            if (values == null || values.Length == 0) return 0f;
-            return values[Math.Max(0, Math.Min(values.Length - 1, players - 1))];
+            return players <= 1 ? one : players == 2 ? two : players == 3 ? three : four;
+        }
+
+        private static bool HasCaptureAreas(MissionPreset preset)
+        {
+            if (preset == null) return false;
+            foreach (ChunkRequest r in preset.Chunks)
+                if (r.Role == MissionPresets.Capture) return true;
+            return false;
         }
 
         private static string Ordinal(int n)
