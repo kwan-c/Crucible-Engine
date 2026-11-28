@@ -3,9 +3,10 @@
 * \author:       Jean David Vidal Cruzado
 * \par:          Email: jeandavidvidal.c@digipen.edu
 * \date          27 November 2026
-* \version       1.5
+* \version       1.6
 * \brief         Runs a mission level's objectives: the Capture areas in
-*                order, then the extract. Put it on the same entity as the
+*                order and/or the mission's objective scripts (Escort),
+*                then the extract. Put it on the same entity as the
 *                SubLevelGenerator.
 *
 * \details
@@ -24,9 +25,13 @@
 *         (GDD a/b/c/d = 1/2/3/4 players; 4 is used for more), fixed when
 *         the area first ticks (a change in Play applies to areas not yet
 *         started). A Capture level = its preset has Capture chunks.
-*      3. MissionRules: when every area is complete the extract opens; the
-*         mission completes the moment every player is inside it (GDD:
-*         "collectively standing in this area").
+*      3. Objective scripts (MissionObjectives, e.g. EscortObjective)
+*         registered on this entity count as objectives too: they run
+*         themselves, this reads IsComplete and their HUD lines / bar.
+*      4. MissionRules: when every area and objective is complete the
+*         extract opens; the mission completes the moment every player is
+*         inside it (GDD: "collectively standing in this area"). A level
+*         with no areas and no objective (yet) never opens it.
 *
 *    Logic only: MissionZoneVisuals draws the zones (outlines, beacons)
 *    and MissionHud shows Title / Detail; both just read this. One log
@@ -34,7 +39,8 @@
 *
 *    Hooks (for waves, HUD, marker, results): AreaStateChanged,
 *    ExtractOpened, MissionCompleted; Zones (each with State, IsOpen,
-*    Progress, timers), Active, Title, Detail, Status, State, CurrentArea.
+*    Progress, timers), Active, Title, Detail, Status, State, CurrentArea,
+*    HasMission, ShowBar / BarProgress / BarState (the HUD bar).
 *
 * \history
 *    -v1.0       Capture areas in order, collective instant extract
@@ -48,6 +54,9 @@
 *    -v1.5       Capture rules in the Inspector (hold / grace per player count,
 *                failedSeconds, inOrder; GDD defaults), replacing
 *                MissionPresets.CaptureSettings
+*    -v1.6       objective scripts (MissionObjectives: Escort) count as
+*                objectives; the extract zone exists on every mission level
+*                (hidden until open); HUD bar values for any objective
 *
 **************************************************************************/
 using System;
@@ -91,6 +100,7 @@ namespace Crucible.@Scripts
         private readonly List<Zone> zones = new List<Zone>();       // areas, then the extract
         private Zone extract;
         private bool isCapture;                                     // the preset has Capture areas
+        private readonly List<IMissionObjective> objectives = new List<IMissionObjective>();   // registered on this entity (this frame)
         private MissionRules mission;
         private bool warnedNoTag, warnedNoGenerator;
 
@@ -147,7 +157,9 @@ namespace Crucible.@Scripts
                 if (mission.State == MissionState.Complete) return "Mission complete";
                 if (mission.State == MissionState.ExtractOpen) return "Extract";
                 Zone a = Current();
-                return a == null ? "" : "Capture the " + Ordinal(a.Order) + " area  (" + AreasDone + "/" + AreasTotal + ")";
+                if (a != null) return "Capture the " + Ordinal(a.Order) + " area  (" + AreasDone + "/" + AreasTotal + ")";
+                IMissionObjective o = CurrentObjective();
+                return o != null ? o.Title : "";
             }
         }
 
@@ -160,7 +172,7 @@ namespace Crucible.@Scripts
                 if (Failed || mission.State == MissionState.Complete) return ReturnNote ?? "";
                 if (mission.State == MissionState.ExtractOpen) return "Everyone to the extraction point";
                 Zone a = Current();
-                if (a == null) return "";
+                if (a == null) { IMissionObjective o = CurrentObjective(); return o != null ? o.Detail : ""; }
                 switch (a.State)
                 {
                     case HoldZoneState.Holding: return "Hold: " + a.Remaining.ToString("0.0") + "s";
@@ -168,6 +180,43 @@ namespace Crucible.@Scripts
                     case HoldZoneState.Failed: return "Area lost - go back in to restart";
                     default: return isCapture && players > 1 ? "Get every player inside" : "Get inside the area";
                 }
+            }
+        }
+
+        /// <summary>A mission level with something to do (Capture areas or an objective script): the HUD shows.</summary>
+        public bool HasMission { get { return mission != null && (areas.Count > 0 || objectives.Count > 0); } }
+
+        /// <summary>The HUD bar: shown for the current capture area or objective (not the extract).</summary>
+        public bool ShowBar
+        {
+            get
+            {
+                Zone z = Active;
+                if (z != null) return !z.IsExtract;
+                IMissionObjective o = ActiveObjective();
+                return o != null && o.ShowBar;
+            }
+        }
+        /// <summary>0..1 for the HUD bar.</summary>
+        public float BarProgress
+        {
+            get
+            {
+                Zone z = Active;
+                if (z != null) return z.IsExtract ? 0f : z.Progress;
+                IMissionObjective o = ActiveObjective();
+                return o != null ? o.BarProgress : 0f;
+            }
+        }
+        /// <summary>The HUD bar's colour state (as the zone outlines).</summary>
+        public HoldZoneState BarState
+        {
+            get
+            {
+                Zone z = Active;
+                if (z != null) return z.State;
+                IMissionObjective o = ActiveObjective();
+                return o != null ? o.BarState : HoldZoneState.Waiting;
             }
         }
 
@@ -189,6 +238,7 @@ namespace Crucible.@Scripts
             }
             if (!generator.ChunksReady) return;
             if (generator.Generation != builtGeneration) Build();
+            MissionObjectives.For(Entity, objectives);
             if (mission == null || mission.State == MissionState.Complete || Failed) return;
 
             List<Entity> players = Players();
@@ -210,11 +260,14 @@ namespace Crucible.@Scripts
                 }
             }
 
+            foreach (IMissionObjective o in objectives) if (o.IsComplete) completed++;
+            int total = areas.Count + objectives.Count;
+            if (total == 0) return;                             // nothing to do (yet): the extract stays shut
             bool extracted = mission.State == MissionState.ExtractOpen && extract != null && AllInside(players, extract.Definition);
-            if (!mission.Update(areas.Count, completed, extracted)) return;
+            if (!mission.Update(total, completed, extracted)) return;
             if (mission.State == MissionState.ExtractOpen)
             {
-                if (extract == null) Log.Warning("MissionController: every area is captured but there is no extract chunk");
+                if (extract == null) Log.Warning("MissionController: every objective is complete but there is no extract chunk");
                 Log.Info("MissionController: extract open");
                 UpdateOpen();
                 if (ExtractOpened != null) ExtractOpened();
@@ -239,8 +292,8 @@ namespace Crucible.@Scripts
             Failed = false;
             BuildCount++;
             MissionPreset preset = generator.Preset;
+            if (preset == null) return;                         // terrain only: no mission
             isCapture = HasCaptureAreas(preset);
-            if (!isCapture) return;                             // not a Capture level
 
             foreach (Entity chunk in generator.SpawnedChunks)
             {
@@ -261,8 +314,22 @@ namespace Crucible.@Scripts
             if (extract != null) zones.Add(extract);
             mission = new MissionRules();
             UpdateOpen();
-            Log.Info("MissionController: " + preset.Name + " - " + areas.Count + " area(s)" + (inOrder ? " in order" : "") +
+            Log.Info("MissionController: " + preset.Name + " - " + (isCapture ? areas.Count + " area(s)" + (inOrder ? " in order" : "") : "objective scripts") +
                      (extract != null ? ", then the extract" : ", no extract chunk"));
+        }
+
+        // The first registered objective not yet complete, or null.
+        private IMissionObjective CurrentObjective()
+        {
+            foreach (IMissionObjective o in objectives) if (!o.IsComplete) return o;
+            return null;
+        }
+
+        // The objective shown on the HUD now: none while a capture area is current, the extract is open, or it's over.
+        private IMissionObjective ActiveObjective()
+        {
+            if (mission == null || mission.State != MissionState.InProgress || Failed || Current() != null) return null;
+            return CurrentObjective();
         }
 
         // The lowest-ordered area not yet complete, or null.

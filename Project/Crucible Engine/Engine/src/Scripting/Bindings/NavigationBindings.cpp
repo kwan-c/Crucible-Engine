@@ -5,7 +5,7 @@
 * \par:          Email: jeandavidvidal.c@digipen.edu,
 *                Email: low.h@digipen.edu
 * \date          5 November 2026
-* \version       1.2
+* \version       1.3
 * \brief         Internal calls behind the C# FlowFieldAgent,
 *                FlowFieldSurface and Navigation classes
 *                (ManagedScripts/Runtime/).
@@ -26,6 +26,8 @@
 *    Navigation: IsWalkable and IsPathClear on the baked grid, through
 *    ECSNavigationSystem::Active(); Rebake (RequestBake) for a script that
 *    built new ground mid-Play, and IsBaked to know when it is ready.
+*    v1.3: AddGoal / RemoveGoal (extra flow-field goals, e.g. the escort
+*    payload; ECSNavigationSystem::AddGoal).
 *
 *    Same shape as PlayerControllerBindings.cpp: 1 = done, 0 = refused (dead
 *    entity, no such component, a bad value); never throws into C#.
@@ -335,6 +337,42 @@ namespace Crucible::ScriptBindings
 			}
 		}
 
+		// Navigation.AddGoal / RemoveGoal (Jean David, 28 Nov 2026): the flow field also
+		// leads to this entity while it is alive. 0 with no navigation, outside Play,
+		// or a dead entity.
+		int32_t ManagedNavigationAddGoal(int32_t index, int32_t generation) noexcept
+		{
+			try
+			{
+				ECSNavigationSystem* navigation = ECSNavigationSystem::Active();
+				Entity entity;
+				if (!navigation || !EntityContext::InPlaySession() || !EntityContext::ResolveEntity(index, generation, entity))
+					return 0;
+				navigation->AddGoal(entity);
+				return 1;
+			}
+			catch (...)
+			{
+				return 0;
+			}
+		}
+
+		int32_t ManagedNavigationRemoveGoal(int32_t index, int32_t generation) noexcept
+		{
+			try
+			{
+				ECSNavigationSystem* navigation = ECSNavigationSystem::Active();
+				if (!navigation)
+					return 0;
+				navigation->RemoveGoal(Entity(static_cast<uint32_t>(index), static_cast<uint32_t>(generation)));
+				return 1;
+			}
+			catch (...)
+			{
+				return 0;
+			}
+		}
+
 		int32_t ManagedNavigationIsBaked() noexcept
 		{
 			try
@@ -422,6 +460,8 @@ namespace Crucible::ScriptBindings
 		Add("Crucible.Navigation::RebakeInternal", &ManagedNavigationRebake);
 		Add("Crucible.Navigation::IsBakedInternal", &ManagedNavigationIsBaked);
 		Add("Crucible.Navigation::GetBakeCountInternal", &ManagedNavigationGetBakeCount);
+		Add("Crucible.Navigation::AddGoalInternal", &ManagedNavigationAddGoal);
+		Add("Crucible.Navigation::RemoveGoalInternal", &ManagedNavigationRemoveGoal);
 	}
 }
 #endif

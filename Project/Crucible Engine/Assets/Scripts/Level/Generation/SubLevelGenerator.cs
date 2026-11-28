@@ -3,7 +3,7 @@
 * \author:       Jean David Vidal Cruzado
 * \par:          Email: jeandavidvidal.c@digipen.edu
 * \date          10 November 2026
-* \version       2.7
+* \version       2.9
 * \brief         Generates a sub-level from a seed: the terrain and, for a
 *                mission level, its chunks. Roads and decor are later port
 *                steps.
@@ -87,7 +87,16 @@
 *                3 m apart; slope limit on every player
 *    -v2.7       in Play, registers the terrain's heights for spawn spots
 *                (SpawnGround: spawns see through trees and pieces)
+*    -v2.8       the mission's numbers come from its layout script on this
+*                entity (MissionLayout, e.g. CaptureLayout) when there is one,
+*                else MissionPresets' defaults; the log says which
+*    -v2.9       Escort: on a level with checkpoints the escort route is
+*                built after the roads (Route, EscortRoute); the layout gets
+*                the seed; the chunk prefab fields moved to the layout
+*                scripts (MissionLayout.PrefabFor), so the generator holds
+*                no per-mission fields
 **************************************************************************/
+using System;
 using System.Collections.Generic;
 
 namespace Crucible.@Scripts
@@ -98,11 +107,8 @@ namespace Crucible.@Scripts
         public int seed = 12345;                // the same seed always builds the same map
         public bool randomSeedOnPlay = false;   // pick a new seed each time Play starts
 
-        // --- mission (MissionPresets; empty = terrain only) ------------------- //
-        public string mission = "";             // "Capture"; its preset sets the map size and the chunks
-        public Prefab spawnChunk;               // chunk prefabs (ChunkDefinition on the root)
-        public Prefab extractChunk;
-        public Prefab captureChunk;
+        // --- mission (its layout script on this entity; empty = terrain only) -- //
+        public string mission = "";             // "Capture", "Escort"; its layout script sets the map, the chunks and their prefabs
         public Prefab broadleafTree;            // scattered trees, one prefab per theme (StaticObstacle trunk collider);
         public Prefab pineTree;                 // themes are TEMPORARY quadrants (DecorScatter) until level themes are set
         public Prefab deadTree;
@@ -147,16 +153,20 @@ namespace Crucible.@Scripts
         private TerrainMap map;
         private bool playerPlaced;
         private MissionPreset preset;                                              // null: terrain only
+        private MissionLayout layout;                                              // the mission's layout script (null: defaults, no prefabs)
         private List<ChunkPlacement> placements = new List<ChunkPlacement>();
         private readonly List<Entity> chunks = new List<Entity>();                 // spawned in Play
         private readonly List<Entity> trees = new List<Entity>();                  // spawned in Play
         private List<Road> roads = new List<Road>();                               // this map's roads (entrances for interiors)
+        private EscortRoute route;                                                 // levels with checkpoints: the escort's path
         private readonly List<PendingChunk> pending = new List<PendingChunk>();    // spawned chunks waiting for their scripts
         private int outpostPieces;
         private bool chunksSpawned;
 
         /// <summary>The mission preset in use (null: terrain only).</summary>
         public MissionPreset Preset { get { return preset; } }
+        /// <summary>Levels with checkpoints (Escort): the route spawn -> checkpoints -> extract along the roads, in the Terrain's space; else null.</summary>
+        public EscortRoute Route { get { return route; } }
         /// <summary>The chunk entities spawned in Play (ChunkDefinition on each root).</summary>
         public IList<Entity> SpawnedChunks { get { return chunks; } }
         /// <summary>Goes up every time the chunks are spawned again (Play start, Generate in Play).</summary>
@@ -195,6 +205,28 @@ namespace Crucible.@Scripts
         /// Builds the ground from the seed and settings and hands it to the terrain; in Play, also to
         /// navigation and the player. Also an Inspector button, which previews the terrain outside Play.
         /// </summary>
+        // The mission's preset: from its layout script on this entity (the Inspector numbers), else
+        // the layout's defaults (MissionPresets.For), e.g. when an Edit-mode preview can't see it.
+        private MissionPreset LoadPreset()
+        {
+            layout = null;
+            MissionLayout[] layouts = null;
+            try { layouts = Entity.GetComponents<MissionLayout>(); } catch (Exception) { layouts = null; }
+            if (layouts != null)
+                foreach (MissionLayout candidate in layouts)
+                    if (candidate != null && candidate.Mission == mission)
+                    {
+                        layout = candidate;
+                        Log.Info("SubLevelGenerator: " + mission + " layout from the " + layout.GetType().Name + " script");
+                        return layout.BuildPreset(seed);
+                    }
+            MissionPreset fallback = MissionPresets.For(mission, seed);
+            if (fallback != null)
+                Log.Info("SubLevelGenerator: " + mission + " layout = defaults (no " + mission + "Layout script found on this entity" +
+                         (Application.IsPlaying ? "" : ", or not visible to the Edit preview") + ")");
+            return fallback;
+        }
+
         [EditorButton]
         public void Generate()
         {
@@ -209,14 +241,16 @@ namespace Crucible.@Scripts
                 return;
             }
 
-            preset = string.IsNullOrEmpty(mission) ? null : MissionPresets.For(mission);
+            layout = null;
+            preset = string.IsNullOrEmpty(mission) ? null : LoadPreset();
             if (!string.IsNullOrEmpty(mission) && preset == null)
-                Log.Warning("SubLevelGenerator: no preset for mission '" + mission + "' (so far: Capture) - terrain only");
+                Log.Warning("SubLevelGenerator: no layout for mission '" + mission + "' (so far: Capture, Escort) - terrain only");
 
             TerrainSettings terrainSettings = ToTerrainSettings();
             map = TerrainGenerator.Generate(seed, terrainSettings);
             if (caves) AddCaves(terrainSettings);
             placements.Clear();
+            route = null;
             if (preset != null) PlaceChunks();
             if (!ground.Build(map.Cols, map.Rows, map.CellSize, map.Heights, map.Regions(), map.Volume))
             {
@@ -302,7 +336,23 @@ namespace Crucible.@Scripts
             Log.Info("SubLevelGenerator: " + preset.Name + ": " + placements.Count + " of " + preset.Chunks.Count + " chunks placed, at least " +
                      ChunkPlacer.SpacingFor(seed, s).ToString("F0") + " m apart");
             BuildRoads();
+            BuildRoute();
             BuildInteriors();
+        }
+
+        // Levels with checkpoints (Escort): the route along the roads (Unity's EscortRoute), one log line,
+        // and a warning when a road is missing (the route stops at the last chunk it reached).
+        private void BuildRoute()
+        {
+            int checkpoints = 0;
+            foreach (ChunkPlacement p in placements) if (preset.Chunks[p.Request].Role == MissionPresets.Checkpoint) checkpoints++;
+            if (checkpoints == 0) return;
+            if (!preset.Roads.chain) Log.Warning("SubLevelGenerator: checkpoints need roads along the route (roadsAlongRoute) for the escort route");
+            route = EscortRoute.Build(placements, preset.Chunks, roads);
+            Log.Info("SubLevelGenerator: escort route " + route.Length.ToString("F0") + " m through " + checkpoints + " checkpoints" +
+                     (route.Complete ? "" : " (incomplete)"));
+            if (!route.Complete)
+                Log.Warning("SubLevelGenerator: on seed " + seed + " the escort route doesn't reach every chunk");
         }
 
         // The circular chunks' interiors (ChunkInterior: blocks, walls, an open middle, lanes from the road
@@ -377,7 +427,9 @@ namespace Crucible.@Scripts
                 if (request.Role == MissionPresets.Spawn) spawnPlacement = p;
                 if (prefab == null)
                 {
-                    if (Warn(warned, request.Role)) Log.Warning("SubLevelGenerator: no prefab for the " + request.Role + " chunk - set its field");
+                    if (Warn(warned, request.Role))
+                        Log.Warning("SubLevelGenerator: no prefab for the " + request.Role + " chunk - set its field on the " +
+                                    (layout != null ? layout.GetType().Name : mission + "Layout") + " script");
                     continue;
                 }
                 Entity chunk = prefab.Instantiate(terrain);
@@ -471,12 +523,10 @@ namespace Crucible.@Scripts
             if (skipped > 0) Log.Warning("SubLevelGenerator: " + skipped + " trees skipped - set the tree prefab fields");
         }
 
+        // The prefab for a chunk role comes from the mission's layout script (none without one).
         private Prefab PrefabFor(string role)
         {
-            if (role == MissionPresets.Spawn) return spawnChunk;
-            if (role == MissionPresets.Extract) return extractChunk;
-            if (role == MissionPresets.Capture) return captureChunk;
-            return null;
+            return layout != null ? layout.PrefabFor(role) : null;
         }
 
         // Navigation fits its grid to the terrain and reads its cliffs on its own (they come from

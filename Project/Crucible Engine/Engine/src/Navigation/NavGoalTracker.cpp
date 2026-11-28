@@ -3,7 +3,7 @@
 * \author:       Jean David Vidal Cruzado
 * \par:          Email: jeandavidvidal.c@digipen.edu
 * \date          17 November 2026
-* \version       1.1
+* \version       1.2
 * \brief
 *                The goals (players) and when the flow field is rebuilt.
 *
@@ -11,6 +11,8 @@
 *    -v1.0       first version (moved out of ECSNavigationSystem, no
 *                behaviour change)
 *    -v1.1       IsGoal
+*    -v1.2       extra goals (not players): seed the field, skipped by
+*                NearestEntity
 *
 **************************************************************************/
 #include "NavGoalTracker.h"
@@ -21,13 +23,15 @@ namespace Crucible {
 
         m_goals.clear();
         m_goalEntities.clear();
+        m_goalIsPlayer.clear();
 
     }   // NavGoalTracker::ClearGoals()
 
-    void NavGoalTracker::Add(const Math::vec3& position, Entity entity) {
+    void NavGoalTracker::Add(const Math::vec3& position, Entity entity, bool player) {
 
         m_goals.push_back(position);
         m_goalEntities.push_back(entity);   // same index as its position
+        m_goalIsPlayer.push_back(player ? 1 : 0);
 
     }   // NavGoalTracker::Add()
 
@@ -36,6 +40,7 @@ namespace Crucible {
         Entity nearest   = kNullEntity;
         float  nearestSq = 0.0f;
         for (std::size_t i = 0; i < m_goals.size(); ++i) {
+            if (!m_goalIsPlayer[i]) continue;   // an extra goal (AddGoal) is not "the nearest player"
             const float dx = m_goals[i].x - from.x;
             const float dz = m_goals[i].z - from.z;
             const float sq = dx * dx + dz * dz;

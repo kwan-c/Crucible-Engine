@@ -1,9 +1,11 @@
 /*************************************************************************
 * \file:         StateGraphBindings.cpp
-* \author:       Hugo Low Ren Hao
-* \par:          Email: low.h@digipen.edu
+* \author:       Hugo Low Ren Hao (main author),
+*                Jean David Vidal Cruzado (v1.1: target override)
+* \par:          Email: low.h@digipen.edu,
+*                Email: jeandavidvidal.c@digipen.edu
 * \date          5 November 2026
-* \version       1.0
+* \version       1.1
 * \brief         Internal calls behind the C# StateGraphAgent class
 *                (ManagedScripts/Runtime/StateGraphAgent.cs).
 *
@@ -21,6 +23,9 @@
 *
 *    One internal call per value type (Entity, Vector3, float, int, bool);
 *    StateGraphAgent.cs picks the right one from the generic T.
+*
+*    v1.1: SetTargetOverrideInternal, behind StateGraphAgent.SetTargetOverride
+*    (ECSStateGraphSystem::SetTargetOverride).
 *
 **************************************************************************/
 #include "Scripting/ScriptBindings.h"
@@ -156,6 +161,22 @@ namespace Crucible::ScriptBindings
 			catch (...) { return 0; }
 		}
 
+		// SetTargetOverride: targetIndex 0 = C# passed null (back to the nearest player).
+		int32_t ManagedSetTargetOverride(int32_t index, int32_t generation, int32_t targetIndex, int32_t targetGeneration) noexcept
+		{
+			try
+			{
+				ECSStateGraphSystem* system = ECSStateGraphSystem::Active();
+				Entity entity, target = kNullEntity;
+				if (!system || !EntityContext::ResolveEntity(index, generation, entity))
+					return 0;
+				if (targetIndex != 0 && !EntityContext::ResolveEntity(targetIndex, targetGeneration, target))
+					return 0;
+				return system->SetTargetOverride(*EntityContext::GetWorld(), entity, target) ? 1 : 0;
+			}
+			catch (...) { return 0; }
+		}
+
 		// ======================================================================
 		// Get: one per type
 		// ======================================================================
@@ -258,6 +279,7 @@ namespace Crucible::ScriptBindings
 		Add("Crucible.StateGraphAgent::SetBoolInternal", &ManagedSetBool);
 		Add("Crucible.StateGraphAgent::SetVector3Internal", &ManagedSetVector3);
 		Add("Crucible.StateGraphAgent::SetEntityInternal", &ManagedSetEntity);
+		Add("Crucible.StateGraphAgent::SetTargetOverrideInternal", &ManagedSetTargetOverride);
 		Add("Crucible.StateGraphAgent::GetFloatInternal", &ManagedGetFloat);
 		Add("Crucible.StateGraphAgent::GetIntInternal", &ManagedGetInt);
 		Add("Crucible.StateGraphAgent::GetBoolInternal", &ManagedGetBool);

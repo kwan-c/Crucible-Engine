@@ -3,29 +3,18 @@
 * \author:       Jean David Vidal Cruzado
 * \par:          Email: jeandavidvidal.c@digipen.edu
 * \date          26 November 2026
-* \version       1.7
-* \brief         Each mission's level numbers, from the GDD's side quest
-*                specs (M3): map size, which chunks it places, their sizes
-*                and spacing. Plain data, so it can be tested alone.
+* \version       1.9
+* \brief         A mission level's preset (its chunks, placement, roads and
+*                trees as plain data) and the chunk role names.
 *
 * \details
-*    Replaces Unity's SubLevelGenSettings assets (one per mission): the
-*    engine has no settings assets and its Inspector can't show lists, so
-*    the values live here and a level scene's SubLevelGenerator only names
-*    its mission. Values marked "GDD" are the spec's; the rest are Unity
-*    M2's defaults.
-*
-*    Capture (GDD): map 500 m; 3 capture areas (circles, 30 m radius),
-*    cleared in order; spacing range 50-70 m = the least gap between any
-*    two chunks (Unity's minSpacing, picked per level); edge margin 20 m.
-*    Laid out as in Unity: spawn in the middle third, areas spread out,
-*    extract as far from the spawn as it can; the areas are numbered
-*    1st / 2nd / 3rd as a route from the spawn, and roads (RoadBuilder)
-*    follow that route. Spawn and extract are 24 m boxes (Unity's start chunk;
-*    the GDD gives no size).
-*
-*    Escort and Liberation: not yet (later port steps); asking for them
-*    gives no preset, and the generator warns.
+*    The numbers themselves live in the Inspector, on the mission's layout
+*    script on the Sub Level Generator entity (MissionLayout: CaptureLayout,
+*    EscortLayout, later LiberationLayout), which builds this preset.
+*    For(mission) is the fallback when no layout script is found (e.g. the
+*    Edit-mode Generate preview, or a scene without one): the layout
+*    script's own defaults, so there is still one source of numbers.
+*    Liberation: not yet (a later port step).
 *
 * \history
 *    -v1.0       Capture
@@ -37,6 +26,10 @@
 *    -v1.6       Capture objective numbers (CaptureSettings)
 *    -v1.7       CaptureSettings removed: the Capture rules are Inspector
 *                fields on MissionController
+*    -v1.8       the numbers moved to the Inspector (MissionLayout /
+*                CaptureLayout); For() falls back to the layout's defaults
+*    -v1.9       Escort (EscortLayout) and the Checkpoint role; For() takes
+*                the seed
 *
 **************************************************************************/
 using System.Collections.Generic;
@@ -59,39 +52,15 @@ namespace Crucible.@Scripts
         public const string Spawn = "Spawn";
         public const string Extract = "Extract";
         public const string Capture = "Capture";
+        public const string Escort = "Escort";           // mission name
+        public const string Checkpoint = "Checkpoint";   // Escort's checkpoints
 
-        // Unity's start chunk: 6 x 6 golems of 4 m.
-        private const float kSpawnSize = 24f;
-        private const float kExtractSize = 24f;
-
-        /// <summary>The preset for a mission name ("Capture", ...), or null when there is none (yet).</summary>
-        public static MissionPreset For(string mission)
+        /// <summary>The default preset for a mission name ("Capture", "Escort"): its layout script's defaults; null when there is none (yet).</summary>
+        public static MissionPreset For(string mission, int seed)
         {
-            if (mission == "Capture") return CapturePreset();
+            if (mission == Capture) return new CaptureLayout().BuildPreset(seed);
+            if (mission == Escort) return new EscortLayout().BuildPreset(seed);
             return null;
-        }
-
-        private static MissionPreset CapturePreset()
-        {
-            MissionPreset p = new MissionPreset();
-            p.Name = "Capture";
-            p.MapSize = 500f;                       // GDD
-            p.Placement.minSpacing = 50f;           // GDD: spacing range 70 - 50 (Unity's minSpacing, as a range)
-            p.Placement.minSpacingHigh = 70f;
-            p.Placement.edgeMargin = 20f;           // GDD
-
-            // Unity's layout: spawn first (middle third), the areas spread out, the extract far from the
-            // spawn. The areas' 1st / 2nd / 3rd are set after placing, as a route from the spawn.
-            ChunkFootprint area = new ChunkFootprint(ChunkShape.Circle, 60f, 60f);   // GDD: radius 30
-            p.Chunks.Add(new ChunkRequest { Role = Spawn, Footprint = new ChunkFootprint(ChunkShape.Box, kSpawnSize, kSpawnSize), Start = true });
-            for (int i = 0; i < 3; i++)
-                p.Chunks.Add(new ChunkRequest { Role = Capture, Order = i + 1, Footprint = area, Interior = new InteriorSettings() });   // Unity's KOTH interior
-            p.Chunks.Add(new ChunkRequest { Role = Extract, Footprint = new ChunkFootprint(ChunkShape.Box, kExtractSize, kExtractSize), End = true });
-
-            // Roads follow the objective route (spawn -> 1st -> 2nd -> 3rd -> extract). Unity's KOTH
-            // used a network instead (chain off: shortest links + 1 loop); the other numbers are Unity's.
-            p.Roads.chain = true;
-            return p;
         }
     }
 }

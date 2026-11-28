@@ -3,7 +3,7 @@
 * \author:       Jean David Vidal Cruzado
 * \par:          Email: jeandavidvidal.c@digipen.edu
 * \date          17 November 2026
-* \version       1.1
+* \version       1.2
 * \brief
 *                NavGoalTracker: this frame's goals (the players) and the
 *                rule for when the flow field is rebuilt towards them.
@@ -28,6 +28,9 @@
 *                CollectGoals, NearestGoalEntity and UpdateField, no
 *                behaviour change)
 *    -v1.1       IsGoal: whether the flow field leads to an entity
+*    -v1.2       goals that aren't players (ECSNavigationSystem::AddGoal,
+*                e.g. the escort payload): Add(..., player = false); they
+*                seed the field and count for IsGoal, not NearestEntity
 *
 **************************************************************************/
 #pragma once
@@ -49,8 +52,9 @@ namespace Crucible {
         // Starts a new frame's list (memory reused).
         void ClearGoals();
 
-        // One player: where it is, and which entity (same index).
-        void Add(const Math::vec3& position, Entity entity);
+        // One goal: where it is, and which entity (same index). player: false for
+        // an extra goal (AddGoal) - it leads the field but isn't "the nearest player".
+        void Add(const Math::vec3& position, Entity entity, bool player = true);
 
         // This frame's player positions: the field's goals, and where agents
         // head when the field has no arrow for them.
@@ -83,6 +87,7 @@ namespace Crucible {
 
         std::vector<Math::vec3> m_goals;         // this frame's player positions (reused every frame)
         std::vector<Entity>     m_goalEntities;  // the same players, same order - for Arrive(nearest player)
+        std::vector<char>       m_goalIsPlayer;  // same order: 1 = a player, 0 = an extra goal (AddGoal)
         std::vector<Math::vec3> m_goalsAtBuild;  // where they were at the last rebuild; empty = rebuild as soon as there is a player
 
     };  // NAVGOALTRACKER CLASS

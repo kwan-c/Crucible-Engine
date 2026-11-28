@@ -8,6 +8,7 @@
     "DynamicObstacle",
     "Walkable",
     "Wall",
-    "Pickup"
+    "Pickup",
+    "Payload"
   ]
 }

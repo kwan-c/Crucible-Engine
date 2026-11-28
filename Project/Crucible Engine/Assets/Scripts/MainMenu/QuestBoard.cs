@@ -11,8 +11,9 @@
 * \details
 *    PLACEHOLDER DATA: Unity's six prototype side quests (titles, types and
 *    rewards from Gam3333's PrototypeQuest_2..7), each with a one-line
-*    stand-in briefing. KOTH quests load the Capture mission (SceneFor);
-*    the others load TutorialMap for now.
+*    stand-in briefing. KOTH quests load the Capture mission and Escort
+*    quests the Escort mission (SceneFor); Elimination loads TutorialMap
+*    for now.
 *
 *    How the menu uses it:
 *        QuestBoard.Offers(6)    a fresh board: one QuestInfo per slab;
@@ -64,8 +65,16 @@ namespace Crucible.Scripts
         /// <summary>KOTH quests: the generated Capture mission (Jean David, M3). The others keep the placeholder until their scenes exist.</summary>
         public const string CaptureScene = "Scenes/Game/Missions/Capture.scene";
 
+        /// <summary>Escort quests: the generated Escort mission (Jean David, M3).</summary>
+        public const string EscortScene = "Scenes/Game/Missions/Escort.scene";
+
         /// <summary>The scene a quest of this type loads.</summary>
-        public static string SceneFor(QuestType type) { return type == QuestType.Koth ? CaptureScene : PlaceholderScene; }
+        public static string SceneFor(QuestType type)
+        {
+            if (type == QuestType.Koth) return CaptureScene;
+            if (type == QuestType.Escort) return EscortScene;
+            return PlaceholderScene;
+        }
 
         // Unity's prototype side quests (Gam3333 PrototypeQuest_2..7: title, type, reward).
         // The briefings are stand-ins, one per type: Unity's own text was a generic placeholder
