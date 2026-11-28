@@ -3,7 +3,7 @@
 * \author:       Jean David Vidal Cruzado
 * \par:          Email: jeandavidvidal.c@digipen.edu
 * \date          28 November 2026
-* \version       1.1
+* \version       1.2
 * \brief         Runs an Escort level's payload: spawns it at the 1st
 *                checkpoint, moves it along the escort route while a player
 *                is near, and handles its health, destruction and respawn.
@@ -22,7 +22,7 @@
 *      run); the payload prefab is spawned under the Terrain there.
 *    Each frame:
 *      in range = flat distance <= radius: any one player (generator
-*      Players) pushes it; enemies = Enemy.All alive and switched on.
+*      Players) pushes it (once moving, until past radius + stopMargin); enemies = Enemy.All alive and switched on.
 *      EscortRules.Step moves it (a player in range always advances it;
 *      only enemies roll it back to the last checkpoint reached); it heals
 *      advancingHeal % of its maximum per second while Advancing (player
@@ -46,6 +46,8 @@
 *    -v1.0       new: Unity's EscortPayload movement, health and respawn
 *    -v1.1       a mission objective (IMissionObjective): HUD lines and bar;
 *                arriving opens the extract
+*    -v1.2       stopMargin: once moving, it stops only when no player is
+*                within radius + stopMargin (no flicker at the ring's edge)
 *
 **************************************************************************/
 using System;
@@ -60,6 +62,7 @@ namespace Crucible.@Scripts
         public float speed = 3f;                // metres per second while a player pushes it (Unity)
         public float reverseSpeed = 1.5f;       // metres per second it rolls back when only enemies are near; 0 = never
         public float radius = 12f;              // metres: a player (or enemies) this close moves it
+        public float stopMargin = 1f;           // metres: once moving, it stops only past radius + this (no flicker at the edge)
         public float maxHealth = 1500f;         // GDD (Unity M2: 500)
         public float advancingHeal = 2f;        // % of max health per second while advancing with no enemies near; 0 = off
         public float respawnDelay = 5f;         // seconds destroyed before it returns at the last checkpoint
@@ -315,8 +318,9 @@ namespace Crucible.@Scripts
 
         private bool PlayerNear(Vector3 at)
         {
+            float reach = radius + (rules.Moving ? Math.Max(0f, stopMargin) : 0f);
             foreach (Entity p in generator.Players())
-                if (p.IsActive && FlatDistance(p.Transform.WorldPosition, at) <= radius) return true;
+                if (p.IsActive && FlatDistance(p.Transform.WorldPosition, at) <= reach) return true;
             return false;
         }
 

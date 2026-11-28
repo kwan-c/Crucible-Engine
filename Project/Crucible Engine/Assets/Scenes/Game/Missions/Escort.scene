@@ -3038,6 +3038,13 @@
                                     "componentType": ""
                                 }
                             ]
+                        },
+                        {
+                            "enabled": true,
+                            "assembly": "Managed/Crucible.Scripts.dll",
+                            "namespace": "Crucible.Scripts",
+                            "class": "EscortWaves",
+                            "fields": []
                         }
                     ]
                 },
