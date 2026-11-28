@@ -3,7 +3,7 @@
 * \author:       Jean David Vidal Cruzado
 * \par:          Email: jeandavidvidal.c@digipen.edu
 * \date          10 November 2026
-* \version       2.7
+* \version       2.8
 * \brief         Generates a sub-level from a seed: the terrain and, for a
 *                mission level, its chunks. Roads and decor are later port
 *                steps.
@@ -87,7 +87,11 @@
 *                3 m apart; slope limit on every player
 *    -v2.7       in Play, registers the terrain's heights for spawn spots
 *                (SpawnGround: spawns see through trees and pieces)
+*    -v2.8       the mission's numbers come from its layout script on this
+*                entity (MissionLayout, e.g. CaptureLayout) when there is one,
+*                else MissionPresets' defaults; the log says which
 **************************************************************************/
+using System;
 using System.Collections.Generic;
 
 namespace Crucible.@Scripts
@@ -195,6 +199,26 @@ namespace Crucible.@Scripts
         /// Builds the ground from the seed and settings and hands it to the terrain; in Play, also to
         /// navigation and the player. Also an Inspector button, which previews the terrain outside Play.
         /// </summary>
+        // The mission's preset: from its layout script on this entity (the Inspector numbers), else
+        // the layout's defaults (MissionPresets.For), e.g. when an Edit-mode preview can't see it.
+        private MissionPreset LoadPreset()
+        {
+            MissionLayout[] layouts = null;
+            try { layouts = Entity.GetComponents<MissionLayout>(); } catch (Exception) { layouts = null; }
+            if (layouts != null)
+                foreach (MissionLayout layout in layouts)
+                    if (layout != null && layout.Mission == mission)
+                    {
+                        Log.Info("SubLevelGenerator: " + mission + " layout from the " + layout.GetType().Name + " script");
+                        return layout.BuildPreset();
+                    }
+            MissionPreset fallback = MissionPresets.For(mission);
+            if (fallback != null)
+                Log.Info("SubLevelGenerator: " + mission + " layout = defaults (no " + mission + "Layout script found on this entity" +
+                         (Application.IsPlaying ? "" : ", or not visible to the Edit preview") + ")");
+            return fallback;
+        }
+
         [EditorButton]
         public void Generate()
         {
@@ -209,9 +233,9 @@ namespace Crucible.@Scripts
                 return;
             }
 
-            preset = string.IsNullOrEmpty(mission) ? null : MissionPresets.For(mission);
+            preset = string.IsNullOrEmpty(mission) ? null : LoadPreset();
             if (!string.IsNullOrEmpty(mission) && preset == null)
-                Log.Warning("SubLevelGenerator: no preset for mission '" + mission + "' (so far: Capture) - terrain only");
+                Log.Warning("SubLevelGenerator: no layout for mission '" + mission + "' (so far: Capture) - terrain only");
 
             TerrainSettings terrainSettings = ToTerrainSettings();
             map = TerrainGenerator.Generate(seed, terrainSettings);
