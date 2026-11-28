@@ -1,0 +1,175 @@
+{
+    "version": 1,
+    "entryState": 1,
+    "parameters": [
+        {
+            "name": "PlayStart",
+            "type": "Trigger",
+            "default": false
+        },
+        {
+            "name": "Explode",
+            "type": "Trigger",
+            "default": false
+        },
+        {
+            "name": "Skip",
+            "type": "Trigger",
+            "default": false
+        },
+        {
+            "name": "Return",
+            "type": "Trigger",
+            "default": false
+        }
+    ],
+    "states": [
+        {
+            "name": "State 1",
+            "clip": 4294967295,
+            "speed": 1.0,
+            "loop": true
+        },
+        {
+            "name": "Logo_StartIdle",
+            "clip": 3,
+            "speed": 1.0,
+            "loop": false
+        },
+        {
+            "name": "Logo_Explode",
+            "clip": 0,
+            "speed": 1.0,
+            "loop": false
+        },
+        {
+            "name": "Logo_Idle",
+            "clip": 1,
+            "speed": 1.0,
+            "loop": true
+        },
+        {
+            "name": "Logo_Start",
+            "clip": 2,
+            "speed": 1.0,
+            "loop": false
+        }
+    ],
+    "transitions": [
+        {
+            "from": 1,
+            "to": 4,
+            "duration": 0.0,
+            "offset": 0.0,
+            "hasExitTime": false,
+            "exitTime": 1.0,
+            "canTransitionToSelf": false,
+            "conditions": [
+                {
+                    "parameter": 0,
+                    "mode": "If"
+                }
+            ]
+        },
+        {
+            "from": 4,
+            "to": 3,
+            "duration": 0.20000000298023224,
+            "offset": 0.0,
+            "hasExitTime": true,
+            "exitTime": 1.0,
+            "canTransitionToSelf": false,
+            "conditions": []
+        },
+        {
+            "from": "Any",
+            "to": 2,
+            "duration": 0.10000000149011612,
+            "offset": 0.0,
+            "hasExitTime": false,
+            "exitTime": 1.0,
+            "canTransitionToSelf": false,
+            "conditions": [
+                {
+                    "parameter": 1,
+                    "mode": "If"
+                }
+            ]
+        },
+        {
+            "from": 1,
+            "to": 3,
+            "duration": 0.0,
+            "offset": 0.0,
+            "hasExitTime": false,
+            "exitTime": 1.0,
+            "canTransitionToSelf": false,
+            "conditions": [
+                {
+                    "parameter": 2,
+                    "mode": "If"
+                }
+            ]
+        },
+        {
+            "from": 4,
+            "to": 3,
+            "duration": 0.0,
+            "offset": 0.0,
+            "hasExitTime": false,
+            "exitTime": 1.0,
+            "canTransitionToSelf": false,
+            "conditions": [
+                {
+                    "parameter": 2,
+                    "mode": "If"
+                }
+            ]
+        },
+        {
+            "from": 2,
+            "to": 3,
+            "duration": 0.0,
+            "offset": 0.0,
+            "hasExitTime": false,
+            "exitTime": 1.0,
+            "canTransitionToSelf": false,
+            "conditions": [
+                {
+                    "parameter": 3,
+                    "mode": "If"
+                }
+            ]
+        }
+    ],
+    "editor": {
+        "version": 1,
+        "positions": [
+            [
+                -179.42518615722656,
+                -51.90916061401367
+            ],
+            [
+                81.91244506835938,
+                -211.0606231689453
+            ],
+            [
+                301.54071044921875,
+                -59.885780334472656
+            ],
+            [
+                660.0656127929688,
+                -180.07461547851563
+            ],
+            [
+                385.3707275390625,
+                -244.73541259765625
+            ]
+        ],
+        "anyState": [
+            -181.6820831298828,
+            -159.4659423828125
+        ],
+        "previewModel": "4ADB78E43DAA0003"
+    }
+}

@@ -60,9 +60,9 @@ namespace Crucible
 		uint32_t    maxClients = 3;               // host: remote players accepted (1..3; the host is the 4th)
 		// Finding lobbies: "auto" (the connection server if one is set, else / when it is down LAN
 		// broadcast), "server" or "lan"; the connection server's IPv4 address ("" = none) and port;
-		// the LAN broadcast port.
-		std::string lobbyDiscovery = "auto";
-		std::string lobbyServerAddress;
+		// the LAN broadcast port. Default: the connection server on this PC.
+		std::string lobbyDiscovery = "server";
+		std::string lobbyServerAddress = "127.0.0.1";
 		uint16_t    lobbyServerPort = 27018;
 		uint16_t    discoveryPort = 27019;
 	};

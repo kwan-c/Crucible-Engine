@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.25
+* \version       1.26
 * \brief
 *                NetReceiveSystem: drives NetworkSession::Update each frame,
 *                performs host spawns and applies the host's lifecycle stream
@@ -59,6 +59,7 @@
 *    -v1.24      NetData removed from scene objects when the session ends
 *    -v1.25      objects kept across scene changes (protocol 12): the host's CollectKept, the client
 *                keeps its copies (KeepForSceneChange), rebinds them from the new world, drops the rest
+*    -v1.26      players of any player prefab (a scene's player is the prefab it places)
 *
 **************************************************************************/
 #include "Network/Systems/NetReceiveSystem.h"
@@ -474,7 +475,7 @@ namespace Crucible
 			if (spawn.owner != m_session.LocalPeer()) SetComponentsEnabled(world, root, desc->ownerLocalOnly, false, m_scratch);
 			// What this client's raycasts hit instead of the Host-only physics; they go with the
 			// proxy. Not on its own player: its camera's rays would hit its own body.
-			if (!(spawn.owner == m_session.LocalPeer() && spawn.prefab == m_content.PlayerPrefab()))
+			if (!(spawn.owner == m_session.LocalPeer() && m_content.IsPlayerPrefab(spawn.prefab)))
 			{
 				std::vector<Entity> bodies;
 				AddClientQueryBodies(world, root, bodies);
@@ -518,12 +519,12 @@ namespace Crucible
 		out.clear();
 		if (m_lastWorld == nullptr) return;
 		World& world = *m_lastWorld;
-		if (m_session.KeepPlayers() && m_content.PlayerPrefab() != Net::kInvalidNetPrefab)
+		if (m_session.KeepPlayers())
 		{
 			for (const auto& [id, entity] : m_session.Entities())
 			{
 				const NetworkIdentity* identity = world.IsAlive(entity) ? world.Read<NetworkIdentity>(entity) : nullptr;
-				if (identity != nullptr && identity->prefab == m_content.PlayerPrefab() && !world.GetParent(entity).IsValid())
+				if (identity != nullptr && m_content.IsPlayerPrefab(identity->prefab) && !world.GetParent(entity).IsValid())
 					m_scenes.DontDestroyOnLoad(entity);
 			}
 		}
@@ -828,7 +829,7 @@ namespace Crucible
 			world.DestroyEntity(player.entity);   // with its children
 			++stats.scenePlayersPlaced;
 		}
-		m_session.SetPlayerSpawnPoints(std::move(points));
+		m_session.SetPlayerSpawnPoints(std::move(points), scan.playerPrefab);
 
 		if (!scan.objects.empty() || !scan.skipped.empty() || !scan.players.empty())
 			CRU_INFO("[Net] scene objects: {} {} ({} scene profiles, {} kept local, {} placed players as spawn points), scene {:016X}, hash {:016X}",

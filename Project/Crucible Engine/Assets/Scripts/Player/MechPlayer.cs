@@ -5,7 +5,7 @@
 * \author:       Hugo Low Ren Hao (M3: sync with Unity main)
 * \par:          Email: low.h@digipen.edu
 * \date          8 November 2026
-* \version       1.2
+* \version       1.3
 * \brief         The player mech. Port of the Unity player behaviour:
 *                MechPlayerInput (devices -> actions), MechMovementController
 *                (camera-relative walking, automatic running, Quick Boost
@@ -72,6 +72,9 @@
 *          in at once, it eases back out over 0.25 s.
 *          Melee reach assist (the box slides up to 1 m to the target over
 *          0.12 s); camera shake on dash start, grounded dash stop, damage.
+*    v1.3  (Hugo) the torso confirmed in the main menu's carousel
+*          (TorsoSelector) replaces startTorso, and its tint goes on the
+*          torsoEntityName model.
 *          Hit stop (MechHitStop): the mech and its victim freeze briefly
 *          when its hits land; the mech and a melee attacker when hurt.
 *
@@ -123,8 +126,10 @@ namespace Crucible.Scripts
         public string startArmL = "sword";
         public string startArmR = "";
         public string startHead = "golem_head";
-        public string startTorso = "golem_torso";
+        public string startTorso = "golem_torso";       // unless the main menu confirmed one (TorsoSelector)
         public string startLegs = "fast_legs";
+        public string torsoEntityName = "Torso";        // the torso model the menu's chosen tint goes on
+                                                        // (needs a MaterialParams to show it)
 
         // --- Combat (FullPlayer_mech_specialist's MechCombat / MechWeaponIdle values) ------------ //
         // Unity metres are scaled by unityScale: this mech is 0.55 of the specialist model where Unity's
@@ -401,6 +406,18 @@ namespace Crucible.Scripts
                 socketWeapons[s] = def != null && def.IsWeapon ? new MechWeapon(def) : null;
             }
             RefreshLoadout(true);
+            ApplyMenuTorsoTint();
+        }
+
+        // The colour picked with the main menu's torso carousel, on this mech's torso model. Nothing
+        // when no torso was confirmed (the scene's own look stays).
+        void ApplyMenuTorsoTint()
+        {
+            if (!TorsoSelector.HasChoice) return;
+            Entity torso = string.IsNullOrEmpty(torsoEntityName) ? null : Entity.FindChild(torsoEntityName);
+            MaterialParams look = torso != null ? torso.GetComponent<MaterialParams>() : null;
+            if (look != null) look.Tint = TorsoSelector.ChosenTint;
+            else Log.Warning("MechPlayer: '" + torsoEntityName + "' needs a MaterialParams to show the torso colour picked in the menu.");
         }
 
         string StartingPart(MechSocket socket)
@@ -412,7 +429,8 @@ namespace Crucible.Scripts
                 case MechSocket.ArmL:      return startArmL;
                 case MechSocket.ArmR:      return startArmR;
                 case MechSocket.Head:      return startHead;
-                case MechSocket.Torso:     return startTorso;
+                // The torso confirmed in the main menu's carousel wins over the Inspector's.
+                case MechSocket.Torso:     return TorsoSelector.HasChoice ? TorsoSelector.ChosenPartId : startTorso;
                 default:                   return startLegs;
             }
         }

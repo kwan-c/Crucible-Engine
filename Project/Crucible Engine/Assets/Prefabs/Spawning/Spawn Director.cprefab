@@ -1,0 +1,1462 @@
+{
+    "version": 3,
+    "name": "Spawn Director",
+    "entities": [
+        {
+            "id": "AA41E39E8566C167",
+            "parent": -1,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Spawn Director"
+                },
+                "ScriptComponent": {
+                    "scripts": [
+                        {
+                            "enabled": true,
+                            "assembly": "Managed/Crucible.Scripts.dll",
+                            "namespace": "Crucible.Scripts",
+                            "class": "SpawnDirector",
+                            "fields": [
+                                {
+                                    "declaringType": "Crucible.Scripts.SpawnDirector",
+                                    "name": "roamingWave",
+                                    "type": "String",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "Wave Roaming",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.SpawnDirector",
+                                    "name": "roamingRadius",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 50.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.SpawnDirector",
+                                    "name": "spawnAttempts",
+                                    "type": "Int",
+                                    "boolean": false,
+                                    "integer": 12,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.SpawnDirector",
+                                    "name": "spawnLift",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.5,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.SpawnDirector",
+                                    "name": "logWaves",
+                                    "type": "Bool",
+                                    "boolean": true,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                }
+                            ]
+                        }
+                    ]
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
+            "id": "86106C46CACA6441",
+            "parent": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Wave Roaming"
+                },
+                "ScriptComponent": {
+                    "scripts": [
+                        {
+                            "enabled": true,
+                            "assembly": "Managed/Crucible.Scripts.dll",
+                            "namespace": "Crucible.Scripts",
+                            "class": "Wave",
+                            "fields": [
+                                {
+                                    "declaringType": "Crucible.Scripts.Wave",
+                                    "name": "resourceTotal",
+                                    "type": "Int",
+                                    "boolean": false,
+                                    "integer": 50,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Wave",
+                                    "name": "spawnInterval",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.5,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Wave",
+                                    "name": "timerReset",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 120.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Wave",
+                                    "name": "clearedTimerReset",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Wave",
+                                    "name": "maxConcurrent",
+                                    "type": "Int",
+                                    "boolean": false,
+                                    "integer": 24,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Wave",
+                                    "name": "leashDistance",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Wave",
+                                    "name": "pausesRoaming",
+                                    "type": "Bool",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Wave",
+                                    "name": "enemy1",
+                                    "type": "Prefab",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 2065691607722340663,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Wave",
+                                    "name": "weight1",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 14.17,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Wave",
+                                    "name": "enemy2",
+                                    "type": "Prefab",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 12564058752782925993,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Wave",
+                                    "name": "weight2",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 14.17,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Wave",
+                                    "name": "enemy3",
+                                    "type": "Prefab",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 8324290116436774721,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Wave",
+                                    "name": "weight3",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 14.17,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Wave",
+                                    "name": "enemy4",
+                                    "type": "Prefab",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 5646529725118021769,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Wave",
+                                    "name": "weight4",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 14.17,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Wave",
+                                    "name": "enemy5",
+                                    "type": "Prefab",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 8796023608539152641,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Wave",
+                                    "name": "weight5",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 5.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Wave",
+                                    "name": "enemy6",
+                                    "type": "Prefab",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 17058197998951610773,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Wave",
+                                    "name": "weight6",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 5.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Wave",
+                                    "name": "enemy7",
+                                    "type": "Prefab",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 11097456476640068257,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Wave",
+                                    "name": "weight7",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 14.17,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                }
+                            ]
+                        }
+                    ]
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
+            "id": "FE9011D41D73A7CF",
+            "parent": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Wave Capture"
+                },
+                "ScriptComponent": {
+                    "scripts": [
+                        {
+                            "enabled": true,
+                            "assembly": "Managed/Crucible.Scripts.dll",
+                            "namespace": "Crucible.Scripts",
+                            "class": "Wave",
+                            "fields": [
+                                {
+                                    "declaringType": "Crucible.Scripts.Wave",
+                                    "name": "resourceTotal",
+                                    "type": "Int",
+                                    "boolean": false,
+                                    "integer": 100,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Wave",
+                                    "name": "spawnInterval",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.2,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Wave",
+                                    "name": "timerReset",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 30.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Wave",
+                                    "name": "clearedTimerReset",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Wave",
+                                    "name": "maxConcurrent",
+                                    "type": "Int",
+                                    "boolean": false,
+                                    "integer": 32,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Wave",
+                                    "name": "leashDistance",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Wave",
+                                    "name": "pausesRoaming",
+                                    "type": "Bool",
+                                    "boolean": true,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Wave",
+                                    "name": "enemy1",
+                                    "type": "Prefab",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 2065691607722340663,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Wave",
+                                    "name": "weight1",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 14.17,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Wave",
+                                    "name": "enemy2",
+                                    "type": "Prefab",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 12564058752782925993,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Wave",
+                                    "name": "weight2",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 14.17,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Wave",
+                                    "name": "enemy3",
+                                    "type": "Prefab",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 8324290116436774721,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Wave",
+                                    "name": "weight3",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 14.17,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Wave",
+                                    "name": "enemy4",
+                                    "type": "Prefab",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 5646529725118021769,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Wave",
+                                    "name": "weight4",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 14.17,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Wave",
+                                    "name": "enemy5",
+                                    "type": "Prefab",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 8796023608539152641,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Wave",
+                                    "name": "weight5",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 5.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Wave",
+                                    "name": "enemy6",
+                                    "type": "Prefab",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 17058197998951610773,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Wave",
+                                    "name": "weight6",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 5.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Wave",
+                                    "name": "enemy7",
+                                    "type": "Prefab",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 11097456476640068257,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Wave",
+                                    "name": "weight7",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 14.17,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                }
+                            ]
+                        }
+                    ]
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
+            "id": "90DBF63D07BD9CA1",
+            "parent": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Wave Escort"
+                },
+                "ScriptComponent": {
+                    "scripts": [
+                        {
+                            "enabled": true,
+                            "assembly": "Managed/Crucible.Scripts.dll",
+                            "namespace": "Crucible.Scripts",
+                            "class": "Wave",
+                            "fields": [
+                                {
+                                    "declaringType": "Crucible.Scripts.Wave",
+                                    "name": "resourceTotal",
+                                    "type": "Int",
+                                    "boolean": false,
+                                    "integer": 50,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Wave",
+                                    "name": "spawnInterval",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.8,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Wave",
+                                    "name": "timerReset",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 100.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Wave",
+                                    "name": "clearedTimerReset",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 10.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Wave",
+                                    "name": "maxConcurrent",
+                                    "type": "Int",
+                                    "boolean": false,
+                                    "integer": 32,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Wave",
+                                    "name": "leashDistance",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 50.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Wave",
+                                    "name": "pausesRoaming",
+                                    "type": "Bool",
+                                    "boolean": true,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Wave",
+                                    "name": "enemy1",
+                                    "type": "Prefab",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 2065691607722340663,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Wave",
+                                    "name": "weight1",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 14.17,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Wave",
+                                    "name": "enemy2",
+                                    "type": "Prefab",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 12564058752782925993,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Wave",
+                                    "name": "weight2",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 14.17,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Wave",
+                                    "name": "enemy3",
+                                    "type": "Prefab",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 8324290116436774721,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Wave",
+                                    "name": "weight3",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 14.17,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Wave",
+                                    "name": "enemy4",
+                                    "type": "Prefab",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 5646529725118021769,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Wave",
+                                    "name": "weight4",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 14.17,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Wave",
+                                    "name": "enemy5",
+                                    "type": "Prefab",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 8796023608539152641,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Wave",
+                                    "name": "weight5",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 5.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Wave",
+                                    "name": "enemy6",
+                                    "type": "Prefab",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 17058197998951610773,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Wave",
+                                    "name": "weight6",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 5.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Wave",
+                                    "name": "enemy7",
+                                    "type": "Prefab",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 11097456476640068257,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Wave",
+                                    "name": "weight7",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 14.17,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                }
+                            ]
+                        }
+                    ]
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
+            "id": "6423CCBDA9E50B95",
+            "parent": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Wave Liberation"
+                },
+                "ScriptComponent": {
+                    "scripts": [
+                        {
+                            "enabled": true,
+                            "assembly": "Managed/Crucible.Scripts.dll",
+                            "namespace": "Crucible.Scripts",
+                            "class": "Wave",
+                            "fields": [
+                                {
+                                    "declaringType": "Crucible.Scripts.Wave",
+                                    "name": "resourceTotal",
+                                    "type": "Int",
+                                    "boolean": false,
+                                    "integer": 100,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Wave",
+                                    "name": "spawnInterval",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.2,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Wave",
+                                    "name": "timerReset",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 20.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Wave",
+                                    "name": "clearedTimerReset",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Wave",
+                                    "name": "maxConcurrent",
+                                    "type": "Int",
+                                    "boolean": false,
+                                    "integer": 32,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Wave",
+                                    "name": "leashDistance",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Wave",
+                                    "name": "pausesRoaming",
+                                    "type": "Bool",
+                                    "boolean": true,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Wave",
+                                    "name": "enemy1",
+                                    "type": "Prefab",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 2065691607722340663,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Wave",
+                                    "name": "weight1",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 14.17,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Wave",
+                                    "name": "enemy2",
+                                    "type": "Prefab",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 12564058752782925993,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Wave",
+                                    "name": "weight2",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 14.17,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Wave",
+                                    "name": "enemy3",
+                                    "type": "Prefab",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 8324290116436774721,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Wave",
+                                    "name": "weight3",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 14.17,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Wave",
+                                    "name": "enemy4",
+                                    "type": "Prefab",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 5646529725118021769,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Wave",
+                                    "name": "weight4",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 14.17,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Wave",
+                                    "name": "enemy5",
+                                    "type": "Prefab",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 8796023608539152641,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Wave",
+                                    "name": "weight5",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 5.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Wave",
+                                    "name": "enemy6",
+                                    "type": "Prefab",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 17058197998951610773,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Wave",
+                                    "name": "weight6",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 5.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Wave",
+                                    "name": "enemy7",
+                                    "type": "Prefab",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 11097456476640068257,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Wave",
+                                    "name": "weight7",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 14.17,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                }
+                            ]
+                        }
+                    ]
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        }
+    ]
+}

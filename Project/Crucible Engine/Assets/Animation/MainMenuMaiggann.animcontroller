@@ -1,0 +1,28 @@
+{
+    "version": 1,
+    "entryState": 0,
+    "parameters": [],
+    "states": [
+        {
+            "name": "State 1",
+            "clip": 4294967295,
+            "speed": 1.0,
+            "loop": true
+        }
+    ],
+    "transitions": [],
+    "editor": {
+        "version": 1,
+        "positions": [
+            [
+                0.0,
+                0.0
+            ]
+        ],
+        "anyState": [
+            0.0,
+            -140.0
+        ],
+        "previewModel": "0000000000000000"
+    }
+}

@@ -24,6 +24,7 @@
 #include <cstring>
 #include <exception>
 #include <filesystem>
+#include <vector>
 
 namespace fs = std::filesystem;
 
@@ -335,6 +336,75 @@ void Crucible::PackageGamePanel::DrawSettings(bool playing)
 	}
 }
 
+void Crucible::PackageGamePanel::DrawProcess()
+{
+	// While a job runs (or after it), its own steps; otherwise the ones the ticks would run.
+	bool const jobShown = m_job.IsRunning() || m_job.GetStage() == PackageJob::Stage::Done;
+	bool const zip       = jobShown ? m_job.GetSettings().makeZip       : m_makeZip;
+	bool const installer = jobShown ? m_job.GetSettings().makeInstaller : (m_makeInstaller && m_installerProblem.empty());
+	std::string const name = m_name;
+	std::string const version = m_version;
+
+	struct Step { PackageJob::Stage stage; std::string label; std::string tooltip; };
+	std::vector<Step> steps;
+	steps.push_back({ PackageJob::Stage::Building, "Build",
+		"cmake --build Build --config Release --target Game\n"
+		"Compiles the game, and any changed shaders, models and textures.\n"
+		"Re-runs CMake first if Assets/Config/GameInfo.json changed." });
+	steps.push_back({ PackageJob::Stage::Cooking, "Cook",
+		"Copies everything the game reads from Assets into Resources\n"
+		"(compiled models, textures, shaders, scenes, prefabs, config).\n"
+		"Stops if anything is missing or failed to compile." });
+	if (zip)
+		steps.push_back({ PackageJob::Stage::Packing, "Zip",
+			"cpack: zips the game's files into " + name + "-" + version + "-win64.zip,\n"
+			"then copies it into the output folder." });
+	if (installer) {
+		steps.push_back({ PackageJob::Stage::Staging, "Fill GAMEDIRECTORY",
+			"Empties Tools/Package/Installer/GAMEDIRECTORY, then copies the game into it\n"
+			"(cmake --install ... --component Game): exactly what the installer installs." });
+		steps.push_back({ PackageJob::Stage::Compiling, "Inno Setup",
+			"ISCC.exe compiles InstallScript.iss: GAMEDIRECTORY, the DigiPen EULA, the icon\n"
+			"and the VC++ redistributable into " + name + "_Setup.exe (version " + version + "),\n"
+			"then copies it into the output folder." });
+	}
+	steps.push_back({ PackageJob::Stage::Done, "Output folder",
+		std::string("Where the finished files go:\n") + m_outputDir });
+
+	// Done steps green, the running one highlighted, the rest greyed.
+	int const current = m_job.IsRunning() ? m_job.StepNumber() : 0;   // 1-based, among the steps above
+	bool const finished = m_job.GetStage() == PackageJob::Stage::Done;
+
+	ImGui::TextUnformatted("Process:");
+	ImGui::SameLine();
+	for (std::size_t i = 0; i < steps.size(); ++i) {
+		int const number = static_cast<int>(i) + 1;
+		std::string const label = std::to_string(number) + ". " + steps[i].label;
+		ImVec4 colour = ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled);
+		if (finished || (current > 0 && number < current))
+			colour = kDoneColour;
+		else if (number == current)
+			colour = kWarningColour;
+
+		// Wrap to the next line rather than off the edge of the window.
+		if (i > 0) {
+			ImGui::SameLine();
+			float const needed = ImGui::CalcTextSize(" > ").x + ImGui::CalcTextSize(label.c_str()).x
+			                   + ImGui::GetStyle().ItemSpacing.x * 2.0f;
+			if (ImGui::GetContentRegionAvail().x < needed)
+				ImGui::NewLine();
+			else {
+				ImGui::TextDisabled(">");
+				ImGui::SameLine();
+			}
+		}
+		ImGui::TextColored(colour, "%s", label.c_str());
+		if (ImGui::IsItemHovered())
+			ImGui::SetTooltip("%s", steps[i].tooltip.c_str());
+	}
+	ImGui::TextDisabled("Hover a step for what it does. The steps follow the Zip and Installer ticks.");
+}
+
 void Crucible::PackageGamePanel::DrawInstallerDetails()
 {
 	// Closed by default, unless the details have a problem that stops Package.
@@ -345,6 +415,8 @@ void Crucible::PackageGamePanel::DrawInstallerDetails()
 		return;
 
 	ImGui::Indent();
+	DrawProcess();
+	ImGui::Separator();
 	DrawGameDetails();
 	ImGui::Spacing();
 	ImGui::Separator();

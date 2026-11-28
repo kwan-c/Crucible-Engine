@@ -1,0 +1,69 @@
+{
+    "version": 3,
+    "name": "Piece Rock Pile",
+    "entities": [
+        {
+            "id": "C44B4D0C1DA542DD",
+            "parent": -1,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 7758344552340617513,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0,
+                        "w": 1.0
+                    },
+                    "meshAsset": 0,
+                    "materialAsset": 0
+                },
+                "Collider": {
+                    "type": "Box",
+                    "size": {
+                        "x": 4.0,
+                        "y": 1.57,
+                        "z": 2.68
+                    },
+                    "radius": 0.5,
+                    "height": 2.0,
+                    "center": {
+                        "x": -0.11,
+                        "y": 0.78,
+                        "z": 0.17
+                    },
+                    "friction": 0.20000000298023224,
+                    "bounciness": 0.0,
+                    "layer": "NonMoving",
+                    "isTrigger": false
+                },
+                "EntityName": {
+                    "name": "Piece Rock Pile"
+                },
+                "EntityTag": {
+                    "tag": "StaticObstacle"
+                }
+            }
+        }
+    ]
+}

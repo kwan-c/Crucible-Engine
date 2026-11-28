@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          6 November 2026
-* \version       1.2
+* \version       1.3
 * \brief
 *                From authored settings to replication profiles: turns an
 *                object's NetworkObjectAuthoring into a NetPrefabDesc, and
@@ -63,6 +63,7 @@
 *                offer for an object, and what is wrong with its settings
 *                (Networking Phase 14.3)
 *    -v1.2       AuthoringComponentOption::belowRoot
+*    -v1.3       several spawnPerPlayer prefabs (playerPrefabs): each scene's player is the one it places
 *
 **************************************************************************/
 #pragma once
@@ -101,7 +102,8 @@ namespace Crucible
 	struct NetPrefabDiscovery
 	{
 		std::vector<Net::NetPrefabId> ids;                           // in id (= asset GUID) order
-		Net::NetPrefabId              playerPrefab = Net::kInvalidNetPrefab;   // the spawnPerPlayer one
+		Net::NetPrefabId              playerPrefab = Net::kInvalidNetPrefab;   // the default player: the first spawnPerPlayer one
+		std::vector<Net::NetPrefabId> playerPrefabs;                            // every spawnPerPlayer one (a scene picks by its placed players)
 		std::size_t                   offered = 0;                   // prefabs looked at
 	};
 

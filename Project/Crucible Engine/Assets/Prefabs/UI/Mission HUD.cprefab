@@ -1,0 +1,468 @@
+{
+    "version": 3,
+    "name": "Mission HUD",
+    "entities": [
+        {
+            "id": "71F9659257D5E7DB",
+            "parent": -1,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "UICanvas": {
+                    "enabled": true,
+                    "renderMode": "ScreenSpace",
+                    "referenceResolution": {
+                        "x": 1920.0,
+                        "y": 1080.0
+                    },
+                    "toggleWithEscape": false,
+                    "showsCursor": false,
+                    "scaleWithScreenSize": true,
+                    "sortOrder": 5,
+                    "pixelsPerUnit": 100.0,
+                    "pivot": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "billboard": "Off",
+                    "alwaysOnTop": false,
+                    "doubleSided": true,
+                    "intensity": 1.0,
+                    "fade": false,
+                    "fadeStart": 20.0,
+                    "fadeEnd": 30.0
+                },
+                "ScriptComponent": {
+                    "scripts": [
+                        {
+                            "enabled": true,
+                            "assembly": "Managed/Crucible.Scripts.dll",
+                            "namespace": "Crucible.Scripts",
+                            "class": "MissionHud",
+                            "fields": [
+                                {
+                                    "declaringType": "Crucible.Scripts.MissionHud",
+                                    "name": "controllerName",
+                                    "type": "String",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "Sub Level Generator",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0
+                                }
+                            ]
+                        }
+                    ]
+                },
+                "EntityName": {
+                    "name": "Mission HUD"
+                }
+            }
+        },
+        {
+            "id": "9437309904E6F565",
+            "parent": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "UIRect": {
+                    "anchorMin": {
+                        "x": 0.5,
+                        "y": 0.0
+                    },
+                    "anchorMax": {
+                        "x": 0.5,
+                        "y": 0.0
+                    },
+                    "pivot": {
+                        "x": 0.5,
+                        "y": 0.0
+                    },
+                    "position": {
+                        "x": 0.0,
+                        "y": 24.0
+                    },
+                    "size": {
+                        "x": 640.0,
+                        "y": 124.0
+                    },
+                    "rotation": 0.0,
+                    "raycastTarget": false
+                },
+                "UIImage": {
+                    "colour": {
+                        "x": 0.05,
+                        "y": 0.05,
+                        "z": 0.07,
+                        "w": 0.55
+                    },
+                    "textureAsset": 0
+                },
+                "EntityName": {
+                    "name": "Quest Box"
+                }
+            }
+        },
+        {
+            "id": "17FE6A5E1402311D",
+            "parent": 1,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "UIRect": {
+                    "anchorMin": {
+                        "x": 0.5,
+                        "y": 0.0
+                    },
+                    "anchorMax": {
+                        "x": 0.5,
+                        "y": 0.0
+                    },
+                    "pivot": {
+                        "x": 0.5,
+                        "y": 0.0
+                    },
+                    "position": {
+                        "x": 0.0,
+                        "y": 12.0
+                    },
+                    "size": {
+                        "x": 610.0,
+                        "y": 42.0
+                    },
+                    "rotation": 0.0,
+                    "raycastTarget": false
+                },
+                "UIText": {
+                    "text": "Capture the 1st area  (0/3)",
+                    "colour": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0,
+                        "w": 1.0
+                    },
+                    "fontAsset": 4682803387673313293,
+                    "fontSize": 32.0,
+                    "horizontalAlign": "Center",
+                    "verticalAlign": "Middle",
+                    "wrap": false,
+                    "overflow": "Overflow",
+                    "lineSpacing": 1.0,
+                    "characterSpacing": 0.0,
+                    "richText": false,
+                    "bold": true,
+                    "underline": false,
+                    "bestFit": false,
+                    "minFontSize": 10.0,
+                    "maxFontSize": 40.0,
+                    "outline": false,
+                    "outlineColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "outlineWidth": 2.0,
+                    "glow": false,
+                    "glowColour": {
+                        "x": 1.0,
+                        "y": 0.85,
+                        "z": 0.4,
+                        "w": 0.8
+                    },
+                    "glowWidth": 3.0,
+                    "glowSoftness": 0.5,
+                    "shadow": true,
+                    "shadowColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.6
+                    },
+                    "shadowOffset": {
+                        "x": 2.0,
+                        "y": 2.0
+                    },
+                    "shadowSoftness": 0.0
+                },
+                "EntityName": {
+                    "name": "Title"
+                }
+            }
+        },
+        {
+            "id": "57460098B2AE51ED",
+            "parent": 1,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "UIRect": {
+                    "anchorMin": {
+                        "x": 0.5,
+                        "y": 0.0
+                    },
+                    "anchorMax": {
+                        "x": 0.5,
+                        "y": 0.0
+                    },
+                    "pivot": {
+                        "x": 0.5,
+                        "y": 0.0
+                    },
+                    "position": {
+                        "x": 0.0,
+                        "y": 58.0
+                    },
+                    "size": {
+                        "x": 610.0,
+                        "y": 32.0
+                    },
+                    "rotation": 0.0,
+                    "raycastTarget": false
+                },
+                "UIText": {
+                    "text": "Get inside the area",
+                    "colour": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0,
+                        "w": 1.0
+                    },
+                    "fontAsset": 0,
+                    "fontSize": 24.0,
+                    "horizontalAlign": "Center",
+                    "verticalAlign": "Middle",
+                    "wrap": false,
+                    "overflow": "Overflow",
+                    "lineSpacing": 1.0,
+                    "characterSpacing": 0.0,
+                    "richText": false,
+                    "bold": false,
+                    "underline": false,
+                    "bestFit": false,
+                    "minFontSize": 10.0,
+                    "maxFontSize": 40.0,
+                    "outline": false,
+                    "outlineColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "outlineWidth": 2.0,
+                    "glow": false,
+                    "glowColour": {
+                        "x": 1.0,
+                        "y": 0.85,
+                        "z": 0.4,
+                        "w": 0.8
+                    },
+                    "glowWidth": 3.0,
+                    "glowSoftness": 0.5,
+                    "shadow": true,
+                    "shadowColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.6
+                    },
+                    "shadowOffset": {
+                        "x": 2.0,
+                        "y": 2.0
+                    },
+                    "shadowSoftness": 0.0
+                },
+                "EntityName": {
+                    "name": "Detail"
+                }
+            }
+        },
+        {
+            "id": "28A220C3CF5BB877",
+            "parent": 1,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "UIRect": {
+                    "anchorMin": {
+                        "x": 0.5,
+                        "y": 0.0
+                    },
+                    "anchorMax": {
+                        "x": 0.5,
+                        "y": 0.0
+                    },
+                    "pivot": {
+                        "x": 0.5,
+                        "y": 0.0
+                    },
+                    "position": {
+                        "x": 0.0,
+                        "y": 100.0
+                    },
+                    "size": {
+                        "x": 560.0,
+                        "y": 10.0
+                    },
+                    "rotation": 0.0,
+                    "raycastTarget": false
+                },
+                "UIImage": {
+                    "colour": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0,
+                        "w": 0.18
+                    },
+                    "textureAsset": 0
+                },
+                "EntityName": {
+                    "name": "Bar Back"
+                }
+            }
+        },
+        {
+            "id": "A8DCD8D43BF7F1BF",
+            "parent": 4,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "UIRect": {
+                    "anchorMin": {
+                        "x": 0.0,
+                        "y": 0.5
+                    },
+                    "anchorMax": {
+                        "x": 0.0,
+                        "y": 0.5
+                    },
+                    "pivot": {
+                        "x": 0.0,
+                        "y": 0.5
+                    },
+                    "position": {
+                        "x": 0.0,
+                        "y": 0.0
+                    },
+                    "size": {
+                        "x": 0.0,
+                        "y": 10.0
+                    },
+                    "rotation": 0.0,
+                    "raycastTarget": false
+                },
+                "UIImage": {
+                    "colour": {
+                        "x": 1.0,
+                        "y": 0.85,
+                        "z": 0.2,
+                        "w": 1.0
+                    },
+                    "textureAsset": 0
+                },
+                "EntityName": {
+                    "name": "Bar Fill"
+                }
+            }
+        }
+    ]
+}

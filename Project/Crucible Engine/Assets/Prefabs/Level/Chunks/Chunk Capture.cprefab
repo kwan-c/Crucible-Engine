@@ -1,0 +1,269 @@
+{
+    "version": 3,
+    "name": "Chunk Capture",
+    "entities": [
+        {
+            "id": "20DD5386C9CF0801",
+            "parent": -1,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Chunk Capture"
+                },
+                "ScriptComponent": {
+                    "scripts": [
+                        {
+                            "enabled": true,
+                            "assembly": "Managed/Crucible.Scripts.dll",
+                            "namespace": "Crucible.Scripts",
+                            "class": "ChunkDefinition",
+                            "fields": []
+                        },
+                        {
+                            "enabled": true,
+                            "assembly": "Managed/Crucible.Scripts.dll",
+                            "namespace": "Crucible.Scripts",
+                            "class": "ChunkOutpost",
+                            "fields": [
+                                {
+                                    "declaringType": "Crucible.Scripts.ChunkOutpost",
+                                    "name": "centreA",
+                                    "type": "Prefab",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 15714003807691957787,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.ChunkOutpost",
+                                    "name": "wallEdgeA",
+                                    "type": "Prefab",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 1087726225304208627,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.ChunkOutpost",
+                                    "name": "wallEdgeB",
+                                    "type": "Prefab",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 8084984439366955265,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.ChunkOutpost",
+                                    "name": "wallEdgeC",
+                                    "type": "Prefab",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 2684825738967069715,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.ChunkOutpost",
+                                    "name": "highA",
+                                    "type": "Prefab",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 11592682254795704125,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.ChunkOutpost",
+                                    "name": "highB",
+                                    "type": "Prefab",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 4376229633708885243,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.ChunkOutpost",
+                                    "name": "flatC",
+                                    "type": "Prefab",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 2714501364250987923,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.ChunkOutpost",
+                                    "name": "flatA",
+                                    "type": "Prefab",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 13062657536683082935,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.ChunkOutpost",
+                                    "name": "flatB",
+                                    "type": "Prefab",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 10327361262054438099,
+                                    "componentType": ""
+                                }
+                            ]
+                        }
+                    ]
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
+            "id": "A7213DFE89328293",
+            "parent": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.05000000074505806,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": false,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0,
+                        "w": 1.0
+                    },
+                    "meshAsset": 5933818420240141953,
+                    "materialAsset": 2959536780768958419
+                },
+                "EntityName": {
+                    "name": "Footprint"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
+            "id": "919E9BC7F4A02D93",
+            "parent": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 100.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 2.0,
+                        "y": 200.0,
+                        "z": 2.0
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0,
+                        "w": 1.0
+                    },
+                    "meshAsset": 2856787514755437467,
+                    "materialAsset": 2959536780768958419
+                },
+                "EntityName": {
+                    "name": "Beacon"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        }
+    ]
+}

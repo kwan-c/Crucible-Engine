@@ -1,0 +1,92 @@
+{
+    "version": 3,
+    "name": "MainMenuBG_PS",
+    "entities": [
+        {
+            "id": "0B6EC8E4D21FC003",
+            "parent": -1,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.9238795042037964,
+                        "y": -0.3826834559440613,
+                        "z": 1.6727625506973712e-8,
+                        "w": -4.038405521100685e-8
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "ParticleEmitter": {
+                    "playing": true,
+                    "loop": true,
+                    "duration": 2.0,
+                    "rate": 20.0,
+                    "burstCount": 0,
+                    "maxParticles": 500,
+                    "shape": "Box",
+                    "shapeRadius": 12.350000381469727,
+                    "boxExtents": {
+                        "x": 10.0,
+                        "y": 0.5,
+                        "z": 3.549999952316284
+                    },
+                    "spreadDeg": 25.0,
+                    "coneAngleDeg": 1.24399995803833,
+                    "coneLength": 1.562999963760376,
+                    "worldSpace": true,
+                    "lifetimeMin": 14.0,
+                    "lifetimeMax": 15.0,
+                    "speedMin": 3.0,
+                    "speedMax": 5.0,
+                    "sizeMin": 0.20000000298023224,
+                    "sizeMax": 0.5,
+                    "endSizeScale": 1.0,
+                    "gravityScale": 0.009999999776482582,
+                    "drag": 0.0,
+                    "spinDeg": 0.0,
+                    "stretch": 0.10000000149011612,
+                    "colourStart": {
+                        "x": 1.0,
+                        "y": 0.6105481386184692,
+                        "z": 0.448888897895813
+                    },
+                    "colourEnd": {
+                        "x": 1.0,
+                        "y": 0.3450980484485626,
+                        "z": 0.07450980693101883
+                    },
+                    "alphaStart": 1.0,
+                    "alphaEnd": 0.0,
+                    "brightness": 1.0,
+                    "blend": "Additive",
+                    "textureAsset": 0,
+                    "flipbookCols": 1,
+                    "flipbookRows": 1,
+                    "emitLight": false,
+                    "lightColour": {
+                        "x": 1.0,
+                        "y": 0.6000000238418579,
+                        "z": 0.25
+                    },
+                    "lightIntensity": 8.0,
+                    "lightRange": 6.0,
+                    "seed": 1
+                },
+                "EntityName": {
+                    "name": "MainMenuBG_PS"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        }
+    ]
+}

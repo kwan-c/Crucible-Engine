@@ -1,0 +1,208 @@
+{
+    "version": 3,
+    "name": "TableHoverLight",
+    "entities": [
+        {
+            "id": "808098E53043C00F",
+            "parent": -1,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
+                    "name": "TableHoverLight"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
+            "id": "608098E53043C011",
+            "parent": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "ParticleEmitter": {
+                    "playing": true,
+                    "loop": true,
+                    "duration": 2.0,
+                    "rate": 10.0,
+                    "burstCount": 0,
+                    "maxParticles": 500,
+                    "shape": "Cone",
+                    "shapeRadius": 0.4000000059604645,
+                    "boxExtents": {
+                        "x": 0.3499999940395355,
+                        "y": 0.10000000149011612,
+                        "z": 0.20000000298023224
+                    },
+                    "spreadDeg": 21.950000762939453,
+                    "coneAngleDeg": -0.3319999873638153,
+                    "coneLength": 1.0,
+                    "worldSpace": true,
+                    "lifetimeMin": 0.800000011920929,
+                    "lifetimeMax": 1.5,
+                    "speedMin": 1.0,
+                    "speedMax": 2.5,
+                    "sizeMin": 0.10000000149011612,
+                    "sizeMax": 0.15000000596046448,
+                    "endSizeScale": 1.0,
+                    "gravityScale": 0.0,
+                    "drag": 0.0,
+                    "spinDeg": 0.0,
+                    "stretch": 0.5,
+                    "colourStart": {
+                        "x": 0.0,
+                        "y": 0.9599999785423279,
+                        "z": 0.8191998600959778
+                    },
+                    "colourEnd": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "alphaStart": 0.20000000298023224,
+                    "alphaEnd": 0.5,
+                    "brightness": 1.0,
+                    "blend": "Additive",
+                    "textureAsset": 9992045996846022695,
+                    "flipbookCols": 1,
+                    "flipbookRows": 1,
+                    "emitLight": false,
+                    "lightColour": {
+                        "x": 1.0,
+                        "y": 0.6000000238418579,
+                        "z": 0.25
+                    },
+                    "lightIntensity": 1.2000000476837158,
+                    "lightRange": 6.0,
+                    "seed": 1
+                },
+                "EntityName": {
+                    "name": "Sparkles"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
+            "id": "988098E53043C013",
+            "parent": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.016580581665039063,
+                        "z": 0.471951961517334
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "ParticleEmitter": {
+                    "playing": true,
+                    "loop": true,
+                    "duration": 2.0,
+                    "rate": 20.0,
+                    "burstCount": 0,
+                    "maxParticles": 500,
+                    "shape": "Point",
+                    "shapeRadius": 0.25,
+                    "boxExtents": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5
+                    },
+                    "spreadDeg": 25.0,
+                    "coneAngleDeg": 25.0,
+                    "coneLength": 1.0,
+                    "worldSpace": true,
+                    "lifetimeMin": 0.800000011920929,
+                    "lifetimeMax": 1.5,
+                    "speedMin": 1.0,
+                    "speedMax": 2.0,
+                    "sizeMin": 1.0,
+                    "sizeMax": 2.0,
+                    "endSizeScale": 1.0,
+                    "gravityScale": 0.0,
+                    "drag": 0.0,
+                    "spinDeg": 0.0,
+                    "stretch": 0.0,
+                    "colourStart": {
+                        "x": 0.19555556774139404,
+                        "y": 0.967822253704071,
+                        "z": 1.0
+                    },
+                    "colourEnd": {
+                        "x": 0.19607841968536377,
+                        "y": 1.0,
+                        "z": 0.8820914030075073
+                    },
+                    "alphaStart": 0.5,
+                    "alphaEnd": 0.0,
+                    "brightness": 0.05000000074505806,
+                    "blend": "Additive",
+                    "textureAsset": 0,
+                    "flipbookCols": 1,
+                    "flipbookRows": 1,
+                    "emitLight": false,
+                    "lightColour": {
+                        "x": 1.0,
+                        "y": 0.6000000238418579,
+                        "z": 0.25
+                    },
+                    "lightIntensity": 0.75,
+                    "lightRange": 6.0,
+                    "seed": 1
+                },
+                "EntityName": {
+                    "name": "Glow"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        }
+    ]
+}

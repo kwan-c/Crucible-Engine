@@ -1,0 +1,63 @@
+{
+  "version": 3,
+  "name": "Quest Vignette",
+  "entities": [
+    {
+      "id": "5156474E00010001",
+      "parent": -1,
+      "components": {
+        "Transform": {
+          "positions": { "x": 0.0, "y": 0.0, "z": 0.0 },
+          "rotation": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 },
+          "scale": { "x": 1.0, "y": 1.0, "z": 1.0 }
+        },
+        "UICanvas": {
+          "enabled": true,
+          "renderMode": "ScreenSpace",
+          "referenceResolution": { "x": 1920.0, "y": 1080.0 },
+          "toggleWithEscape": false,
+          "showsCursor": false,
+          "scaleWithScreenSize": true,
+          "sortOrder": -1,
+          "pixelsPerUnit": 100.0,
+          "pivot": { "x": 0.5, "y": 0.5 },
+          "billboard": "Off",
+          "alwaysOnTop": false,
+          "doubleSided": true,
+          "intensity": 1.0,
+          "fade": false,
+          "fadeStart": 20.0,
+          "fadeEnd": 30.0
+        },
+        "EntityName": { "name": "Quest Vignette Canvas" },
+        "EntityTag": { "tag": "Untagged" }
+      }
+    },
+    {
+      "id": "5156474E00010003",
+      "parent": 0,
+      "components": {
+        "Transform": {
+          "positions": { "x": 0.0, "y": 0.0, "z": 0.0 },
+          "rotation": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 },
+          "scale": { "x": 1.0, "y": 1.0, "z": 1.0 }
+        },
+        "UIRect": {
+          "anchorMin": { "x": 0.0, "y": 0.0 },
+          "anchorMax": { "x": 1.0, "y": 1.0 },
+          "pivot": { "x": 0.5, "y": 0.5 },
+          "position": { "x": 0.0, "y": 0.0 },
+          "size": { "x": 0.0, "y": 0.0 },
+          "rotation": 0.0,
+          "raycastTarget": false
+        },
+        "UIImage": {
+          "colour": { "x": 1.0, "y": 1.0, "z": 1.0, "w": 0.0 },
+          "textureAsset": 6534336007920054707
+        },
+        "EntityName": { "name": "Quest Vignette" },
+        "EntityTag": { "tag": "Untagged" }
+      }
+    }
+  ]
+}

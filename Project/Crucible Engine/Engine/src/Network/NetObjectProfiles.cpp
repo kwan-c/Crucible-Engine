@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          6 November 2026
-* \version       1.8
+* \version       1.9
 * \brief
 *                NetworkObjectAuthoring -> NetPrefabDesc, and network prefab
 *                discovery (see the header).
@@ -20,6 +20,7 @@
 *    -v1.6       CheckAuthoring reports a record that cannot fit (WorstCaseRecordBytes), as a session start would
 *    -v1.7       childEnabledReplicated: BuildProfile, CheckAuthoring, belowRoot
 *    -v1.8       NetData is a network runtime component
+*    -v1.9       several spawnPerPlayer prefabs: no longer an error; the first is the default player
 *
 **************************************************************************/
 #include "Network/NetObjectProfiles.h"
@@ -362,13 +363,14 @@ namespace Crucible
 
 			if (authoring.spawnPerPlayer)
 			{
-				if (out.playerPrefab != Net::kInvalidNetPrefab)
+				// Several are allowed: a scene's player is the prefab its placed players are instances
+				// of (NetSceneObjects); the first found is the player of a scene that places none.
+				out.playerPrefabs.push_back(id);
+				if (out.playerPrefab == Net::kInvalidNetPrefab)
 				{
-					error = std::format("{} and '{}' both have spawnPerPlayer: only one prefab can be the player", where, playerPath);
-					return false;
+					out.playerPrefab = id;
+					playerPath = source->path;
 				}
-				out.playerPrefab = id;
-				playerPath = source->path;
 			}
 		}
 		return true;

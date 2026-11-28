@@ -12,6 +12,10 @@ At most 4 players can play together: the Host plus up to 3 Clients.
 The example scenes are in `Assets/Scenes/network_tests/`: `Network_Test`, `network_gamplay` (the arena
 shooter), `network_lobby` and `network_sync_test` (the sync checklist, section 8.22).
 
+For a full game built on all of this (a lobby, a procedural level, networked mechs, enemies,
+parts and zoo pads, with its own player prefab), see `Docs/NetworkGameplayTest.md` and
+`Assets/Scenes/network_tests/network_gameplay_tests/`.
+
 ---
 
 ## 1. The Network Object component (`NetworkObjectAuthoring`)
@@ -54,7 +58,7 @@ Rule of thumb:
 | **Send priority** | 1.0 | How strongly this object competes for each Client's bandwidth. A higher value means it's updated more often. Only the Host uses it. |
 | **Critical** | off | Sent in **every** snapshot, ahead of the bandwidth budget. Use it for players or a boss. Use it sparingly. |
 | **Allow scene placement** | on | When this object is saved in a scene, it becomes a **networked scene object**: the Host and every Client load their own copy and link them up instead of spawning one. |
-| **Spawn per player** | off | Marks this prefab as **the player**. The Host spawns one for itself and one for each Client that joins, and that player owns it. **Only one prefab in the project** may have this turned on, and only a prefab can be the player. |
+| **Spawn per player** | off | Marks this prefab as **a player**. The Host spawns one for itself and one for each Client that joins, and that player owns it. Only a prefab can be a player. **Several prefabs may have it on**: each scene uses the one its placed players are copies of (section 5.2); a scene with none uses the default, the first such prefab by GUID (`NetworkedPlayer`). |
 
 At the bottom of the component, **"Network settings are valid"** (green) means the object
 is ready. If something is wrong, a red message says what. Leftover settings that refer to a
@@ -226,7 +230,18 @@ scene is a spawn point.**
 - Player 0 (the Host) uses the first spawn point, player 1 the second, and so on. If there are
   more players than spawn points, they wrap around and are shifted 3 m along X so they
   don't overlap.
-- With **no** spawn points in the scene, players spawn at a default position.
+- With **no** spawn points in the scene, players spawn at a default position, as the default
+  player (the first Spawn per player prefab by GUID, `NetworkedPlayer`).
+- **The placed prefab is the scene's player.** Each scene can have its own: make a player
+  prefab (Spawn per player on), place copies of it in that scene, and those copies are both
+  the spawn points and the prefab every player is spawned as. Other scenes are not affected.
+- All placed players in one scene must be copies of **the same** prefab. With a mix, the
+  first one found wins and the log says *"a placed player of another player prefab"* for the
+  rest (they are still removed, but not used).
+- **Only in a session.** Placed players become spawn points when a session runs (Host or
+  Client). In an **offline** Play nothing removes them: each one is a live player and they all
+  follow your keys. To try a scene with several spawn points, host it (the lobby, or Quick
+  test: Host).
 - Name them clearly (e.g. `Player Spawnpoint 1`) so teammates know what they are.
 - Don't change the network settings on these instances. Leave them as the prefab has them.
 
@@ -264,11 +279,9 @@ This builds a small scene from nothing:
 
 > **The player MUST be a prefab.** Networked players are spawned from a prefab, one for
 > each player. A player made only in the scene (not a prefab) is never spawned or controlled
-> over the network. Also, **only one prefab in the whole project** may have
-> **Spawn per player** turned on. `Assets/Prefabs/NetworkedPlayer.cprefab` already does, so
-> either **reuse it** (recommended) or turn it off there before making your own. Otherwise
-> the session refuses to start with *"... both have spawnPerPlayer: only one prefab can be
-> the player"*.
+> over the network. You can **reuse** `Assets/Prefabs/NetworkedPlayer.cprefab` or make your
+> own: the player prefab you place in this scene is the one this scene spawns (section 5.2),
+> and other scenes keep theirs.
 
 ### Step 1: New scene
 
@@ -332,7 +345,8 @@ second and draw it moving smoothly.
 **Option A: reuse the existing one (recommended).** Skip to Step 6 and use
 `Assets/Prefabs/NetworkedPlayer.cprefab`.
 
-**Option B: make your own** (first turn off **Spawn per player** on `NetworkedPlayer.cprefab`):
+**Option B: make your own** (`NetworkedPlayer.cprefab` can keep **Spawn per player** on: this
+scene uses whichever player prefab you place in it):
 
 1. Hierarchy **+ > Create Player**. This makes:
    ```
@@ -402,7 +416,8 @@ the same way `Network_Test.scene` does.
 | Problem | Check |
 |---|---|
 | Client is refused when joining | Both machines have the same scene and prefabs (same commit); the scene was saved. |
-| "only one prefab can be the player" | Two prefabs have **Spawn per player** on. Turn it off on one. |
+| "a placed player of another player prefab" | The scene has placed copies of two different player prefabs. Keep copies of one only (section 5.2). |
+| Every placed player moves when you press a key | You pressed Play **offline**: placed players only become spawn points in a session. Host it instead. |
 | No player appears | The player is a **prefab** with **Spawn per player** on and a valid component setup. |
 | Ball moves on the Host but not on the Client | Ball's **Transform** is **Replicated: Transform/Full**. |
 | Ball jitters or falls through the floor on the Client | RigidBody and Collider on the ball are **Host only**. |
@@ -805,17 +820,17 @@ Windows may ask to allow it through the firewall the first time it runs: allow i
 
 | Field | Meaning |
 |---|---|
-| **Auto** (default) | Lobby lists come from the connection server. A browser sends it up to 5 list requests (about 5 s); if none is answered, the server is **not accessible**, the list stays empty, and the game can offer **LAN discovery** instead (the lobby example shows a **Search LAN instead** button). LAN is used only once the player chooses it, until the browser is opened again. With no address set, Auto uses LAN broadcast. A host registers with the server **and** answers LAN broadcasts, so it is found either way. |
-| **Server** | The connection server only (testing). |
+| **Auto** | Lobby lists come from the connection server. A browser sends it up to 5 list requests (about 5 s); if none is answered, the server is **not accessible**, the list stays empty, and the game can offer **LAN discovery** instead (the lobby example shows a **Search LAN instead** button). LAN is used only once the player chooses it, until the browser is opened again. With no address set, Auto uses LAN broadcast. A host registers with the server **and** answers LAN broadcasts, so it is found either way. |
+| **Server** (default) | The connection server only: lobbies are listed only while it is running, so start it first (**Network > Start Connection Server**). |
 | **LAN** | LAN broadcast only; the server is not used (testing). |
-| **Server address** | The IPv4 address the server printed, e.g. `192.168.0.7`. Empty means no server. There is no built-in address. |
+| **Server address** | The IPv4 address the server printed, e.g. `192.168.0.7`. Default `127.0.0.1`: a connection server on **this PC**. The Network window says so under the field: on another device, change it to the address of the PC running the server. Empty means no server. |
 | **Server port** | Default `27018`. |
 
 The same values can be set for everyone in `Assets/Config/EngineConfig.json`:
 
 ```json
 "network": {
-    "lobbyDiscovery": "auto",
+    "lobbyDiscovery": "server",
     "lobbyServerAddress": "192.168.0.7",
     "lobbyServerPort": 27018,
     "discoveryPort": 27019
@@ -874,7 +889,8 @@ lobby.FromServer, lobby.FromLan   // how a LobbyInfo was found (both = the same 
 1. On PC A: **Network > Start Connection Server**. Open **Network > Connection Server...**,
    note the address under **Addresses** (e.g. `192.168.0.7:27018`), and press **Use this server**.
 2. In every other Editor (PC B, ...): **Network > Network Window > Session**, keep **Quick test**
-   on **Offline**, then **Lobby discovery > Auto**, **Server address** `192.168.0.7`,
+   on **Offline**, then **Lobby discovery > Server** (the default), **Server address** `192.168.0.7`
+   (in place of the default `127.0.0.1`),
    **Server port** `27018`.
 3. Open `network_tests/network_lobby.scene` and press **Play** in every Editor. One player chooses
    **Create Lobby**, and the others choose **Find Lobbies**. The header should say
@@ -885,8 +901,9 @@ lobby.FromServer, lobby.FromLan   // how a LobbyInfo was found (both = the same 
 5. Start the server again (**Network > Start Connection Server**). Within a couple of seconds
    the host is registered again, without doing anything. A browser that chose LAN keeps the LAN
    list; press **Back** and **Find Lobbies** to use the server again.
-6. Optional: set **Lobby discovery > Server** on a browser PC to check that the list really comes
-   from the server, or **LAN** to check the broadcast path.
+6. Optional: with the default **Lobby discovery > Server** the list can only come from the server;
+   set **LAN** on a browser PC to check the broadcast path, or **Auto** to try the server with
+   LAN as the fallback.
 
 **Not covered:** the internet. The server only lists lobbies; it does not relay or punch
 through routers (no NAT traversal, STUN, ICE or TURN). Players must be able to reach the

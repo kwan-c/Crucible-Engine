@@ -1,0 +1,32 @@
+{
+  "version": 3,
+  "name": "Board Rock",
+  "entities": [
+    {
+      "id": "424F524B00010001",
+      "parent": -1,
+      "components": {
+        "Transform": {
+          "positions": { "x": 0.0, "y": 0.0, "z": 0.0 },
+          "rotation": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 },
+          "scale": { "x": 1.0, "y": 1.0, "z": 1.0 }
+        },
+        "MeshRenderer": {
+          "visible": true,
+          "modelAsset": 4022787090117827109,
+          "modelRoot": 4294967295,
+          "materialOverrides": [],
+          "colour": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 0.0 },
+          "meshAsset": 0,
+          "materialAsset": 0
+        },
+        "MaterialParams": {
+          "emissiveScale": 1.0,
+          "custom": { "x": 0.0, "y": 0.0, "z": 0.0 }
+        },
+        "EntityName": { "name": "Board Rock" },
+        "EntityTag": { "tag": "Untagged" }
+      }
+    }
+  ]
+}

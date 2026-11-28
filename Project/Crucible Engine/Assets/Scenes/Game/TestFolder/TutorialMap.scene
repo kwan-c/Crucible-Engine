@@ -18910,6 +18910,14 @@
                     "meshAsset": 0,
                     "materialAsset": 6507507179800756227
                 },
+                "MaterialParams": {
+                    "emissiveScale": 1.0,
+                    "custom": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    }
+                },
                 "EntityName": {
                     "name": "Torso"
                 },

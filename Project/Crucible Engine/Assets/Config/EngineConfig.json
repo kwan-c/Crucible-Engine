@@ -15,13 +15,13 @@
         "connectAddress": "127.0.0.1",
         "connectPort": 27020,
         "maxClients": 3,
-        "lobbyDiscovery": "auto",
-        "lobbyServerAddress": "",
+        "lobbyDiscovery": "server",
+        "lobbyServerAddress": "127.0.0.1",
         "lobbyServerPort": 27018,
         "discoveryPort": 27019
     },
     "project": {
-        "startupScene": "Scenes/Fog_Lighting_Effects.scene",
+        "startupScene": "Scenes/Game/Main Menu Scene V2.scene",
         "aspectRatio": [
             16,
             9
