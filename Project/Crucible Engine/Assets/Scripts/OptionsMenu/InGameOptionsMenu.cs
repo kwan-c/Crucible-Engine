@@ -6,7 +6,7 @@ namespace @Crucible.@Scripts
         /// Loaded by a button whose On Click is Custom with Action Id "ReturnToMainMenu".
         /// Path under Assets, as Scene.Load takes it.
         /// </summary>
-        public string mainMenuScene = "Scenes/Game/Main Menu Scene.scene";
+        public string mainMenuScene = "Scenes/Game/Main Menu Scene V2.scene";
 
         private bool wasOpen;
 
