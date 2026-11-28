@@ -3,7 +3,7 @@
 * \author:       Jean David Vidal Cruzado
 * \par:          Email: jeandavidvidal.c@digipen.edu
 * \date          28 November 2026
-* \version       1.0
+* \version       1.1
 * \brief         The escort payload's health: a CombatHealth (so enemy hits
 *                find it) that can also heal and be revived.
 *
@@ -16,11 +16,14 @@
 *    Inspector field), heals it, and on Died hides the payload and
 *    revives it at the last checkpoint.
 *
-*    No teams in the engine yet: the player's direct shots damage it too
-*    (Unity put it on the player's team).
+*    On the players' side: enemy weapons hit any CombatHealth that isn't
+*    an Enemy, so they hit it; the player's weapons only hit what is
+*    registered in MechCombatTargets (enemies), and this never registers,
+*    so players can't damage it (Unity: on the player's team).
 *
 * \history
 *    -v1.0       new: own pool with Heal / Revive and a Died event
+*    -v1.1       comment: players can't damage it (was wrongly "they can")
 *
 **************************************************************************/
 using System;
