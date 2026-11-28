@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "albedoTint": [0.45, 0.06, 0.05, 1.0],
+  "emissiveFactor": [0.225, 0.03, 0.025],
+  "metallic": 0,
+  "roughness": 0.85,
+  "shading": "Scene",
+  "alphaCutoff": 0.0,
+  "doubleSided": false,
+  "toon": {
+    "ownEdge": false,
+    "threshold": 0.1,
+    "softness": 0.03,
+    "ownShadeColour": false,
+    "shadeColour": [0.85, 0.87, 0.95],
+    "litColour": [1.0, 1.0, 1.0],
+    "outline": 1.0
+  },
+  "textures": {
+    "albedo": "",
+    "normal": "",
+    "metallicRoughness": "",
+    "emissive": "",
+    "occlusion": ""
+  }
+}

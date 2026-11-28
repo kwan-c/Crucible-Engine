@@ -29,7 +29,7 @@ namespace Crucible.Scripts
         public bool Activated { get; private set; }
 
         /// <summary>
-        /// key: the pad's interact key, G by default (F cycles the aim / lock-on mode). While the
+        /// key: the pad's interact key, G by default (F swaps parts, Z cycles the aim / lock-on mode). While the
         /// player stands on the pad it claims that key
         /// (MechInputClaims), so no other system acts on it while the pad is in use.
         /// </summary>

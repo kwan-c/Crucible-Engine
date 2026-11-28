@@ -13,7 +13,7 @@ namespace Crucible.Scripts
     public sealed class ZooBackToMain : EntityScript
     {
         /// <summary>Path under Assets, as Scene.Load takes it.</summary>
-        public string menuScene = "Scenes/Game/Main Menu Scene.scene";
+        public string menuScene = "Scenes/Game/Main Menu Scene V2.scene";
 
         ZooPad pad;
 

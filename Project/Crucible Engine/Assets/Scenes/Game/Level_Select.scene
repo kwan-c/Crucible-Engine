@@ -1655,7 +1655,7 @@
                 },
                 "UIButton": {
                     "onClick": "LoadScene",
-                    "sceneAsset": 17525275114992484373,
+                    "sceneAsset": 6993202783295143941,
                     "actionId": "",
                     "normal": {
                         "x": 0.3866666555404663,

@@ -75,7 +75,7 @@ namespace Crucible.Scripts
         public Texture abilityIconTorso;    // Golem Torso: Damage Amp
         public Texture abilityIconLegs;     // Golem / Fast Legs: Jump (Heavy Legs has none in Unity)
 
-        // Unity's LockOnCursor sprites: free camera, an automatically locked enemy, camera lock (F).
+        // Unity's LockOnCursor sprites: free camera, an automatically locked enemy, camera lock (Z).
         public Texture cursorFree;
         public Texture cursorLockOn;
         public Texture cursorCamLock;

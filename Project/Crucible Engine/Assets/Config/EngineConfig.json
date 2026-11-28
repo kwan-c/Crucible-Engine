@@ -36,7 +36,7 @@
             "maximized": false
         },
         "project": {
-            "startupScene": "Scenes/Game/Main Menu Scene.scene"
+            "startupScene": "Scenes/Game/Main Menu Scene V2.scene"
         }
     },
     "scripting": {

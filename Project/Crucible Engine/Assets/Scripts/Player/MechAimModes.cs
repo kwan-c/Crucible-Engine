@@ -7,9 +7,9 @@
 *                locked (Unity's CameraControlThirdPerson lock orbit).
 *
 * \details
-*    F (or the right stick press) cycles Free Aim -> Soft Lock -> Hard Lock,
-*    Unity's single lock button. A Zoo floor pad that the player stands on
-*    claims F (MechInputClaims), so pressing F there works the pad only.
+*    Z (or the right stick press) cycles Free Aim -> Soft Lock -> Hard Lock,
+*    Unity's single lock button. A script that claims Z (MechInputClaims)
+*    takes the key over while it holds it; the Zoo floor pads claim G.
 *
 *    Hard lock: the camera turns toward the target with hardLockOrbitResponse
 *    damping. The mouse / right stick no longer orbit freely; they add a
@@ -69,7 +69,7 @@ namespace Crucible.Scripts
         void UpdateAimModeInput(bool gameplay)
         {
             if (!gameplay) return;
-            bool key = Input.IsPressed(KeyCode.F) && !MechInputClaims.IsClaimed(KeyCode.F);
+            bool key = Input.IsPressed(KeyCode.Z) && !MechInputClaims.IsClaimed(KeyCode.Z);
             if (key || Input.IsPressed(KeyCode.GamepadRightStick)) Targeting.CycleMode(gameplayCamera);
         }
 
