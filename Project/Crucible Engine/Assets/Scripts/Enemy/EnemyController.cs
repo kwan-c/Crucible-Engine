@@ -19,6 +19,9 @@ namespace Crucible.Scripts
     //   Position goal        MoveTo(goal, 0.3) + FaceTarget(target)
     //   Pressure             MoveTo(ring point, stop 0.15, slow 1.6) + FaceTarget(target),
     //                        only in a scene with an EnemyHordeCoordinator
+    //   Orbit (not Unity)    MoveTo(a point further round the target, stop 0.3, slow 0.5) + FaceTarget(target):
+    //                        strafeWhileAttacking circling, also during the throw
+    //   Back off (not Unity) Position / Retreat at retreatSpeedFraction, holding fire: retreatInsteadOfFiring
     //
     public sealed partial class Enemy
     {
@@ -31,19 +34,43 @@ namespace Crucible.Scripts
 
         // Ranged firing positions (EnemyGraphController). Above 0 on a ranged enemy, it keeps
         // between minimumRange and attackRange from the player, at a spot with a clear shot.
+        // These are where it prefers to STAND. Whether it may SHOOT is separate: anywhere within
+        // attackRange (its admission distance) with a clear, facing shot and no closer than the
+        // weapon's minimumAttackDistance (EnemyWeapon.cs) - so it also fires while retreating.
         public float minimumRange = 0f;
+        public float preferredRange = 0f;              // ranged: preferred firing distance; 0 = 55% between the near and far rings
         public float rangedPlanningInterval = 0.35f;   // seconds between re-planning its spot
         public float rangedSpacing = 3f;               // metres it keeps from other shooters
         public bool useHordeCoordination = true;
         public bool useRangedPositioning = true;
         public bool useSpecialCoordinator = true;
 
+        // Back off instead of firing (Heavy Crossbow). Inside minimumRange it stops shooting
+        // and walks slowly to a spot further out (sideways or straight back), until it is
+        // retreatClearance metres past minimumRange. Only then does it shoot again - and a shot
+        // still holds it still for its wind-up. Pinned (barely moving for retreatCorneredSeconds)
+        // it fires anyway, so a golem in a corner is not a free kill.
+        public bool retreatInsteadOfFiring = false;
+        public float retreatSpeedFraction = 0.55f;
+        public float retreatClearance = 4f;
+        public float retreatCorneredSeconds = 2f;
+
+        // Circle the target while attacking (Throwing Axe). Inside its firing band it keeps
+        // walking round the target at preferredRange instead of standing, and keeps walking
+        // (at strafeAttackSpeedFraction) through the throw itself. It changes direction every
+        // strafeSwitchMin..Max seconds, or at once when the way round is blocked.
+        public bool strafeWhileAttacking = false;
+        public float strafeStepDegrees = 35f;          // how far round the circle its next point is
+        public float strafeSwitchMin = 2f;
+        public float strafeSwitchMax = 4.5f;
+        public float strafeAttackSpeedFraction = 0.6f;
+
         // Tutorial/encounter use: stands idle with its brain off until Wake() is called.
         public bool startAsleep = false;
         public string wakeGroup = "";
         bool asleep;
 
-        enum Intent { Hold, HoldFacing, Wander, Chase, Arrive, Retreat, Position, Pressure }
+        enum Intent { Hold, HoldFacing, Wander, Chase, Arrive, Retreat, Position, Pressure, Orbit }
 
         // Horde pressure (EnemyCoordinationMember's part of it): the ring point the scene's
         // EnemyHordeCoordinator worked out for this golem, and when to work it out again.
@@ -79,8 +106,17 @@ namespace Crucible.Scripts
         StateGraphAgent brain;
         EnemyLocalPositionQuery positions;
         EnemyRangedPositioning ranged;
-        float speedBeforeWander, appliedWanderSpeed;
-        bool slowed;
+        float speedBeforeSlow, appliedSlowSpeed;
+        float speedFraction = 1f;
+
+        // Back-off and circling state (see retreatInsteadOfFiring / strafeWhileAttacking).
+        bool retreating;
+        float retreatStuckFor;
+        int orbitDirection = 1;
+        float orbitSwitchAt, orbitPlanAt;
+        bool hasOrbitGoal;
+        Vector3 orbitGoal;
+        public bool IsBackingOff { get { return retreating; } }
 
         Entity target;
         CombatHealth targetHealth;
@@ -169,7 +205,7 @@ namespace Crucible.Scripts
             ResolveTarget();
             detected = targetHealth != null && !targetHealth.IsDead && targetHealth.Entity.IsActive
                     && distanceToTarget <= (detected ? loseRadius : detectRadius);
-            if (!detected) { ranged.Clear(); ClearPressure(); }
+            if (!detected) { ranged.Clear(); ClearPressure(); retreating = false; hasOrbitGoal = false; }
             return detected;
         }
 
@@ -234,19 +270,46 @@ namespace Crucible.Scripts
         // Unity's ApproachRanged: shoot from where it stands if that is between minimumRange
         // and attackRange with a clear shot; otherwise walk to a planned firing spot. While
         // cooling down, crossbows also spread out if another shooter is too close.
+        //
+        // Movement and attack validity are separate. The movement order is chosen exactly as
+        // before (hold, planned spot, retreat, chase); the return value says whether a shot is
+        // valid from where it stands right now (RangedShotValid), so a ranged enemy that is
+        // retreating or repositioning still fires when its weapon is ready: the graph's Request
+        // node starts the attack, Wait For Weapon Attack holds it still for the wind-up and the
+        // release (the body has no upper-body layer to fire on the move), and Recover resumes the
+        // retreat with the same movement request.
         bool ApproachRanged(bool coolingDown)
         {
             float distance = distanceToTarget;
             if (distance > Math.Max(arriveRadius, attackRange + 2f))
             {
                 ranged.Clear();
+                retreating = false;
+                hasOrbitGoal = false;
                 CurrentAction = "Approach firing range";
                 Move(Intent.Chase);
                 return false;
             }
+
+            // Heavy Crossbow: too close means back off, not shoot.
+            if (retreatInsteadOfFiring && KeepBackingOff(distance)) return BackOff();
+
+            // Throwing Axe: in its band with a clear line, keep circling instead of standing.
+            if (strafeWhileAttacking && distance >= minimumRange && distance <= attackRange + 0.25f)
+            {
+                bool clearHere = HasClearRangedPathFrom(Position);
+                if (clearHere && Orbit(1f))
+                {
+                    CurrentAction = coolingDown ? "Circle target / cooldown" : "Circle target";
+                    return RangedShotValid(clearHere);
+                }
+            }
+            hasOrbitGoal = false;
+
             bool firingDistance = distance >= minimumRange && distance <= attackRange + 0.25f;
             bool clear = HasClearRangedPathFrom(Position);
             bool spread = UsesRangedPositioning && coolingDown && ranged.Crowded(rangedSpacing, rangedPlanningInterval);
+            bool shotValid = RangedShotValid(clear);
 
             // Ready shots always win over better spacing.
             if (firingDistance && clear && !spread)
@@ -254,7 +317,7 @@ namespace Crucible.Scripts
                 if (ranged.HasGoal) ranged.Clear();
                 CurrentAction = coolingDown ? "Hold firing position / cooldown" : "Aim from firing position";
                 Move(Intent.HoldFacing);
-                return target != null && CanReach(target);
+                return shotValid;
             }
 
             Vector3 spot;
@@ -263,12 +326,122 @@ namespace Crucible.Scripts
                 CurrentAction = distance < minimumRange ? "Reposition"
                               : spread ? "Spread ranged firing positions" : "Move to clear firing angle";
                 Move(Intent.Position, spot);
-                return false;
+                return shotValid;
             }
 
             CurrentAction = distance < minimumRange ? "Reposition" : "Navigate to firing position";
             Move(distance < minimumRange ? Intent.Retreat : Intent.Chase);
+            return shotValid;
+        }
+
+        // A shot from here, now: inside the admission distance (attackRange), outside the
+        // weapon's own minimum safe distance, facing the target and with a clear line - whatever
+        // distance it would rather stand at. TryAttack re-checks the same rules.
+        bool RangedShotValid(bool clear)
+        {
+            return clear && target != null && distanceToTarget <= attackRange + 0.25f
+                && distanceToTarget >= minimumAttackDistance && CanReach(target);
+        }
+
+        // Starts backing off inside minimumRange; stops once retreatClearance past it, so it
+        // does not flick between "back off" and "shoot" on the line.
+        bool KeepBackingOff(float distance)
+        {
+            if (!retreating && distance < minimumRange)
+            {
+                retreating = true;
+                retreatStuckFor = 0f;
+                ranged.Clear();           // the last plan was a firing spot, maybe closer in
+            }
+            else if (retreating && distance >= minimumRange + Math.Max(0f, retreatClearance))
+            {
+                retreating = false;
+                ranged.Clear();
+            }
+            return retreating;
+        }
+
+        // Walks slowly to a spot past the clearance line (any angle up to 90 degrees round,
+        // so it also steps out to the side), else straight back. No shot while it does -
+        // unless it has been pinned in place long enough to count as cornered.
+        bool BackOff()
+        {
+            Vector3 spot;
+            float outer = minimumRange + Math.Max(0f, retreatClearance);
+            if (UsesRangedPositioning && ranged.TryGetGoal(outer, rangedPlanningInterval, rangedSpacing, out spot))
+                Move(Intent.Position, spot, retreatSpeedFraction);
+            else Move(Intent.Retreat, Vector3.Zero, retreatSpeedFraction);
+
+            float moving = agent != null ? Flat(agent.Velocity).Length : 0f;
+            float expected = agent != null ? agent.Speed * 0.25f : 0f;
+            retreatStuckFor = moving < Math.Max(0.15f, expected) ? retreatStuckFor + Time.DeltaTime : 0f;
+            if (retreatStuckFor >= retreatCorneredSeconds)
+            {
+                CurrentAction = "Cornered - firing";
+                return RangedShotValid(HasClearRangedPathFrom(Position));
+            }
+            CurrentAction = "Back off (holding fire)";
             return false;
+        }
+
+        bool Cornered { get { return retreating && retreatStuckFor >= retreatCorneredSeconds; } }
+
+        // A point strafeStepDegrees further round a circle about the target, at its preferred
+        // range, that it can stand on with a clear shot. Re-planned every 0.2 s; blocked one way,
+        // it tries the other. False: no way round from here (the caller falls back to standing).
+        bool Orbit(float speed)
+        {
+            if (target == null) return false;
+            float now = Time.ElapsedTime;
+            if (now >= orbitSwitchAt)
+            {
+                if (orbitSwitchAt > 0f && random.NextDouble() < 0.5) orbitDirection = -orbitDirection;
+                orbitSwitchAt = now + strafeSwitchMin + (float)random.NextDouble() * Math.Max(0f, strafeSwitchMax - strafeSwitchMin);
+            }
+
+            if (!hasOrbitGoal || now >= orbitPlanAt || Flat(orbitGoal - Position).Length < 0.6f)
+            {
+                orbitPlanAt = now + 0.2f;
+                hasOrbitGoal = false;
+                Vector3 centre = target.Transform.WorldPosition;
+                Vector3 radial = Flat(Position - centre);
+                radial = radial.Length > 0.03f ? radial.Normalized : Facing * -1f;
+                float low = minimumRange + 0.5f, high = Math.Max(low, attackRange - 0.5f);
+                float radius = preferredRange > 0f ? preferredRange : (minimumRange + attackRange) * 0.5f;
+                radius = Math.Max(low, Math.Min(high, radius));
+                for (int attempt = 0; attempt < 2 && !hasOrbitGoal; ++attempt)
+                {
+                    Vector3 candidate = centre + Quaternion.AngleAxis(orbitDirection * strafeStepDegrees, Vector3.Up) * radial * radius;
+                    Vector3 standing;
+                    if (TryGoal(candidate, out standing) && HasClearRangedPathFrom(standing))
+                    {
+                        orbitGoal = standing;
+                        hasOrbitGoal = true;
+                    }
+                    else
+                    {
+                        orbitDirection = -orbitDirection;    // blocked (wall, ledge, another golem): go the other way
+                        orbitSwitchAt = now + strafeSwitchMin;
+                    }
+                }
+            }
+            if (!hasOrbitGoal) return false;
+            Move(Intent.Orbit, orbitGoal, speed);
+            return true;
+        }
+
+        // The Wait For Weapon Attack node's order while a swing or shot plays out. Usually it
+        // stands still (keeping the swing's facing); a circling thrower keeps circling, slower.
+        public void HoldForAttack()
+        {
+            if (strafeWhileAttacking && IsRanged && !previewSpinnerWindup && target != null
+                && distanceToTarget <= attackRange + 0.25f && distanceToTarget >= minimumRange * 0.5f
+                && Orbit(strafeAttackSpeedFraction))
+            {
+                CurrentAction = "Attack on the move";
+                return;
+            }
+            Hold("Attack windup / release");
         }
 
         public void Wander() { CurrentAction = "Wander"; Move(Intent.Wander); }
@@ -288,18 +461,25 @@ namespace Crucible.Scripts
             return CooldownRemaining <= 0f;
         }
 
-        // Unity's RequestAttack without coordination: never closer than minimumRange.
+        // Unity's RequestAttack. Melee keeps the old rule (never closer than minimumRange). Ranged
+        // enemies are not blocked by minimumRange - that is only where they prefer to stand - but
+        // never fire inside their weapon's minimumAttackDistance.
         public bool RequestAttack()
         {
+            if (IsRanged)
+                return distanceToTarget >= minimumAttackDistance && (!retreating || Cornered) && TryAttack();
             return (minimumRange <= 0f || distanceToTarget >= minimumRange) && TryAttack();
         }
 
-        void Move(Intent intent) { Move(intent, Vector3.Zero); }
+        void Move(Intent intent) { Move(intent, Vector3.Zero, 1f); }
+        void Move(Intent intent, Vector3 goal) { Move(intent, goal, 1f); }
 
-        void Move(Intent intent, Vector3 goal)
+        // speed: a fraction of the agent's own speed for this order (wandering always uses
+        // wanderSpeedFraction).
+        void Move(Intent intent, Vector3 goal, float speed)
         {
             if (agent == null || movementHeld || pushLeft > 0f || IsFrozen || IsDead) return;
-            SetSlowed(intent == Intent.Wander);
+            SetSpeedFraction(intent == Intent.Wander ? wanderSpeedFraction : speed);
 
             switch (intent)
             {
@@ -314,6 +494,8 @@ namespace Crucible.Scripts
                 // 0.3 m: the spot was checked to have a clear shot, so it must end up ON
                 // it, not StoppingDistance short (a melee golem's would be its attack range).
                 case Intent.Position:   agent.FaceTarget(target); agent.MoveTo(goal, 0.3f); break;
+                // Circling: the point keeps moving ahead of it, so no slowing down on the way.
+                case Intent.Orbit:      agent.FaceTarget(target); agent.MoveTo(goal, 0.3f, 0.5f); break;
                 // Unity's SetPositionGoal: full speed until SlowingDistance from the ring point,
                 // facing the target so it is ready to swing when it gets there.
                 case Intent.Pressure:
@@ -332,20 +514,26 @@ namespace Crucible.Scripts
             }
         }
 
-        // Return only the speed that wandering temporarily changed. Live tuning or a
-        // movement effect may take ownership of the agent's speed during the wander.
-        void SetSlowed(bool slow)
+        // Slows the agent to a fraction of its own speed (wandering, backing off, throwing on the
+        // move) and gives back only the speed this changed. Live tuning or a movement effect may
+        // take ownership of the agent's speed meanwhile: then its value is kept.
+        void SetSpeedFraction(float fraction)
         {
-            if (slow == slowed) return;
-            if (slow)
+            fraction = Math.Max(0f, Math.Min(1f, fraction));
+            if (Math.Abs(fraction - speedFraction) < 1e-4f) return;
+            if (speedFraction < 1f && agent.Speed != appliedSlowSpeed)
             {
-                speedBeforeWander = agent.Speed;
-                agent.Speed = Math.Max(0f, speedBeforeWander * wanderSpeedFraction);
-                appliedWanderSpeed = agent.Speed;
+                speedFraction = 1f;                       // someone else set the speed: it is the new full speed
+                if (fraction >= 1f) return;
             }
-            else if (agent.Speed == appliedWanderSpeed)
-                agent.Speed = speedBeforeWander;
-            slowed = slow;
+            if (speedFraction >= 1f) speedBeforeSlow = agent.Speed;
+            if (fraction >= 1f) agent.Speed = speedBeforeSlow;
+            else
+            {
+                agent.Speed = Math.Max(0f, speedBeforeSlow * fraction);
+                appliedSlowSpeed = agent.Speed;
+            }
+            speedFraction = fraction;
         }
 
         // Steering.Wander (Reynolds): a point on a small circle ahead, nudged a little each

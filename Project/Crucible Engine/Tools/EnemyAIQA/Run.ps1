@@ -35,6 +35,23 @@ if ($Probe -eq "EnemyAIProbe") {
     $fixture += ',{"id":"AB3485F80CDEA110","components":{"EntityName":{"name":"QA obstruction"},"Transform":{"positions":{"x":-85,"y":2,"z":-85},"scale":{"x":1,"y":1,"z":1}},"Collider":{"type":"Box","size":{"x":3,"y":4,"z":0.7},"layer":"NonMoving","isTrigger":false}}}'
     $fixture += ',{"id":"AB3485F80CDEA111","components":{"EntityName":{"name":"QA second player"},"Transform":{"positions":{"x":85,"y":2,"z":-80},"scale":{"x":1,"y":1,"z":1}},"PlayerController":{},"CharacterController":{"radius":0.4,"height":1.8},"ScriptComponent":{"enabled":true,"assembly":"Managed/Crucible.Scripts.dll","namespace":"Crucible.Scripts","class":"CombatHealth","fields":[]}}}'
 }
+if ($Probe -eq "PlaytestFixesProbe") {
+    # Lock-on targets (registered by the probe), a 15 degree slope and a low wall, all parked out of the way.
+    foreach ($letter in @('A','B','C')) {
+        $target = [ordered]@{
+            id = "AB3485F80CDEA12$letter"
+            components = @{
+                EntityName = @{name="QA aim $letter"}
+                Transform = @{positions=@{x=-120;y=-20;z=-120};scale=@{x=1;y=1;z=1}}
+                Collider = @{type="Box";size=@{x=1;y=1.6;z=1};layer="Enemy"}
+                ScriptComponent = @{enabled=$true;assembly="Managed/Crucible.Scripts.dll";namespace="Crucible.Scripts";class="CombatHealth";fields=@()}
+            }
+        }
+        $fixture += ',' + ($target | ConvertTo-Json -Depth 8 -Compress)
+    }
+    $fixture += ',{"id":"AB3485F80CDEA131","components":{"EntityName":{"name":"QA slope"},"Transform":{"positions":{"x":-85,"y":0.4,"z":-20},"rotation":{"x":0.130526,"y":0,"z":0,"w":0.991445},"scale":{"x":1,"y":1,"z":1}},"Collider":{"type":"Box","size":{"x":10,"y":2,"z":10},"layer":"NonMoving","isTrigger":false}}}'
+    $fixture += ',{"id":"AB3485F80CDEA133","components":{"EntityName":{"name":"QA low wall"},"Transform":{"positions":{"x":-120,"y":-30,"z":-120},"scale":{"x":1,"y":1,"z":1}},"Collider":{"type":"Box","size":{"x":8,"y":1.4,"z":0.6},"layer":"NonMoving","isTrigger":false}}}'
+}
 if ($Probe -eq "WeaponPortSmoke") {
     $cannon = Get-Content -Raw -LiteralPath (Join-Path $root 'Assets/Prefabs/Golem Cannon.cprefab') | ConvertFrom-Json
     $cannonWeapon = $cannon.entities | Where-Object { $_.components.EntityName.name -eq 'Weapon Model' }
@@ -77,7 +94,10 @@ if ($LASTEXITCODE) { throw "Probe compilation failed" }
 $env:CRUCIBLE_ASSET_ROOT = $assets
 $log = Join-Path $qa ($Label + ".log")
 $env:CRUCIBLE_QA_RESULT = Join-Path $qa ($Label + "-" + [guid]::NewGuid().ToString("N") + ".result")
-$process = Start-Process -FilePath "$game/Mekanomachia.exe" -WorkingDirectory $game -WindowStyle Hidden -PassThru -RedirectStandardOutput $log -RedirectStandardError (Join-Path $qa ($Label + ".stderr"))
+# The Game target was renamed from Mekanomachia to Lithomachia; run whichever this build produced.
+$exe = @("Lithomachia.exe", "Mekanomachia.exe") | ForEach-Object { Join-Path $game $_ } | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+if (!$exe) { throw "No Game executable in $game" }
+$process = Start-Process -FilePath $exe -WorkingDirectory $game -WindowStyle Hidden -PassThru -RedirectStandardOutput $log -RedirectStandardError (Join-Path $qa ($Label + ".stderr"))
 try {
     $end = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
     do {

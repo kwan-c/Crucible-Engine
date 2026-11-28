@@ -84,7 +84,8 @@ namespace Crucible.Scripts
 
             float maximum = owner.attackRange - 0.25f;
             float near = Math.Min(minimum + 0.65f, maximum);
-            float preferred = near + (maximum - near) * 0.55f;
+            float preferred = owner.preferredRange > 0f ? Math.Max(near, Math.Min(maximum, owner.preferredRange))
+                                                        : near + (maximum - near) * 0.55f;
 
             Vector3 radial = Flat(owner.Position - plannedTarget);
             radial = radial.Length > 0.03f ? radial.Normalized : owner.Facing * -1f;

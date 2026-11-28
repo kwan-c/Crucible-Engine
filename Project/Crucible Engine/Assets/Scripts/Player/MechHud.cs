@@ -39,8 +39,15 @@ namespace Crucible.Scripts
     {
         public string playerName = "Player";
 
-        // Health meter (MechHealthHud)
+        // Health meter (MechHealthHud). Colours are hex "RRGGBB[AA]" (the Inspector cannot edit
+        // Color fields); an empty or malformed value keeps the colour in brackets.
         public float lowHealthThreshold = 0.25f;
+        public string healthBarColour = "4DF280";      // (0.3, 0.95, 0.5): Unity's healthyColor
+        public string lowHealthBarColour = "FF4D40";   // (1, 0.3, 0.25): this HUD's low-health tint
+        // Delayed-damage bar ("Bar White", Unity's whiteBar): holds the health just lost, then drains.
+        public float trailingBarDelay = 1f;            // seconds without new damage before it drains (Unity 1)
+        public float trailingBarDrainTime = 0.65f;     // seconds to drain to the real health (Unity 0.65)
+        public string trailingBarColour = "FFFFFF";    // Unity's white BarWhite
         public Color healthyColor = new Color(0.3f, 0.95f, 0.5f);
         public Color lowHealthColor = new Color(1f, 0.3f, 0.25f);
 
@@ -166,7 +173,10 @@ namespace Crucible.Scripts
         MechPlayer player;
         float nextPlayerSearch;
         Entity healthGroup;
-        UIImage barFront;
+        UIImage barFront, barWhite;
+        readonly MechTrailingBar trailing = new MechTrailingBar();
+        /// <summary>The delayed-damage bar's state (QA reads it).</summary>
+        public MechTrailingBar TrailingBar { get { return trailing; } }
         Bar barGlow;
         UIText healthLabel;
         UIText debugText;
@@ -181,6 +191,7 @@ namespace Crucible.Scripts
         {
             healthGroup = Entity.FindChild("Health HUD");
             barFront = healthGroup?.FindChild("Bar Front")?.GetComponent<UIImage>();
+            barWhite = healthGroup?.FindChild("Bar White")?.GetComponent<UIImage>();
             barGlow = Bar.Find(healthGroup, "Glow");
             healthLabel = TextOf(healthGroup, "Health Label");
             foreach (var side in new[] { "Top", "Bottom", "Left", "Right" })
@@ -225,19 +236,32 @@ namespace Crucible.Scripts
         }
 
         // ---------------------------------------------------------------------------- //
-        // Health: crop the green sprite to reveal the full-width white sprite beneath it.
+        // Health: crop the green sprite (real health) over the white delayed-damage sprite,
+        // which is cropped to the trailing ratio (MechTrailingBar); Bar Back shows the rest.
         // ---------------------------------------------------------------------------- //
 
         void RefreshHealth()
         {
             MechHealth health = player.Health;
             SetHealthVisible(!health.IsDead);
+            float now = Time.ElapsedTime;
+            trailing.Delay = Math.Max(0f, trailingBarDelay);
+            trailing.DrainDuration = Math.Max(0.01f, trailingBarDrainTime);
+            trailing.Observe(health.Current, health.Maximum, health.IsDead, now);
+            trailing.Tick(now, Time.DeltaTime);
             float ratio = health.Normalized;
 
+            healthyColor = MechMath.ColourOr(healthBarColour, healthyColor);
+            lowHealthColor = MechMath.ColourOr(lowHealthBarColour, lowHealthColor);
             if (barFront != null)
             {
                 barFront.HorizontalFill = ratio;
                 barFront.Color = ratio <= lowHealthThreshold ? lowHealthColor : healthyColor;
+            }
+            if (barWhite != null)
+            {
+                barWhite.HorizontalFill = trailing.Trailing;
+                barWhite.Color = MechMath.ColourOr(trailingBarColour, Color.White);
             }
             if (barGlow != null) barGlow.SetFill(ratio);
             if (healthLabel != null)

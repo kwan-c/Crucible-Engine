@@ -506,15 +506,18 @@ namespace Crucible.Scripts
                 yield return .12f;
                 Enemy e = Track(root);
                 float start = e.DistanceToTarget;
-                bool replanned = false, attacked = false;
+                bool replanned = false, attacked = false, backedOff = false;
                 float end = Time.ElapsedTime + 7;
-                while (Time.ElapsedTime < end && !attacked)
+                // Playtest fix: ranged enemies may now fire while retreating, so the shot can come
+                // before, during or after the retreat - check both happen in the window.
+                while (Time.ElapsedTime < end && !(attacked && replanned && backedOff))
                 {
                     replanned |= e.HasRangedPosition;
                     attacked |= e.AttackInProgress;
+                    backedOff |= e.DistanceToTarget > start + .3f;
                     yield return 0;
                 }
-                Check(e.IsRanged && replanned && e.DistanceToTarget > start + .3f && attacked,
+                Check(e.IsRanged && replanned && backedOff && attacked,
                       labels[i] + " retreats, selects a firing position and attacks; d=" + e.DistanceToTarget);
                 e.useRangedPositioning = false;
                 Put(0, -(e.attackRange + 12));
@@ -527,14 +530,26 @@ namespace Crucible.Scripts
                 Check(!e.UsesRangedPositioning && !e.HasRangedPosition && e.IsRanged && e.DistanceToTarget < far - .5f,
                       labels[i] + " ordinary ranged approach with planner off");
                 player.Transform.WorldPosition = e.Position + new Vector3(0, .8f, -2f);
-                bool retreated = false;
-                end = Time.ElapsedTime + 8f;
-                while (Time.ElapsedTime < end && !e.AttackInProgress)
+                bool retreated = false, fired = false, firedFromSafeDistance = true;
+                end = Time.ElapsedTime + (e.retreatInsteadOfFiring ? 14f : 8f);   // backing off slowly first
+                int releases = e.Releases;
+                while (Time.ElapsedTime < end && !(retreated && fired))
                 {
-                    retreated |= e.DistanceToTarget < e.minimumRange && e.CurrentAction == "Reposition";
+                    retreated |= e.DistanceToTarget < e.minimumRange
+                              && e.CurrentAction == (e.retreatInsteadOfFiring ? "Back off (holding fire)" : "Reposition");
+                    if (e.Releases > releases)
+                    {
+                        fired = true;
+                        firedFromSafeDistance &= e.DistanceToTarget >= e.minimumAttackDistance;
+                        // retreatInsteadOfFiring (Heavy Crossbow): no shot at all inside minimumRange unless cornered.
+                        if (e.retreatInsteadOfFiring && e.CurrentAction != "Cornered - firing") firedFromSafeDistance &= e.DistanceToTarget >= e.minimumRange;
+                        releases = e.Releases;
+                    }
                     yield return 0;
                 }
-                Check(retreated && e.AttackInProgress && !e.HasRangedPosition && e.DistanceToTarget >= e.minimumRange,
+                // Playtest fix: minimumRange is where it prefers to stand, not a firing ban; it may fire
+                // while retreating, never inside its weapon's minimumAttackDistance.
+                Check(retreated && fired && firedFromSafeDistance && !e.HasRangedPosition,
                       labels[i] + " retreats and fires again with the planner disabled");
                 Clear();
                 yield return .18f;
