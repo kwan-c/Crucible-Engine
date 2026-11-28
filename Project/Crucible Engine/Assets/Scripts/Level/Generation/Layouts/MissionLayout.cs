@@ -3,18 +3,20 @@
 * \author:       Jean David Vidal Cruzado
 * \par:          Email: jeandavidvidal.c@digipen.edu
 * \date          28 November 2026
-* \version       1.0
+* \version       1.2
 * \brief         A mission level's layout numbers in the Inspector: the base
 *                every mission's layout script derives from (Unity's
 *                SubLevelGenSettings asset, one per mission).
 *
 * \details
-*    Put the mission's layout script (CaptureLayout, later EscortLayout and
+*    Put the mission's layout script (CaptureLayout, EscortLayout, later
 *    LiberationLayout) on the Sub Level Generator entity. The generator asks
 *    it for the level's MissionPreset (BuildPreset) when it generates.
-*    Fields here are the ones every mission has (map, spacing, roads,
-*    trees); each mission's script adds its own (its chunks, their sizes,
-*    their interiors) in AddChunks. Defaults are Unity M2's / the GDD's.
+*    Fields here are the ones every mission has (spawn and extract chunk
+*    prefabs, map, spacing, roads, trees); each mission's script adds its
+*    own (its objective chunk prefab, the chunks' sizes, their interiors)
+*    in AddChunks and PrefabFor. The generator spawns whatever prefab the
+*    layout gives for each chunk's role, so it holds no mission fields. Defaults are Unity M2's / the GDD's.
 *    Kept in code (rarely tuned): placement candidates (300) and flatness
 *    weight (10); the terrace levels and slope come from the generator.
 *    The tree themes by quadrant are TEMPORARY (until level themes).
@@ -23,12 +25,20 @@
 *
 * \history
 *    -v1.0       new: moved out of MissionPresets.cs into the Inspector
+*    -v1.1       BuildPreset and AddChunks take the level's seed (Escort
+*                picks its checkpoint count from it)
+*    -v1.2       the chunk prefabs live here (spawnChunk, extractChunk; each
+*                mission's own chunk on its layout script); PrefabFor(role)
 *
 **************************************************************************/
 namespace Crucible.@Scripts
 {
     public abstract class MissionLayout : EntityScript
     {
+        // Chunk prefabs every mission has (ChunkDefinition on the root); the objective chunk is on the mission's script.
+        public Prefab spawnChunk;
+        public Prefab extractChunk;
+
         // Map and placement.
         public float mapSize = 500f;            // metres, square
         public float edgeMargin = 20f;          // metres kept clear at the map border
@@ -64,8 +74,8 @@ namespace Crucible.@Scripts
         /// <summary>The mission name this layout is for (the generator's `mission`), e.g. "Capture".</summary>
         public abstract string Mission { get; }
 
-        /// <summary>The level's preset from these Inspector values.</summary>
-        public MissionPreset BuildPreset()
+        /// <summary>The level's preset from these Inspector values (seed: the level's, for numbers picked per level).</summary>
+        public MissionPreset BuildPreset(int seed)
         {
             MissionPreset p = new MissionPreset();
             p.Name = Mission;
@@ -98,11 +108,19 @@ namespace Crucible.@Scripts
             p.Decor.themeFavour = themeFavour;
             p.Decor.themeBlend = themeBlend;
 
-            AddChunks(p);
+            AddChunks(p, seed);
             return p;
         }
 
-        /// <summary>The mission's chunks, in placement order, into p.Chunks.</summary>
-        protected abstract void AddChunks(MissionPreset p);
+        /// <summary>The prefab spawned for a chunk role (MissionPresets.Spawn, Extract, ...); null = none set.</summary>
+        public virtual Prefab PrefabFor(string role)
+        {
+            if (role == MissionPresets.Spawn) return spawnChunk;
+            if (role == MissionPresets.Extract) return extractChunk;
+            return null;
+        }
+
+        /// <summary>The mission's chunks, in placement order, into p.Chunks (seed: the level's).</summary>
+        protected abstract void AddChunks(MissionPreset p, int seed);
     }
 }

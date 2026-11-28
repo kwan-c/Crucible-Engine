@@ -3,7 +3,7 @@
 * \author:       Jean David Vidal Cruzado
 * \par:          Email: jeandavidvidal.c@digipen.edu
 * \date          28 November 2026
-* \version       1.0
+* \version       1.2
 * \brief         Capture's level layout in the Inspector: its chunks, their
 *                sizes and the areas' generated interiors (plus the shared
 *                map / road / tree numbers from MissionLayout).
@@ -24,6 +24,9 @@
 *
 * \history
 *    -v1.0       new: Capture's numbers moved out of MissionPresets.cs
+*    -v1.1       AddChunks takes the seed (unused here)
+*    -v1.2       areaChunk: the capture area prefab (was the generator's
+*                captureChunk)
 *
 **************************************************************************/
 namespace Crucible.@Scripts
@@ -31,6 +34,7 @@ namespace Crucible.@Scripts
     public sealed class CaptureLayout : MissionLayout
     {
         // Chunks.
+        public Prefab areaChunk;                // the capture area prefab (Chunk Capture)
         public int areas = 3;                   // capture areas, cleared in order
         public float areaRadius = 30f;          // metres (GDD)
         public float spawnSize = 24f;           // metres, square pad
@@ -54,7 +58,12 @@ namespace Crucible.@Scripts
 
         public override string Mission { get { return MissionPresets.Capture; } }
 
-        protected override void AddChunks(MissionPreset p)
+        public override Prefab PrefabFor(string role)
+        {
+            return role == MissionPresets.Capture ? areaChunk : base.PrefabFor(role);
+        }
+
+        protected override void AddChunks(MissionPreset p, int seed)
         {
             float d = areaRadius * 2f;
             p.Chunks.Add(new ChunkRequest { Role = MissionPresets.Spawn, Footprint = new ChunkFootprint(ChunkShape.Box, spawnSize, spawnSize), Start = true });
