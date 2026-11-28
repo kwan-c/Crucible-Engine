@@ -13,7 +13,7 @@
 *                  enemy inside the auto-aim circle (0.18 of the smaller
 *                  screen side) and lock range (60 m). A valid selection is
 *                  kept while it stays in that area.
-*                - F toggles hard lock: the camera and body track the target
+*                - Z toggles hard lock: the camera and body track the target
 *                  (MechPlayer); losing it picks the nearest visible one.
 *                - While hard locked, a quick mouse flick switches to the
 *                  nearest visible enemy in that screen direction.
@@ -62,7 +62,7 @@ namespace Crucible.Scripts
 
         Vector3 OwnerPosition { get { return owner.Transform.WorldPosition; } }
 
-        /// <summary>F: toggles camera lock on press. Weapon auto-aim stays on either way.</summary>
+        /// <summary>Z: toggles camera lock on press. Weapon auto-aim stays on either way.</summary>
         public void ToggleHardLock(Camera camera)
         {
             if (IsFreeAim) ResumeTargeting(camera);
