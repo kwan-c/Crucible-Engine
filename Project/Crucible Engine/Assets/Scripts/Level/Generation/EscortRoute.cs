@@ -3,7 +3,7 @@
 * \author:       Jean David Vidal Cruzado
 * \par:          Email: jeandavidvidal.c@digipen.edu
 * \date          28 November 2026
-* \version       1.0
+* \version       1.1
 * \brief         The escort's path as plain data: from the spawn chunk's
 *                centre, along each road of the route, through each
 *                checkpoint's centre, to the extract's centre.
@@ -21,11 +21,14 @@
 *      CheckpointDistances  each chunk after the start, in order (the
 *                           checkpoints, then the extract)
 *      Chunks               the placement index of each of those
+*      Roles                each of those chunks' role (Checkpoint,
+*                           Extract), so the payload knows where it ends
 *      Complete             false when a road found no route: the route
 *                           stops at the last chunk it reached
 *
 * \history
 *    -v1.0       ported from Unity; Chunks added; starts at the Start chunk
+*    -v1.1       Roles (the payload runs between the Checkpoint chunks)
 *
 **************************************************************************/
 using System;
@@ -39,6 +42,7 @@ namespace Crucible.@Scripts
         public readonly List<float> Distance = new List<float>();             // along the route to each point
         public readonly List<float> CheckpointDistances = new List<float>();  // each chunk after the start, in order; the last is the end
         public readonly List<int> Chunks = new List<int>();                   // placement index of each of those, in order
+        public readonly List<string> Roles = new List<string>();              // their roles (MissionPresets.Checkpoint, Extract)
         public float Length { get { return Distance.Count > 0 ? Distance[Distance.Count - 1] : 0f; } }
         public bool Complete { get; private set; }                          // every chunk joined by its road
 
@@ -63,6 +67,7 @@ namespace Crucible.@Scripts
                 route.Add(next.X, next.Height, next.Z);
                 route.CheckpointDistances.Add(route.Length);
                 route.Chunks.Add(road.To);
+                route.Roles.Add(requests[next.Request].Role);
                 at = road.To;
                 joined++;
             }

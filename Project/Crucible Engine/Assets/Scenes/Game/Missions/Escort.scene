@@ -2924,6 +2924,120 @@
                                     "componentType": ""
                                 }
                             ]
+                        },
+                        {
+                            "enabled": true,
+                            "assembly": "Managed/Crucible.Scripts.dll",
+                            "namespace": "Crucible.Scripts",
+                            "class": "EscortObjective",
+                            "fields": [
+                                {
+                                    "declaringType": "Crucible.Scripts.EscortObjective",
+                                    "name": "payload",
+                                    "type": "Prefab",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 974498798151855419,
+                                    "componentType": ""
+                                }
+                            ]
+                        },
+                        {
+                            "enabled": true,
+                            "assembly": "Managed/Crucible.Scripts.dll",
+                            "namespace": "Crucible.Scripts",
+                            "class": "EscortVisuals",
+                            "fields": [
+                                {
+                                    "declaringType": "Crucible.Scripts.EscortVisuals",
+                                    "name": "outlineSegment",
+                                    "type": "Prefab",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 4020784613891040805,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.EscortVisuals",
+                                    "name": "idleMaterial",
+                                    "type": "Material",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 2959536780768958419,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.EscortVisuals",
+                                    "name": "advancingMaterial",
+                                    "type": "Material",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 18201966989712866309,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.EscortVisuals",
+                                    "name": "contestedMaterial",
+                                    "type": "Material",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 12773079387368678415,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.EscortVisuals",
+                                    "name": "retreatingMaterial",
+                                    "type": "Material",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 987701032083778763,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.EscortVisuals",
+                                    "name": "guideMaterial",
+                                    "type": "Material",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 2959536780768958419,
+                                    "componentType": ""
+                                }
+                            ]
                         }
                     ]
                 },
