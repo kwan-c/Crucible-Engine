@@ -26,6 +26,13 @@
 *    every target inside the splash radius takes the splash damage too (the
 *    direct one takes both - Unity's CombatBlast).
 *
+*    groundTarget (enemy launches only, the Heavy Cannon): the shell flies no
+*    farther than that committed point and bursts there if nothing stopped it
+*    first, so a missing ground hit still detonates where the warning showed.
+*    Its direct hit on the target is tested against the target's actual
+*    capsule (not the 0.9 m aim sphere), so a shell landing at the feet is a
+*    ground hit (splash only) unless the target steps into its path.
+*
 **************************************************************************/
 using System;
 using System.Collections.Generic;
@@ -43,6 +50,7 @@ namespace Crucible.Scripts
         Action<Entity, Vector3> onContact;
         Vector3 direction, arcVelocity;
         float speed, radius, remaining, arcTime, damageScale;
+        bool groundShot;
         const float ArcGravity = 25f;
         List<ulong> pierced;
         RaycastHit[] piercingHits;
@@ -59,6 +67,7 @@ namespace Crucible.Scripts
             public CombatHealth EnemyTarget;
             public Action<Entity, Vector3> OnContact;
             public Vector3? ArcTarget;
+            public Vector3? GroundTarget;
         }
 
         static readonly Dictionary<ulong, PendingLaunch> pending = new Dictionary<ulong, PendingLaunch>();
@@ -71,13 +80,15 @@ namespace Crucible.Scripts
 
         public static void Fire(Entity shot, MechPartDef definition, Entity shooter, Vector3 shotDirection, float damageScale,
                                 float speedMultiplier = 1f, CombatHealth enemyTarget = null,
-                                Action<Entity, Vector3> onContact = null, Vector3? arcTarget = null)
+                                Action<Entity, Vector3> onContact = null, Vector3? arcTarget = null,
+                                Vector3? groundTarget = null)
         {
             if (shot == null) return;
             var launch = new PendingLaunch
             {
                 Definition = definition, Owner = shooter, Direction = shotDirection, DamageScale = damageScale,
-                SpeedMultiplier = speedMultiplier, EnemyTarget = enemyTarget, OnContact = onContact, ArcTarget = arcTarget
+                SpeedMultiplier = speedMultiplier, EnemyTarget = enemyTarget, OnContact = onContact, ArcTarget = arcTarget,
+                GroundTarget = enemyTarget != null ? groundTarget : null
             };
             MechProjectile ready = shot.GetComponent<MechProjectile>();
             if (ready != null) ready.Launch(launch);
@@ -113,6 +124,8 @@ namespace Crucible.Scripts
             speed = Math.Max(0.01f, definition.ProjectileSpeed * launch.SpeedMultiplier);
             radius = Math.Max(0.01f, definition.ProjectileSize);
             remaining = definition.Range;
+            groundShot = launch.GroundTarget.HasValue;
+            if (groundShot) remaining = Math.Min(remaining, (launch.GroundTarget.Value - Transform.WorldPosition).Length + 0.05f);
             arcTime = 0f;
             pierced = definition.Piercing ? new List<ulong>() : null;
             piercingHits = definition.Piercing ? new RaycastHit[64] : null;
@@ -159,7 +172,13 @@ namespace Crucible.Scripts
             float step = Math.Min(speed * deltaTime, remaining);
             Advance(step);
             remaining -= step;
-            if (live && remaining <= 0f) Finish();
+            if (live && remaining <= 0f)
+            {
+                // A ground shot that reached its committed point without touching anything (no
+                // ground there): it bursts where the warning was shown.
+                if (groundShot) Impact(null, Transform.WorldPosition);
+                Finish();
+            }
         }
 
         void Advance(float step)
@@ -211,8 +230,10 @@ namespace Crucible.Scripts
             if (enemyTarget != null)
             {
                 Entity victim = enemyTarget.Entity;
+                float along = 0f;
                 if (!enemyTarget.IsDead && victim != null && victim.IsActive && !WasPierced(victim)
-                    && NearSegment(from, EnemyAimCentre(victim), nearest, out float along))
+                    && (groundShot ? NearCapsule(from, victim, nearest, out along)
+                                   : NearSegment(from, EnemyAimCentre(victim), nearest, out along)))
                 {
                     found = victim;
                     point = from + direction * along;
@@ -238,6 +259,31 @@ namespace Crucible.Scripts
             return victim.HasComponent<CharacterController>()
                 ? transform.WorldPosition + transform.WorldRotation * victim.CharacterController.Center
                 : transform.WorldPosition;
+        }
+
+        // The step against the victim's upright capsule (CharacterController), sampled every 5 cm:
+        // the first point within its radius plus the shell's. Without a controller: the aim sphere.
+        bool NearCapsule(Vector3 from, Entity victim, float limit, out float along)
+        {
+            along = 0f;
+            if (victim == null || !victim.HasComponent<CharacterController>())
+                return NearSegment(from, EnemyAimCentre(victim), limit, out along);
+            CharacterController capsule = victim.CharacterController;
+            Vector3 centre = EnemyAimCentre(victim);
+            float half = Math.Max(0f, capsule.Height * 0.5f - capsule.Radius);
+            float reach = capsule.Radius + radius;
+            int samples = Math.Max(1, (int)Math.Ceiling(limit / 0.05f));
+            for (int i = 0; i <= samples; i++)
+            {
+                float t = limit * i / samples;
+                Vector3 p = from + direction * t;
+                float y = MechMath.Clamp(p.Y - centre.Y, -half, half);
+                Vector3 axis = new Vector3(centre.X, centre.Y + y, centre.Z);
+                if ((p - axis).Length > reach) continue;
+                along = t;
+                return true;
+            }
+            return false;
         }
 
         bool NearSegment(Vector3 from, Vector3 centre, float limit, out float along)
@@ -280,9 +326,12 @@ namespace Crucible.Scripts
             Vector3 from = owner != null && owner.IsAlive ? owner.Transform.WorldPosition : point - direction;
             MechPlayer shooter = owner != null && owner.IsAlive ? owner.GetComponent<MechPlayer>() : null;
             var directTarget = MechCombatTargets.Owning(hitEntity);
+            int kills = 0;   // for the explosion shake: each target this shot killed, once
             if (damage > 0f && directTarget != null)
             {
+                bool wasDead = IsDead(directTarget.Entity);
                 directTarget.OnDamage(damage, from);
+                if (!wasDead && IsDead(directTarget.Entity)) kills++;
                 shooter?.ConfirmHit(directTarget.Entity, MechHitKind.Projectile);
             }
 
@@ -294,11 +343,20 @@ namespace Crucible.Scripts
                 {
                     if (!target.Entity.IsAlive || !target.Entity.IsActive || MechCombatTargets.Same(target.Entity, owner)) continue;
                     if ((target.AimPosition - point).Length > definition.SplashRadius + targetRadius) continue;
+                    bool wasDead = IsDead(target.Entity);
                     target.OnDamage(definition.SplashDamage * damageScale, from);
+                    if (!wasDead && IsDead(target.Entity)) kills++;
                     shooter?.ConfirmHit(target.Entity, MechHitKind.Blast);
                 }
+                shooter?.ConfirmExplosion(point, kills);
             }
             onContact?.Invoke(hitEntity, point);
+        }
+
+        static bool IsDead(Entity entity)
+        {
+            CombatHealth health = entity != null && entity.IsAlive ? CombatHealth.Find(entity) : null;
+            return health != null && health.IsDead;
         }
 
         void Finish()

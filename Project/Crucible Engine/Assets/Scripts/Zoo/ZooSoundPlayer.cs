@@ -4,7 +4,7 @@
 * \par:          Email: t.duanjienelson@digipen.edu
 * \date          8 November 2026
 * \version       1.0
-* \brief         Zoo sound cube: step on it and press F to play its clip.
+* \brief         Zoo sound cube: step on it and press G to play its clip.
 *                Port of Unity's ZooSoundplayer.
 *
 * \details
@@ -25,12 +25,12 @@ namespace Crucible.Scripts
         public override void OnCreate()
         {
             pad = new ZooPad(this);
-            pad.SetText(clip != null ? "Step on me and press F\nto play " + clip.Name : "No Audio Clip Assigned");
+            pad.SetText(clip != null ? "Step on me and press G\nto play " + clip.Name : "No Audio Clip Assigned");
         }
 
         public override void OnUpdate(float deltaTime)
         {
-            if (!pad.WasUsed(KeyCode.F) || clip == null) return;
+            if (!pad.WasUsed(KeyCode.G) || clip == null) return;
             Log.Info("Playing sound: " + clip.Name);
             if (AudioSource != null) AudioSource.PlayOneShot(clip, volume);
         }

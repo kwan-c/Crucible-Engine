@@ -13,7 +13,7 @@ namespace Crucible.Scripts
 
         public override void OnCreate()
         {
-            pad = new ZooPad(this);
+            pad = new ZooPad(this, KeyCode.G);
             spawnPoint = Entity.FindChild("Spawn Point");
         }
 

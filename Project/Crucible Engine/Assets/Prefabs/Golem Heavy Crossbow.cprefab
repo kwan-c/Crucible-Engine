@@ -126,6 +126,19 @@
                         },
                         {
                             "declaringType": "Crucible.Scripts.Enemy",
+                            "name": "retreatInsteadOfFiring",
+                            "type": "Bool",
+                            "boolean": true,
+                            "integer": 0,
+                            "single": 0.0,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.Enemy",
                             "name": "melee",
                             "type": "Bool",
                             "boolean": false,
@@ -357,6 +370,32 @@
                             "stringIsNull": false,
                             "entityId": 0,
                             "assetId": 0
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.Enemy",
+                            "name": "attackSound",
+                            "type": "AudioClip",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 0.0,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 8495100420686643205
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.Enemy",
+                            "name": "attackSoundPeak",
+                            "type": "Float",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 0.02,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
                         }
                     ]
                 },
@@ -507,13 +546,13 @@
                     "modelRoot": 4294967295,
                     "materialOverrides": [],
                     "colour": {
-                        "x": 1,
-                        "y": 0.4000000059604645,
-                        "z": 0.11999999731779099,
+                        "x": 1.0,
+                        "y": 0.15000000596046448,
+                        "z": 0.10000000149011612,
                         "w": 0.5
                     },
                     "meshAsset": 3578055278504480029,
-                    "materialAsset": 0
+                    "materialAsset": 4396596060807954433
                 },
                 "EntityName": {
                     "name": "Telegraph"
@@ -660,6 +699,47 @@
                 },
                 "EntityName": {
                     "name": "Weapon Mount"
+                }
+            }
+        },
+        {
+            "id": "21B3FB1520B3B0B1",
+            "parent": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0,
+                        "y": 1.600000023841858,
+                        "z": 0
+                    },
+                    "rotation": {
+                        "x": 0,
+                        "y": 0,
+                        "z": 0,
+                        "w": 1
+                    },
+                    "scale": {
+                        "x": 2,
+                        "y": 0.10000000149011612,
+                        "z": 0.10000000149011612
+                    }
+                },
+                "EntityName": {
+                    "name": "Health Bar Missing"
+                },
+                "MeshRenderer": {
+                    "visible": false,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.44999998807907104,
+                        "y": 0.05999999865889549,
+                        "z": 0.05000000074505806,
+                        "w": 0.5
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 0
                 }
             }
         }

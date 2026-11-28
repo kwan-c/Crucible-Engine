@@ -24,8 +24,14 @@ namespace Crucible.Scripts
     //
     // Children it looks for by name (the Golem prefabs have them):
     //   "Body"       - the visible mesh, with a MaterialParams component, for the hit flash
-    //   "Health Bar" - a thin cube (MeshRenderer) this script moves and stretches each frame
-    //   "Telegraph"  - a flat cube (MeshRenderer) shown on the ground during a wind-up
+    //   "Health Bar" - a thin cube (MeshRenderer) this script moves and stretches each frame;
+    //                  its MeshRenderer colour is the remaining-health colour
+    //   "Health Bar Missing" - optional: a second thin cube drawn over the lost part of the bar;
+    //                  its MeshRenderer colour is the missing-health colour (per prefab, so no
+    //                  shared material changes every enemy at once)
+    //   "Telegraph"  - a flat cube (MeshRenderer) shown on the ground during a wind-up; its
+    //                  material and colour say which kind of attack it is (see EnemyWeapon.cs)
+    //   "Telegraph Splash" - optional: a disc shown at a splash weapon's committed impact point
     public sealed partial class Enemy : CombatHealth
     {
         // Hit flash (EnemyCombatFeedback).
@@ -69,8 +75,8 @@ namespace Crucible.Scripts
         // walk it. Dead enemies are switched off, not destroyed, so check Entity.IsActive.
         public static readonly List<Enemy> All = new List<Enemy>();
 
-        Entity body, bar;
-        Vector3 barScale;                     // the bar's prefab scale: Y and Z (thickness) are kept
+        Entity body, bar, barMissing;
+        Vector3 barScale, missingScale;       // the bars' prefab scales: Y and Z (thickness) are kept
         float flashRemaining;
 
         public override void OnCreate()
@@ -89,6 +95,9 @@ namespace Crucible.Scripts
             if (healthBar && (bar == null || !bar.HasComponent<MeshRenderer>()))
                 Log.Warning("[Enemy] " + Entity.Name + ": no child \"Health Bar\" with a MeshRenderer - health bar is off");
             if (bar != null) barScale = bar.Transform.Scale;
+            barMissing = Entity.FindChild("Health Bar Missing");
+            if (barMissing != null && !barMissing.HasComponent<MeshRenderer>()) barMissing = null;
+            if (barMissing != null) missingScale = barMissing.Transform.Scale;
 
             // Dying is handled here (toppling), not by switching the entity off.
             if (toppleOnDeath || ragdollOnDeath) deactivateOnDeath = false;
@@ -146,15 +155,28 @@ namespace Crucible.Scripts
             Vector3 right = facing * new Vector3(1f, 0f, 0f);
 
             // The left end stays put and the bar shrinks towards it, as in Unity.
-            float length = healthBarLength * CurrentHealth / MaximumHealth;
+            float fraction = MechMath.Clamp01(CurrentHealth / Math.Max(1f, MaximumHealth));
+            float length = healthBarLength * fraction;
             Vector3 start = Transform.WorldPosition + Vector3.Up * healthBarHeight - right * (healthBarLength * 0.5f);
 
             // A cube is centred on its position, so it goes in the middle of the filled part.
             bar.Transform.WorldPosition = start + right * (length * 0.5f);
             bar.Transform.WorldRotation = facing;
-            // Scale is local; the golem roots are at scale 1, so local is world here.
+            // Scale is local: divide by the root's own scale (the small golems' roots are at 0.5),
+            // so the bar is healthBarLength metres in the world and its left end really stays put.
             // Never exactly 0: a zero scale can't be inverted for lighting.
-            bar.Transform.Scale = new Vector3(Math.Max(length, 0.001f), barScale.Y, barScale.Z);
+            float rootScale = Math.Max(0.001f, Math.Abs(Transform.Scale.X));
+            bar.Transform.Scale = new Vector3(Math.Max(length / rootScale, 0.001f), barScale.Y, barScale.Z);
+
+            // The lost part, in its own colour, from the end of the fill to the full length.
+            if (barMissing == null) return;
+            float missing = healthBarLength - length;
+            bool show = missing > 0.001f && !IsDead;
+            if (barMissing.MeshRenderer.Visible != show) barMissing.MeshRenderer.Visible = show;
+            if (!show) return;
+            barMissing.Transform.WorldPosition = start + right * (length + missing * 0.5f);
+            barMissing.Transform.WorldRotation = facing;
+            barMissing.Transform.Scale = new Vector3(Math.Max(missing / rootScale, 0.001f), missingScale.Y, missingScale.Z);
         }
 
         // A static list outlives Play: without this, Stop would leave every enemy
@@ -245,6 +267,7 @@ namespace Crucible.Scripts
             if (agent != null) { agent.Stop(); Entity.SetEnabled<FlowFieldAgent>(false); }
             if (HasComponent<StateGraphAgent>()) Entity.SetEnabled<StateGraphAgent>(false);
             if (bar != null && bar.HasComponent<MeshRenderer>()) bar.MeshRenderer.Visible = false;
+            if (barMissing != null) barMissing.MeshRenderer.Visible = false;
         }
 
         // The death topple: the whole golem tips over as one body (no ragdoll).

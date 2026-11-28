@@ -77,9 +77,11 @@ namespace Crucible.Scripts
                     CurrentAction = "Telegraph charge";
                     float progress = Math.Min(1f, age / Math.Max(.001f, spinnerWindup));
                     SpinVisual(720f * progress * progress);
+                    UpdateAttackSound(age, age >= spinnerWindup);   // EnemyAudio.cs: the charge sound, if one is assigned
                     if (age < spinnerWindup) return;
                     SpinnerStage = SpinnerPhase.Charge;
                     released = true;
+                    Releases++;
                     age = 0f;
                     StartDirectedMovement(chargeDirection, chargeSpeed, chargeDuration);
                     goto case SpinnerPhase.Charge;

@@ -10,7 +10,21 @@ namespace Crucible.Scripts
     // seconds; at releaseFrame of the way through, melee hits whatever is in the box in
     // front (as the swing began, so a sidestep dodges it) and ranged fires a bolt at the
     // point it aimed at when it started (bolts never home). The cooldown starts with the
-    // attack. During the wind-up an orange lane on the ground warns the player.
+    // attack. During the wind-up a lane on the ground warns the player.
+    //
+    // Melee contact timing: the body's MeleeSlash lunge lands at releaseFrame (0.6 of 0.7 s
+    // = clip frame 15 of Fodder_MeleeSlash at speed 1.19). The equipped weapon has its own
+    // short Fire clip (MaceArm_Fire / SwordArm_Fire, 0.375 s); weaponContactSeconds says how
+    // far into that clip it connects, and the swing is started that long before the release,
+    // so the weapon, the body and the damage meet on the same frame. 0 keeps the old
+    // behaviour (the weapon swings as the attack starts).
+    //
+    // Heavy Cannon (groundTargetSplash): the shot is committed at the start of the attack
+    // to a point on the ground just in front of the target's feet (straight down from its
+    // centre against the level, so jumps, slopes and steps are handled), shown by a splash
+    // disc. The shell flies there in a straight line (no homing) and bursts on the first
+    // thing it hits - the ground, a wall, or the target if it steps into the path - and the
+    // splash is centred on that actual impact point.
     //
     // Armed prefabs use the player's MechPartCatalogue. The enemy owns its attack
     // timing and aim. Older prefabs can still use their original damage and Bolt.
@@ -34,12 +48,18 @@ namespace Crucible.Scripts
         public float weaponDamageMultiplier = 1f;
         public float projectileSpeedMultiplier = 1f;
         public int spawnCost = 1;
+        public float weaponContactSeconds = 0f;   // melee: seconds into the weapon's Fire clip where it connects (0 = swing at attack start)
+        public float minimumAttackDistance = 0f;  // ranged: never fires closer than this (the weapon's own safe distance)
+        public bool groundTargetSplash = false;   // splash weapons: aim at the ground at the target's feet (Heavy Cannon)
+        public float groundImpactOffset = -1f;    // metres in front of the feet, toward the shooter; < 0 = just clear the target's capsule
+        public float groundProbeDepth = 8f;       // metres below the target's centre to look for ground
 
         bool attacking, released, warnedNoBolt;
-        float age, cooldownLeft;
+        bool weaponSwung, groundTargeted;
+        float age, cooldownLeft, weaponSwingAt;
         CombatHealth attackTarget;                // who the current attack is aimed at
         Vector3 aim, strikeFacing;                // where the bolt goes; which way the swing faces
-        Entity telegraphEntity;
+        Entity telegraphEntity, splashEntity;
         Entity weaponMuzzle;
         MechPartDef equippedWeapon;
         bool invalidWeapon;
@@ -47,6 +67,18 @@ namespace Crucible.Scripts
 
         public bool AttackInProgress { get { return attacking; } }
         public float CooldownRemaining { get { return cooldownLeft; } }
+        /// <summary>Seconds from the start of an attack to its hit / shot.</summary>
+        public float ReleaseTime { get { return fireDuration * releaseFrame; } }
+        /// <summary>Seconds from the start of an attack to the weapon's own swing animation.</summary>
+        public float WeaponSwingTime { get { return melee && weaponContactSeconds > 0f ? Math.Max(0f, ReleaseTime - weaponContactSeconds) : 0f; } }
+        /// <summary>Where the current ranged attack is committed to (valid while AttackInProgress).</summary>
+        public Vector3 CommittedAim { get { return aim; } }
+        /// <summary>The current shot is a Cannon ground shot (aim is on the ground at the target's feet).</summary>
+        public bool CommittedToGround { get { return attacking && groundTargeted; } }
+        /// <summary>Hits and shots released so far (QA).</summary>
+        public int Releases { get; private set; }
+        public float AttackAge { get { return attacking ? age : 0f; } }
+        public bool WeaponSwingStarted { get { return attacking && weaponSwung; } }
 
         void CreateWeapon()
         {
@@ -65,6 +97,8 @@ namespace Crucible.Scripts
                 telegraphEntity = null;
             }
             if (telegraphEntity != null) telegraphThickness = telegraphEntity.Transform.Scale.Y;
+            splashEntity = Entity.FindChild("Telegraph Splash");
+            if (splashEntity != null && !splashEntity.HasComponent<MeshRenderer>()) splashEntity = null;
             HideTelegraph();
         }
 
@@ -86,9 +120,13 @@ namespace Crucible.Scripts
                 else
                 {
                     age += deltaTime;
-                    if (!released && age >= fireDuration * releaseFrame)
+                    if (melee && !weaponSwung && age >= weaponSwingAt) SwingWeapon();
+                    bool releasing = !released && age >= fireDuration * releaseFrame;
+                    UpdateAttackSound(age, releasing);       // EnemyAudio.cs: starts early enough to peak on the hit
+                    if (releasing)
                     {
                         released = true;
+                        Releases++;
                         if (melee) StrikeMelee();
                         else FireBolt();
                         AnimateAttackRelease();
@@ -122,13 +160,19 @@ namespace Crucible.Scripts
 
             attackTarget = targetHealth;
             aim = AimPoint(victim);                  // ranged shots aim once; bolts never home
+            groundTargeted = false;
+            Vector3 impact;
+            if (!melee && groundTargetSplash && TryGroundImpact(victim, out impact)) { aim = impact; groundTargeted = true; }
             if (!melee && aimSpreadDegrees > 0f) aim = Spread(aim);
             strikeFacing = Facing;                   // melee strikes where the swing began
             age = 0f;
             cooldownLeft = previewSpinnerWindup ? spinnerCooldown : cooldown;
             attacking = true;
             released = false;
+            weaponSwung = false;
+            weaponSwingAt = WeaponSwingTime;
             AnimateAttackStart();                    // EnemyAnimation.cs: the slash, or the cannon's charge
+            ScheduleAttackSound(previewSpinnerWindup ? spinnerWindup : ReleaseTime);
             return true;
         }
 
@@ -140,8 +184,10 @@ namespace Crucible.Scripts
             ReleaseMeleeAttack();
             attacking = false;
             released = false;
+            groundTargeted = false;
             attackTarget = null;
             HideTelegraph();
+            StopAttackSound();                       // EnemyAudio.cs: a wind-up or charge sound still pending
         }
 
         // Melee: within reach on the flat and no more than verticalReach above or below.
@@ -249,14 +295,58 @@ namespace Crucible.Scripts
             // clear of the golem's 1.7 m deep body box.
             Vector3 start = weaponMuzzle != null ? weaponMuzzle.Transform.WorldPosition
                 : Position + Vector3.Up * 0.5f + strikeFacing * 1.5f;
-            Vector3 direction = (aim - start).Normalized;
+            // A ground shot flies at the point one shell radius above the committed ground point, so
+            // the shell's sphere touches the ground right there instead of grazing it short.
+            Vector3 shotTarget = groundTargeted && equippedWeapon != null
+                ? aim + Vector3.Up * Math.Max(0f, equippedWeapon.ProjectileSize) : aim;
+            Vector3 direction = (shotTarget - start).Normalized;
             if (direction.Length < 0.5f) direction = strikeFacing;
 
             // LookRotation points the bolt's Transform.Forward along direction; Bolt flies that way.
             Entity shot = boltPrefab.Instantiate(start, Quaternion.LookRotation(direction));
             if (equippedWeapon != null)
                 MechProjectile.Fire(shot, equippedWeapon, Entity, direction, weaponDamageMultiplier,
-                    speedMultiplier: projectileSpeedMultiplier, enemyTarget: attackTarget);
+                    speedMultiplier: projectileSpeedMultiplier, enemyTarget: attackTarget,
+                    groundTarget: groundTargeted ? shotTarget : (Vector3?)null);
+        }
+
+        // The Cannon's committed impact point (see the top of this file): the ground straight below
+        // the target's centre, moved toward the shooter just far enough that the shell meets the
+        // ground before the target's capsule, then the ground again at that spot (a slope or step).
+        // With no ground in probe range, or cover between the muzzle and the impact, use the
+        // ordinary committed body shot. Only a measured surface gets a ground telegraph.
+        bool TryGroundImpact(Entity victim, out Vector3 impact)
+        {
+            Vector3 centre = AimPoint(victim);
+            Vector3 down = new Vector3(0f, -1f, 0f);
+            float depth = Math.Max(0.5f, groundProbeDepth);
+            float capsuleRadius = 0.5f;
+            if (victim.HasComponent<CharacterController>())
+            {
+                capsuleRadius = victim.CharacterController.Radius;
+            }
+            float shell = equippedWeapon != null ? Math.Max(0f, equippedWeapon.ProjectileSize) : 0.3f;
+            float offset = groundImpactOffset >= 0f ? groundImpactOffset : capsuleRadius + shell + 0.15f;
+
+            Vector3 toShooter = Flat(Position - centre);
+            float apart = toShooter.Length;
+            toShooter = apart > 0.01f ? toShooter * (1f / apart) : Facing * -1f;
+            Vector3 probe = centre + toShooter * Math.Min(offset, Math.Max(0f, apart - 0.5f));
+            RaycastHit ground;
+            if (Physics.Raycast(probe, down, out ground, depth, MovementQueryMask, victim))
+                impact = ground.Point + Vector3.Up * 0.05f;
+            else if (Physics.Raycast(centre, down, out ground, depth, MovementQueryMask, victim))
+                impact = ground.Point + Vector3.Up * 0.05f;
+            else { impact = centre; return false; }
+
+            Vector3 muzzle = weaponMuzzle != null ? weaponMuzzle.Transform.WorldPosition
+                : Position + Vector3.Up * 0.5f + Facing * 1.5f;
+            Vector3 line = impact - muzzle;
+            float length = line.Length;
+            RaycastHit wall;
+            if (length > .01f && Physics.Raycast(muzzle, line * (1f / length), out wall, length - .01f, MovementQueryMask, Entity))
+                return false;
+            return true;
         }
 
         // The aim point moved by a random amount inside a cone of aimSpreadDegrees.
@@ -279,20 +369,27 @@ namespace Crucible.Scripts
 
         // Port of EnemyWeaponTelegraph + EnemyThreatMarker.Lane: during the wind-up, a lane
         // on the ground - 3 m by 2 m in front for melee, a thin line to the aim point for a
-        // bolt. Unity drew its outline and faded it in; here a flat box grows along the lane
-        // as the hit comes, which says the same thing without transparency.
+        // bolt, the committed lane for the Spinner. Unity drew its outline and faded it in;
+        // here a flat box grows along the lane as the hit comes, which says the same thing
+        // without transparency. A Cannon ground shot also shows its splash disc (the weapon's
+        // splash radius) at the committed impact point. Each prefab's Telegraph uses one of the
+        // team's existing glow materials so it reads in shade and sun alike: orange for melee
+        // (Unity's warning colour), red for shots and splash, violet for the Spinner's charge.
+        // Shown only while winding up; a completed, cancelled or dead attack hides it.
         void UpdateTelegraph()
         {
             if (telegraphEntity == null) return;
-            bool show = telegraph && attacking && !released;
+            bool show = telegraph && attacking && !released && !IsDead;
             MeshRenderer renderer = telegraphEntity.MeshRenderer;
             if (renderer.Visible != show) renderer.Visible = show;
+            UpdateSplashTelegraph(show);
             if (!show) return;
 
-            float groundY = (previewSpinnerWindup ? GroundAtFeet() : Position.Y - (agent != null ? agent.BaseOffset : 1f)) + .06f;
+            float groundY = GroundAtFeet() + .06f;
             Vector3 start = new Vector3(Position.X, groundY, Position.Z);
+            // Melee: the real strike box (weaponReach deep, meleeWidth wide, from the golem out).
             Vector3 end = previewSpinnerWindup ? start + chargeDirection * (chargeSpeed * chargeDuration)
-                : melee ? start + strikeFacing * 3f : new Vector3(aim.X, groundY, aim.Z);
+                : melee ? start + strikeFacing * weaponReach : new Vector3(aim.X, groundY, aim.Z);
 
             Vector3 lane = end - start;
             float length = lane.Length;
@@ -302,19 +399,33 @@ namespace Crucible.Scripts
 
             telegraphEntity.Transform.WorldPosition = start + direction * (filled * 0.5f);
             telegraphEntity.Transform.WorldRotation = Quaternion.LookRotation(direction);
-            if (previewSpinnerWindup)
-            {
-                // The preview prefab root is half scale. Express the warning in world metres.
-                Vector3 scale = Transform.Scale;
-                telegraphEntity.Transform.Scale = new Vector3(2f * contactRadius / Math.Max(.001f, Math.Abs(scale.X)),
-                    telegraphThickness, filled / Math.Max(.001f, Math.Abs(scale.Z)));
-            }
-            else telegraphEntity.Transform.Scale = new Vector3(melee ? 2f : 0.55f, telegraphThickness, filled);
+            // Scale is local and most golem roots are half scale: express the warning in world metres.
+            Vector3 scale = Transform.Scale;
+            float width = previewSpinnerWindup ? 2f * contactRadius : melee ? meleeWidth : 0.55f;
+            telegraphEntity.Transform.Scale = new Vector3(width / Math.Max(.001f, Math.Abs(scale.X)),
+                telegraphThickness, filled / Math.Max(.001f, Math.Abs(scale.Z)));
         }
 
         void HideTelegraph()
         {
             if (telegraphEntity != null && telegraphEntity.MeshRenderer.Visible) telegraphEntity.MeshRenderer.Visible = false;
+            if (splashEntity != null && splashEntity.MeshRenderer.Visible) splashEntity.MeshRenderer.Visible = false;
+        }
+
+        // The splash disc (built-in Disc, radius 0.5, facing up) at the committed ground impact,
+        // the weapon's splash radius in world metres.
+        void UpdateSplashTelegraph(bool laneShown)
+        {
+            if (splashEntity == null) return;
+            bool show = laneShown && groundTargeted && equippedWeapon != null && equippedWeapon.SplashRadius > 0f;
+            if (splashEntity.MeshRenderer.Visible != show) splashEntity.MeshRenderer.Visible = show;
+            if (!show) return;
+            Vector3 scale = Transform.Scale;
+            float diameter = equippedWeapon.SplashRadius * 2f;
+            splashEntity.Transform.WorldPosition = aim + Vector3.Up * 0.04f;
+            splashEntity.Transform.WorldRotation = Quaternion.Identity;
+            splashEntity.Transform.Scale = new Vector3(diameter / Math.Max(.001f, Math.Abs(scale.X)), 1f,
+                                                       diameter / Math.Max(.001f, Math.Abs(scale.Z)));
         }
     }
 }
